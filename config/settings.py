@@ -40,7 +40,8 @@ INSTALLED_APPS = [
 
     "academias",
     "atletas",
-    "servicos"
+    "servicos",
+    "matriculas",
 ]
 
 MIDDLEWARE = [
