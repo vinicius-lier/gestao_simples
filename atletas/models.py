@@ -44,7 +44,7 @@ class Atleta(models.Model):
     )
 
     nome = models.CharField(max_length=150)
-    data_nascimento = models.DateField()
+    data_nascimento = models.DateField(null=True,blank=True)
     cpf = models.CharField(max_length=14, blank=True)
     faixa = models.CharField(max_length=50, blank=True)
 
