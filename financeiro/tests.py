@@ -101,3 +101,40 @@ class GerarMensalidadesTests(TestCase):
 
         self.assertEqual(resultado, {"criadas": 1, "existentes": 0})
         self.assertTrue(Mensalidade.objects.exists())
+
+
+    def test_gerar_mensalidades_sem_duplicar(self):
+        resultado_primeira_execucao = gerar_mensalidades(
+            ano=2026,
+            mes=9,
+        )
+
+        self.assertEqual(
+            resultado_primeira_execucao["criadas"],
+            1,
+        )
+
+        self.assertEqual(
+            Mensalidade.objects.count(),
+            1,
+        )
+
+        resultado_segunda_execucao = gerar_mensalidades(
+            ano=2026,
+            mes=9,
+        )
+
+        self.assertEqual(
+            resultado_segunda_execucao["criadas"],
+            0,
+        )
+
+        self.assertEqual(
+            resultado_segunda_execucao["existentes"],
+            1,
+        )
+
+        self.assertEqual(
+            Mensalidade.objects.count(),
+            1,
+        )
