@@ -89,3 +89,28 @@ def criar_cobranca_asaas(mensalidade):
     mensalidade.save(update_fields=["asaas_payment_id"])
 
     return payment_id
+
+
+def obter_pix_mensalidade(mensalidade):
+    if not mensalidade.asaas_payment_id:
+        raise ValueError(
+            "A mensalidade ainda não possui cobrança criada no Asaas."
+        )
+
+    asaas = AsaasClient()
+    dados = asaas.obter_pix_qrcode(mensalidade.asaas_payment_id)
+
+    if not isinstance(dados, dict):
+        raise AsaasAPIError(
+            "A resposta do Asaas não contém os dados PIX da cobrança."
+        )
+
+    payload = dados.get("payload") or None
+    qr_code_base64 = dados.get("encodedImage") or None
+
+    return {
+        "payment_id": mensalidade.asaas_payment_id,
+        "payload": payload,
+        "qr_code_base64": qr_code_base64,
+        "expiracao": dados.get("expirationDate") or None,
+    }

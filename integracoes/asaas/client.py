@@ -153,6 +153,22 @@ class AsaasClient:
 
         return None
 
+    def obter_pix_qrcode(self, payment_id):
+        url = f"{self.base_url}/payments/{payment_id}/pixQrCode"
+
+        try:
+            response = requests.get(
+                url,
+                headers=self.headers,
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            self._erro_de_conexao(exc)
+
+        self._validar_resposta(response)
+
+        return self._obter_json(response)
+
     def buscar_cliente_por_id(self, customer_id):
         url = f"{self.base_url}/customers/{customer_id}"
 
