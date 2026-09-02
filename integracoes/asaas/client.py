@@ -60,3 +60,24 @@ class AsaasClient:
         response.raise_for_status()
 
         return response.json()
+
+    def buscar_cliente_por_cpf_cnpj(self, cpf_cnpj):
+        url = f"{self.base_url}/customers"
+
+        response = requests.get(
+            url,
+            headers=self.headers,
+            params={
+                "cpfCnpj": cpf_cnpj,
+            },
+            timeout=30,
+        )
+
+        response.raise_for_status()
+
+        resultado = response.json()
+
+        if resultado["data"]:
+            return resultado["data"][0]
+
+        return None
