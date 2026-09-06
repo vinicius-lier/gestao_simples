@@ -3,7 +3,7 @@ import json
 from django.conf import settings
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_http_methods
 
 from financeiro.models import Mensalidade
 from financeiro.services import registrar_pagamento
@@ -21,17 +21,24 @@ MAPA_FORMA_PAGAMENTO = {
 
 
 @csrf_exempt
-@require_POST
+@require_http_methods(["GET", "POST"])
 def webhook_pagamento(request):
     """Recebe a notificação do Asaas quando um pagamento é confirmado e
     marca a mensalidade correspondente como paga — sem precisar de
     conferência manual.
 
+    GET/HEAD respondem 200 sem exigir token: o próprio formulário de
+    cadastro de webhook do Asaas faz uma checagem de alcançabilidade da
+    URL antes de salvar, e rejeita (“url inválida”) se não vier 2xx.
+
     Segurança: configure ASAAS_WEBHOOK_TOKEN (o mesmo token cadastrado no
     painel do Asaas ao criar o webhook) para exigir o cabeçalho
-    'asaas-access-token' em toda chamada. Sem o token configurado, o
+    'asaas-access-token' em todo POST. Sem o token configurado, o
     endpoint aceita qualquer chamada — use isso só em desenvolvimento.
     """
+    if request.method == "GET":
+        return JsonResponse({"status": "ok"})
+
     token_esperado = getattr(settings, "ASAAS_WEBHOOK_TOKEN", "")
     if token_esperado and request.headers.get("asaas-access-token") != token_esperado:
         return JsonResponse({"detail": "token inválido"}, status=401)

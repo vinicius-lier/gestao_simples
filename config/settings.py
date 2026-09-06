@@ -30,7 +30,9 @@ SECRET_KEY = 'django-insecure-^=cc_@lrg+wgj+7losut#zi9i1fad#5k3ft@bej-b&lpgyxw0!
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+# Hosts extras (ex.: domínio de túnel ngrok/localtunnel para testar
+# webhooks localmente) via variável de ambiente, separados por vírgula.
+ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '').split(',') if h.strip()]
 
 
 # Application definition

@@ -69,12 +69,22 @@ class WebhookAsaasTests(TestCase):
         self.mensalidade.refresh_from_db()
         self.assertIsNone(self.mensalidade.pago_em)
 
-    def test_get_nao_e_permitido(self):
-        self.assertEqual(self.client.get("/webhooks/asaas/").status_code, 405)
+    def test_get_responde_ok_sem_exigir_token(self):
+        # O formulário de webhook do Asaas testa a URL com GET antes de
+        # salvar; precisa responder 2xx mesmo sem o cabeçalho do token.
+        resposta = self.client.get("/webhooks/asaas/")
+        self.assertEqual(resposta.status_code, 200)
+
+    def test_put_nao_e_permitido(self):
+        self.assertEqual(self.client.put("/webhooks/asaas/").status_code, 405)
 
     def test_corpo_invalido_retorna_400(self):
         resposta = self.client.post("/webhooks/asaas/", data="não é json", content_type="application/json")
         self.assertEqual(resposta.status_code, 400)
+
+    @override_settings(ASAAS_WEBHOOK_TOKEN="segredo")
+    def test_get_ignora_token_mesmo_configurado(self):
+        self.assertEqual(self.client.get("/webhooks/asaas/").status_code, 200)
 
     @override_settings(ASAAS_WEBHOOK_TOKEN="segredo")
     def test_token_invalido_e_rejeitado(self):
