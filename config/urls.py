@@ -17,7 +17,10 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+from integracoes.asaas.views import webhook_pagamento
+
 urlpatterns = [
     path('', include('portal.urls')),
     path('admin/', admin.site.urls),
+    path('webhooks/asaas/', webhook_pagamento, name='webhook_asaas'),
 ]

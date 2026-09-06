@@ -35,3 +35,14 @@
 .detalhe-dialog .hero-dashboard{margin-bottom:14px}
 .detalhe-dialog .card{border:0;box-shadow:none;padding:0!important}
 .detalhe-dialog dl dt{margin-top:14px}
+
+/* Financeiro */
+.status-pendente{background:#eef2ff;color:#4c5fab}
+.status-paga{background:#eafbf1;color:#1f9d55}
+.status-vencida{background:#fdecea;color:#c0392b}
+.status-cancelada{background:#f1f1f3;color:#888892}
+.status-isenta{background:#f3ecfb;color:#7a4fc9}
+.stat-card form{margin-top:14px}
+.cobranca-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end}
+.cobranca-actions form{display:inline-flex;gap:6px;align-items:center}
+.cobranca-actions select{font-size:11px;padding:4px 6px;border-radius:6px;border:1px solid var(--line)}

@@ -36,6 +36,19 @@ Academia é derivada exclusivamente do usuário autenticado. IDs de aluno, respo
 
 A integração Asaas e a geração de mensalidades existente foram preservadas. O formulário salva a matrícula; não dispara cobranças nem gera mensalidades automaticamente. Continue usando o comando `gerar_mensalidades` do projeto.
 
+### Painel financeiro (`/financeiro/`)
+
+- **Painel**: previsto, recebido, a receber e em atraso do mês corrente, vencimentos dos próximos 7 dias e lista de inadimplentes. A cada acesso, mensalidades pendentes vencidas são promovidas para `vencida` automaticamente (`Mensalidade.objects.marcar_vencidas()`), sem depender de job externo.
+- **Cobranças** (`/financeiro/cobrancas/`): lista com busca por aluno, filtro por situação e por mês, paginada. Ações por linha: **Marcar como pago** (define `status`, `forma_pagamento` e `pago_em`), **Gerar Pix** (chama a integração Asaas já existente) e **Cobrar** (abre o WhatsApp do responsável com a mensagem preenchida — `portal/templatetags/portal_extras.py`).
+- Qualquer usuário vinculado à academia pode registrar pagamentos e gerar cobranças (não é uma ação restrita a administrador da academia).
+- No detalhe do aluno, cada matrícula mostra as últimas mensalidades e o status.
+
+### Webhook do Asaas (`/webhooks/asaas/`)
+
+Endpoint público (`POST`, isento de CSRF) que recebe a confirmação de pagamento do Asaas e marca a mensalidade correspondente como paga automaticamente — sem conferência manual. Aceita `PAYMENT_RECEIVED` e `PAYMENT_CONFIRMED`, casando pelo `asaas_payment_id`. Configure `ASAAS_WEBHOOK_TOKEN` (mesmo token cadastrado no painel do Asaas) para exigir o cabeçalho `asaas-access-token`; sem essa variável definida, o endpoint aceita qualquer chamada — use isso só em desenvolvimento.
+
+**Ainda não implementado** (fora do escopo deste MVP financeiro): desconto/bolsa/isenção com valor e motivo próprios, lembretes automáticos por WhatsApp, boleto e cartão além do Pix, gráfico de receita por mês, e uma tabela de pagamentos separada da mensalidade (hoje a mensalidade acumula os dois papéis, o que é suficiente enquanto não há pagamento parcial).
+
 Bootstrap é carregado por CDN e precisa de internet para aplicar a aparência. O portal não altera as permissões dos demais Django Admins: contas operacionais devem permanecer sem `is_staff`; o Admin é reservado à administração confiável.
 
 A trava por academia para reutilização de responsáveis funciona em bancos com bloqueio de linhas. SQLite não fornece essa garantia concorrente; não há nova restrição de unicidade de CPF, para preservar dados legados.

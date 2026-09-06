@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from functools import wraps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -10,6 +11,15 @@ from atletas.models import Atleta
 from matriculas.models import Matricula
 from .forms import AlunoForm, MatriculaForm
 from .models import AcessoAcademia
+
+
+def redirecionamento_seguro(request, padrao):
+    """Volta para a tela de onde a ação foi disparada (campo 'proximo'),
+    aceitando só caminhos internos — nunca uma URL externa."""
+    proximo = request.POST.get('proximo', '')
+    if proximo.startswith('/'):
+        return redirect(proximo)
+    return redirect(padrao)
 
 
 def academia_required(view):
@@ -58,6 +68,8 @@ def detalhe(request, pk):
     matriculas = aluno.matriculas.filter(academia=request.academia, modalidade__academia=request.academia)
     # Do not expose legacy cross-tenant relationships.
     matriculas = [m for m in matriculas if not m.turma_id or m.turma.academia_id == request.academia.pk]
+    for matricula in matriculas:
+        matricula.mensalidades_recentes = matricula.mensalidades.filter(academia=request.academia).order_by('-competencia')[:6]
     return render(request, 'portal/detalhe.html', {'aluno': aluno, 'responsavel': responsavel, 'matriculas': matriculas})
 
 
@@ -164,3 +176,79 @@ def cadastros(request, tipo, pk=None, novo=False, excluir=False, detalhe=False):
     return render(request, 'portal/cadastro_form.html', {
         'form': form, 'faixas': faixas, 'tipo': tipo, 'titulo': titulo, 'singular': singular, 'objeto': instance,
     })
+
+
+@academia_required
+def financeiro_dashboard(request):
+    from financeiro.models import Mensalidade
+    from financeiro.services import resumo_financeiro
+    hoje = date.today()
+    competencia = date(hoje.year, hoje.month, 1)
+    Mensalidade.objects.filter(academia=request.academia).marcar_vencidas()
+    base = Mensalidade.objects.filter(academia=request.academia).select_related('matricula__atleta')
+    return render(request, 'portal/financeiro_dashboard.html', {
+        'competencia': competencia,
+        'resumo': resumo_financeiro(request.academia, competencia),
+        'proximos_vencimentos': base.filter(status='pendente', vencimento__range=(hoje, hoje + timedelta(days=7))).order_by('vencimento')[:8],
+        'atrasadas': base.filter(status='vencida').order_by('vencimento')[:8],
+    })
+
+
+@academia_required
+def financeiro_cobrancas(request):
+    from financeiro.models import Mensalidade
+    Mensalidade.objects.filter(academia=request.academia).marcar_vencidas()
+    query = request.GET.get('q', '').strip()
+    status = request.GET.get('status', '')
+    if status not in dict(Mensalidade.STATUS):
+        status = ''
+    mes = request.GET.get('mes', '')
+    cobrancas = Mensalidade.objects.filter(academia=request.academia).select_related('matricula__atleta').order_by('-vencimento', '-pk')
+    if query:
+        cobrancas = cobrancas.filter(matricula__atleta__nome__icontains=query)
+    if status:
+        cobrancas = cobrancas.filter(status=status)
+    if mes:
+        try:
+            ano_filtro, mes_filtro = (int(parte) for parte in mes.split('-', 1))
+            cobrancas = cobrancas.filter(competencia__year=ano_filtro, competencia__month=mes_filtro)
+        except ValueError:
+            mes = ''
+    return render(request, 'portal/financeiro_cobrancas.html', {
+        'page_obj': Paginator(cobrancas, 25).get_page(request.GET.get('page')),
+        'q': query, 'status': status, 'mes': mes, 'status_choices': Mensalidade.STATUS,
+    })
+
+
+@academia_required
+@require_http_methods(['POST'])
+def financeiro_marcar_pago(request, pk):
+    from financeiro.models import Mensalidade
+    from financeiro.services import registrar_pagamento
+    mensalidade = get_object_or_404(Mensalidade, pk=pk, academia=request.academia)
+    forma = request.POST.get('forma_pagamento', '')
+    if forma not in dict(Mensalidade.FORMAS_PAGAMENTO):
+        forma = ''
+    try:
+        registrar_pagamento(mensalidade, forma_pagamento=forma)
+    except ValueError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, f'Mensalidade de {mensalidade.matricula.atleta.nome} marcada como paga.')
+    return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
+
+
+@academia_required
+@require_http_methods(['POST'])
+def financeiro_gerar_pix(request, pk):
+    from financeiro.models import Mensalidade
+    from integracoes.asaas.client import AsaasAPIError
+    from integracoes.asaas.services import criar_cobranca_asaas
+    mensalidade = get_object_or_404(Mensalidade, pk=pk, academia=request.academia)
+    try:
+        criar_cobranca_asaas(mensalidade)
+    except (ValueError, AsaasAPIError) as error:
+        messages.error(request, f'Não foi possível gerar a cobrança Pix: {error}')
+    else:
+        messages.success(request, 'Cobrança Pix gerada no Asaas.')
+    return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')

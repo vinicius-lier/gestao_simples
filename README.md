@@ -16,7 +16,8 @@ Sistema de gestão para academias (ex: academias de artes marciais), construído
 | `atletas` | Atletas e seus responsáveis financeiros |
 | `modalidades` | Modalidades oferecidas (lutas, esportes), suas graduações/faixas, professores e turmas |
 | `matriculas` | Vínculo entre um atleta, uma modalidade/turma e o valor da mensalidade |
-| `financeiro` | Mensalidades geradas a partir das matrículas |
+| `financeiro` | Mensalidades geradas a partir das matrículas; painel, cobranças e pagamentos no portal |
+| `integracoes` | Cliente e serviços do Asaas (clientes, cobrança Pix, webhook de pagamento) — não é um app Django, é uma lib interna |
 | `config` | Configurações do projeto Django (settings, urls, wsgi/asgi) |
 
 ### Modelo de dados
@@ -30,7 +31,7 @@ Todas as entidades principais pertencem a uma `Academia`, o que permite operar m
 - **Graduacao**: graduação/faixa de uma modalidade, com ordem de evolução. Cadastrada dentro da própria modalidade.
 - **Turma**: turma de uma modalidade, com unidade/polo, professor responsável, dias da semana, horário, local, valor de referência da mensalidade e dia de vencimento.
 - **Matricula**: liga um atleta a uma modalidade (e opcionalmente turma). Valor de mensalidade e dia de vencimento vêm da turma e podem ser ajustados por matrícula.
-- **Mensalidade**: cobrança mensal gerada a partir de uma matrícula, com competência, vencimento, status (`pendente`, `paga`, `vencida`, `cancelada`, `isenta`) e campo `asaas_payment_id` (preparado para integração com o [Asaas](https://www.asaas.com/)).
+- **Mensalidade**: cobrança mensal gerada a partir de uma matrícula, com competência, vencimento, status (`pendente`, `paga`, `vencida`, `cancelada`, `isenta`), `forma_pagamento` e `asaas_payment_id`. Integrada ao [Asaas](https://www.asaas.com/) (cliente, cobrança Pix e webhook de confirmação de pagamento — ver `MVP.md`).
 
 ## Como rodar localmente
 

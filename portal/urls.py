@@ -14,6 +14,10 @@ urlpatterns = [
     path('alunos/<int:pk>/', views.detalhe, name='detalhe'),
     path('alunos/<int:pk>/editar/', views.aluno_form, name='editar'),
     path('alunos/<int:pk>/matriculas/<int:matricula_pk>/editar/', views.aluno_form, name='editar_matricula'),
+    path('financeiro/', views.financeiro_dashboard, name='financeiro'),
+    path('financeiro/cobrancas/', views.financeiro_cobrancas, name='financeiro_cobrancas'),
+    path('financeiro/cobrancas/<int:pk>/pagar/', views.financeiro_marcar_pago, name='financeiro_marcar_pago'),
+    path('financeiro/cobrancas/<int:pk>/pix/', views.financeiro_gerar_pix, name='financeiro_gerar_pix'),
 ]
 
 for tipo in ('unidades', 'professores', 'turmas', 'modalidades'):

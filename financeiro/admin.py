@@ -10,6 +10,7 @@ class MensalidadeAdmin(admin.ModelAdmin):
         "valor",
         "vencimento",
         "status",
+        "forma_pagamento",
         "pago_em",
     )
 

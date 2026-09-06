@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -140,3 +141,8 @@ LOGOUT_REDIRECT_URL = 'portal:login'
 # Bootstrap usa "danger" para erro
 from django.contrib.messages import constants as _messages  # noqa: E402
 MESSAGE_TAGS = {_messages.ERROR: 'danger'}
+
+# Token do webhook do Asaas (Configurações > Integrações > Webhooks no
+# painel do Asaas). Sem isso configurado, o endpoint fica aberto — use só
+# em desenvolvimento.
+ASAAS_WEBHOOK_TOKEN = os.getenv('ASAAS_WEBHOOK_TOKEN', '')
