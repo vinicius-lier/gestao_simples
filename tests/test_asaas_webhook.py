@@ -11,7 +11,11 @@ from matriculas.models import Matricula
 from modalidades.models import Modalidade
 
 
+@override_settings(ASAAS_WEBHOOK_TOKEN="")
 class WebhookAsaasTests(TestCase):
+    """Sem token por padrão nestes testes — independente do .env local
+    de quem está rodando a suíte."""
+
     def setUp(self):
         self.academia = Academia.objects.create(nome="Academia Teste", cnpj="WH1")
         self.atleta = Atleta.objects.create(academia=self.academia, nome="Atleta")
