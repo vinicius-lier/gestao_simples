@@ -35,6 +35,64 @@ Todas as entidades principais pertencem a uma `Academia`, o que permite operar m
 
 ## Como rodar localmente
 
+### PostgreSQL
+
+A conexão é configurada pelas variáveis de `.env.example`. Transfira o bloco
+do banco para seu `.env`, preservando as credenciais das outras integrações,
+e defina uma senha forte em `POSTGRES_PASSWORD`.
+
+Com Docker Desktop instalado e iniciado, execute no PowerShell:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+docker compose up -d --wait db
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py createsuperuser
+.\.venv\Scripts\python.exe manage.py runserver
+```
+
+O Compose cria o banco e o usuário na primeira inicialização e conserva os
+dados no volume `postgres_data`. Alterar a senha no `.env` depois disso não
+altera a senha do usuário já criado. Não execute `docker compose down -v`
+se precisar preservar os dados. O serviço fica acessível apenas nesta máquina.
+
+Para um servidor PostgreSQL existente, dispense o Compose e preencha host,
+porta, banco, usuário e senha fornecidos pelo administrador/provedor.
+Em produção, configure `POSTGRES_SSLMODE` conforme o provedor; `verify-full`
+valida o certificado e o hostname e exige uma CA confiável configurada no cliente.
+O Compose é destinado ao desenvolvimento local. O usuário criado pela imagem
+é administrador; em produção utilize uma credencial restrita ao banco da aplicação.
+
+### Transferir dados do SQLite
+
+Faça backup de `db.sqlite3` e interrompa as escritas durante a transferência.
+Use um PostgreSQL novo/vazio. Com o `.env` já configurado para PostgreSQL,
+execute no PowerShell (não crie um superusuário no destino antes da importação):
+
+```powershell
+$env:DB_ENGINE = 'sqlite'
+.\.venv\Scripts\python.exe manage.py dumpdata --all --natural-foreign --natural-primary --exclude contenttypes --exclude auth.permission --output dados-migracao.json
+Remove-Item Env:DB_ENGINE
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py loaddata dados-migracao.json
+.\.venv\Scripts\python.exe manage.py check --database default
+```
+
+Pare se qualquer comando falhar. Confira login, cadastros, matrículas e valores
+financeiros antes de liberar novas escritas. A exportação contém dados pessoais
+e hashes de senha; mantenha-a protegida e fora do Git. O SQLite original não é
+apagado. Para voltar a usá-lo, configure `DB_ENGINE=sqlite`; escritas feitas no
+PostgreSQL não são copiadas de volta automaticamente.
+
+Sem `DB_ENGINE`, o projeto mantém SQLite por compatibilidade com ambientes
+existentes. Esta etapa prepara o banco; a publicação ainda requer revisar
+`SECRET_KEY`, `DEBUG`, hosts, HTTPS, arquivos estáticos e backups.
+
+Referências: [Django e PostgreSQL](https://docs.djangoproject.com/en/dev/ref/databases/#postgresql-notes)
+e [instalação do Psycopg](https://www.psycopg.org/psycopg3/docs/basic/install.html).
+
+### SQLite (alternativa local)
+
 ```bash
 # criar e ativar ambiente virtual
 python -m venv .venv
