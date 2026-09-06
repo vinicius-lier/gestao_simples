@@ -264,7 +264,8 @@ def financeiro_pix_qrcode(request, pk):
     from integracoes.asaas.client import AsaasAPIError
     from integracoes.asaas.services import obter_pix_mensalidade
     mensalidade = get_object_or_404(
-        Mensalidade.objects.select_related('matricula__atleta'), pk=pk, academia=request.academia
+        Mensalidade.objects.select_related('matricula__atleta', 'matricula__modalidade', 'matricula__unidade'),
+        pk=pk, academia=request.academia,
     )
     pix, erro = None, None
     if not mensalidade.asaas_payment_id:

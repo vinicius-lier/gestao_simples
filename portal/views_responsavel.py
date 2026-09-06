@@ -60,7 +60,7 @@ def responsavel_painel(request):
             'aluno': aluno,
             'mensalidades': Mensalidade.objects.filter(
                 matricula__atleta=aluno, academia_id=request.responsavel.academia_id
-            ).order_by('-competencia')[:12],
+            ).select_related('matricula__modalidade').order_by('-competencia')[:12],
         }
         for aluno in alunos
     ]
@@ -73,7 +73,7 @@ def responsavel_pagar(request, pk):
     from integracoes.asaas.services import criar_cobranca_multipla_asaas, obter_pix_mensalidade
 
     mensalidade = get_object_or_404(
-        Mensalidade.objects.select_related('matricula__atleta'),
+        Mensalidade.objects.select_related('matricula__atleta', 'matricula__modalidade', 'matricula__unidade'),
         pk=pk,
         academia_id=request.responsavel.academia_id,
         matricula__atleta__responsavel_financeiro=request.responsavel,
