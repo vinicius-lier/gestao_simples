@@ -580,67 +580,65 @@ strong {
 }
 
 /* ============================================================
-   Origem do nome — faixa escura
+   O ambiente da escola — composição fotográfica editorial
    ============================================================ */
-.origin {
-  position: relative;
-  overflow: hidden;
-  background: var(--color-ink);
-  color: #d9d6cf;
+.environment {
+  background: var(--color-surface);
+  border-block: 1px solid var(--color-border);
 }
 
-.origin .eyebrow {
-  color: #f0c9c9;
-}
-
-.origin__inner {
+.environment__inner {
   display: grid;
   gap: var(--space-xl);
   align-items: center;
 }
 
-.origin__title {
-  color: #fff;
-  font-size: var(--fs-h2);
-}
-
-.origin__text {
+.environment__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
   margin-top: var(--space-md);
-  line-height: var(--lh-relaxed);
-}
-
-.origin__quote {
-  margin-top: var(--space-lg);
-  padding-left: var(--space-md);
-  border-left: 2px solid var(--color-primary);
-  font-family: var(--font-display);
-  font-size: var(--fs-h3);
-  font-style: italic;
-  color: #fff;
-}
-
-.origin__context {
-  margin-top: var(--space-md);
+  padding: 0;
   font-size: var(--fs-small);
-  color: #9a968d;
+  color: var(--color-muted);
 }
 
-.origin__media .media-placeholder {
-  aspect-ratio: 3 / 4;
-  background: linear-gradient(160deg, #2a2a2a, #1c1c1c);
+.environment__list li {
+  position: relative;
+  padding-left: 1.1rem;
 }
 
-.origin__media .media-placeholder__tag {
-  background: rgba(0, 0, 0, 0.5);
-  color: #cfcbc2;
+.environment__list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.5em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
 }
 
-.origin__sun {
-  width: 260px;
-  height: 260px;
-  bottom: -120px;
-  left: -100px;
-  opacity: 0.16;
+.environment__collage {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  grid-template-rows: repeat(2, minmax(140px, 1fr));
+  gap: var(--space-xs);
+  height: clamp(320px, 46vw, 440px);
+}
+
+.environment__figure {
+  overflow: hidden;
+  border-radius: var(--radius-md);
+}
+
+.environment__figure--tall {
+  grid-row: span 2;
+}
+
+.environment__figure .media-placeholder {
+  height: 100%;
+  aspect-ratio: auto;
 }
 
 /* ============================================================
@@ -949,6 +947,42 @@ strong {
 
 .lightbox__close:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+
+/* ============================================================
+   Resultados — faixa de valores (sem estatísticas inventadas)
+   ============================================================ */
+.results {
+  background: var(--color-bg);
+}
+
+.values-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem clamp(1.5rem, 5vw, 3.5rem);
+  margin-top: var(--space-lg);
+  padding: 0;
+}
+
+.values-strip li {
+  position: relative;
+  font-family: var(--font-display);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+
+.values-strip li:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  right: calc(clamp(1.5rem, 5vw, 3.5rem) / -2 - 3px);
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(50%, -50%);
+  border-radius: 50%;
+  background: var(--color-primary);
 }
 
 /* ============================================================
