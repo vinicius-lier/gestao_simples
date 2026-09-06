@@ -244,14 +244,14 @@ def financeiro_marcar_pago(request, pk):
 def financeiro_gerar_pix(request, pk):
     from financeiro.models import Mensalidade
     from integracoes.asaas.client import AsaasAPIError
-    from integracoes.asaas.services import criar_cobranca_asaas
+    from integracoes.asaas.services import criar_cobranca_multipla_asaas
     mensalidade = get_object_or_404(Mensalidade, pk=pk, academia=request.academia)
     try:
-        criar_cobranca_asaas(mensalidade)
+        criar_cobranca_multipla_asaas(mensalidade)
     except (ValueError, AsaasAPIError) as error:
-        messages.error(request, f'Não foi possível gerar a cobrança Pix: {error}')
+        messages.error(request, f'Não foi possível gerar a cobrança: {error}')
     else:
-        messages.success(request, 'Cobrança Pix gerada no Asaas.')
+        messages.success(request, 'Cobrança gerada no Asaas (Pix, boleto e cartão).')
     return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
 

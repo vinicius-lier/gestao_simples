@@ -104,7 +104,7 @@ class FinanceiroPortalTests(TestCase):
 
     @patch("integracoes.asaas.services.AsaasClient")
     @patch("integracoes.asaas.services.sincronizar_responsavel_asaas")
-    def test_gerar_pix_cria_cobranca_no_asaas(self, mock_sincronizar, mock_client_class):
+    def test_gerar_cobranca_multipla_no_asaas(self, mock_sincronizar, mock_client_class):
         mock_sincronizar.return_value = "cus_123"
         mock_client_class.return_value.criar_cobranca.return_value = {"id": "pay_xyz"}
 
@@ -113,29 +113,34 @@ class FinanceiroPortalTests(TestCase):
         self.assertEqual(resposta.status_code, 302)
         self.pendente.refresh_from_db()
         self.assertEqual(self.pendente.asaas_payment_id, "pay_xyz")
+        self.assertEqual(
+            mock_client_class.return_value.criar_cobranca.call_args.kwargs["billing_type"], "UNDEFINED"
+        )
 
     def test_gerar_pix_sem_responsavel_mostra_erro_sem_quebrar(self):
         self.atleta.responsavel_financeiro = None
         self.atleta.save(update_fields=["responsavel_financeiro"])
         resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pix/", {}, follow=True)
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "Não foi possível gerar a cobrança Pix")
+        self.assertContains(resposta, "Não foi possível gerar a cobrança:")
 
     def test_lista_cobrancas_mostra_link_do_qrcode_so_com_cobranca_gerada(self):
         html = self.client.get("/financeiro/cobrancas/").content.decode("utf8")
-        self.assertNotIn("Ver QR Code", html)
-        self.assertIn("Gerar Pix", html)
+        self.assertNotIn("Ver cobrança", html)
+        self.assertIn("Gerar cobrança", html)
 
         self.pendente.asaas_payment_id = "pay_abc"
         self.pendente.save(update_fields=["asaas_payment_id"])
         html = self.client.get("/financeiro/cobrancas/").content.decode("utf8")
-        self.assertIn("Ver QR Code", html)
+        self.assertIn("Ver cobrança", html)
         self.assertIn(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/", html)
 
     @patch("integracoes.asaas.services.AsaasClient")
-    def test_tela_do_pix_mostra_qrcode_e_codigo_copia_e_cola(self, mock_client_class):
+    def test_tela_do_pix_mostra_qrcode_boleto_e_cartao(self, mock_client_class):
         self.pendente.asaas_payment_id = "pay_abc"
-        self.pendente.save(update_fields=["asaas_payment_id"])
+        self.pendente.asaas_bank_slip_url = "https://sandbox.asaas.com/b/abc"
+        self.pendente.asaas_invoice_url = "https://sandbox.asaas.com/i/abc"
+        self.pendente.save(update_fields=["asaas_payment_id", "asaas_bank_slip_url", "asaas_invoice_url"])
         mock_client_class.return_value.obter_pix_qrcode.return_value = {
             "payload": "00020126...copia-e-cola",
             "encodedImage": "aW1hZ2Vt",
@@ -148,6 +153,9 @@ class FinanceiroPortalTests(TestCase):
         self.assertContains(resposta, "00020126...copia-e-cola")
         self.assertContains(resposta, "aW1hZ2Vt")
         self.assertContains(resposta, "detalhe-conteudo")
+        self.assertContains(resposta, "https://sandbox.asaas.com/b/abc")
+        self.assertContains(resposta, "https://sandbox.asaas.com/i/abc")
+        self.assertContains(resposta, "Pagar com cartão")
 
     def test_tela_do_pix_sem_cobranca_mostra_mensagem_amigavel(self):
         resposta = self.client.get(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/")
