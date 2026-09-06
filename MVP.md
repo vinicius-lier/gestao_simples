@@ -53,9 +53,11 @@ Os testes do portal cobrem autenticação, academia ausente/inativa, isolamento,
 
 ## Polos, professores e turmas
 
-No menu do sistema, administradores podem cadastrar e editar unidades/polos, professores, modalidades (lutas, esportes), graduações/faixas e turmas. Turmas vinculam polo, modalidade e professor. Cadastros antigos foram vinculados à Matriz; nomes de professores existentes foram preservados e associados ao novo cadastro.
+No menu do sistema, administradores podem cadastrar e editar unidades/polos, professores, modalidades (lutas, esportes) e turmas. Turmas vinculam polo, modalidade e professor. Cadastros antigos foram vinculados à Matriz; nomes de professores existentes foram preservados e associados ao novo cadastro.
 
 O antigo cadastro de “serviços” passou a se chamar **modalidade** em toda a interface e no código (app `modalidades`, model `Modalidade`, `Turma.modalidade`, `Matricula.modalidade`). O rótulo de app interno permanece `servicos` apenas para preservar o histórico de migrations; as tabelas continuam `servicos_*`.
+
+A **modalidade** guarda só o nome e a descrição — nada de valores ou horários. As **graduações/faixas** são geridas dentro da própria modalidade (seção inline no cadastro dela; a linha em branco no fim adiciona uma faixa, “Excluir” remove). **Valor de referência da mensalidade, dia de vencimento, horário e dias da semana ficam na turma.** Na matrícula do aluno, valor e vencimento são preenchidos a partir da turma escolhida e continuam editáveis para exceções (bolsa, desconto).
 
 Superusuários ou usuários com a opção “administrador da academia” no acesso podem gerenciar esses cadastros. Um administrador pode abrir o detalhe do aluno e criar outra matrícula; transferir uma matrícula de polo também exige administrador. Os filtros de acesso atuais continuam sendo por Academia; permissões de visualização individuais por polo ainda não estão implementadas.
 

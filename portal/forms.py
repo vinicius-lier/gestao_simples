@@ -116,14 +116,31 @@ class MatriculaForm(forms.ModelForm):
         self.fields['unidade'].required = self.fields['unidade'].queryset.exists()
         self.fields['modalidade'].queryset = Modalidade.objects.filter(academia=academia)
         self.fields['turma'].queryset = Turma.objects.filter(academia=academia, modalidade__academia=academia)
+        # Valor e vencimento vêm da turma; ficam editáveis para exceções (bolsa, desconto).
+        self.fields['valor_mensalidade'].required = False
+        self.fields['dia_vencimento'].required = False
+        self.fields['valor_mensalidade'].help_text = 'Em branco: usa o valor da turma.'
+        self.fields['dia_vencimento'].help_text = 'Em branco: usa o vencimento da turma.'
         for field in self.fields.values():
             field.widget.attrs['class'] = 'form-check-input' if isinstance(field.widget, forms.CheckboxInput) else 'form-select' if isinstance(field.widget, forms.Select) else 'form-control'
 
     def clean_valor_mensalidade(self):
-        value = self.cleaned_data['valor_mensalidade']
-        if value < 0:
+        value = self.cleaned_data.get('valor_mensalidade')
+        if value is not None and value < 0:
             raise ValidationError('O valor não pode ser negativo.')
         return value
+
+    def clean(self):
+        data = super().clean()
+        turma = data.get('turma')
+        if data.get('valor_mensalidade') is None:
+            if turma and turma.valor_mensalidade is not None:
+                data['valor_mensalidade'] = turma.valor_mensalidade
+            else:
+                self.add_error('valor_mensalidade', 'Informe o valor ou escolha uma turma com valor definido.')
+        if not data.get('dia_vencimento'):
+            data['dia_vencimento'] = turma.dia_vencimento if turma else 10
+        return data
 
 
 class CadastroAcademiaForm(forms.ModelForm):
@@ -162,39 +179,90 @@ class ProfessorForm(CadastroAcademiaForm):
         fields = ('nome', 'email', 'telefone', 'faixa', 'graduacao', 'ativo')
 
 
-class GraduacaoForm(CadastroAcademiaForm):
-    class Meta:
-        model = Graduacao
-        fields = ('modalidade', 'nome', 'ordem', 'ativo')
-        labels = {'nome': 'Nome da faixa / graduação', 'ordem': 'Ordem de evolução'}
-        help_texts = {'nome': 'Ex.: Branca, Azul, Preta — 1º dan. Use a nomenclatura da modalidade.'}
-
-    def __init__(self, *args, academia, **kwargs):
-        super().__init__(*args, academia=academia, **kwargs)
-        self.fields['modalidade'].queryset = Modalidade.objects.filter(academia=academia)
-
-
 class TurmaForm(CadastroAcademiaForm):
     class Meta:
         model = Turma
-        fields = ('nome', 'unidade', 'modalidade', 'docente', 'dias_semana', 'horario', 'local', 'ativo')
+        fields = ('nome', 'unidade', 'modalidade', 'docente', 'dias_semana', 'horario', 'local', 'valor_mensalidade', 'dia_vencimento', 'ativo')
+        labels = {
+            'horario': 'Horário',
+            'dias_semana': 'Dias da semana',
+            'valor_mensalidade': 'Valor da mensalidade (R$)',
+            'dia_vencimento': 'Dia de vencimento',
+        }
         widgets = {'horario': forms.TimeInput(format='%H:%M', attrs={'type': 'time'})}
+
+    def __init__(self, *args, academia, **kwargs):
+        super().__init__(*args, academia=academia, **kwargs)
+        self.fields['valor_mensalidade'].required = False
+        self.fields['dia_vencimento'].required = False
+
+    def clean_valor_mensalidade(self):
+        valor = self.cleaned_data.get('valor_mensalidade')
+        if valor is not None and valor < 0:
+            raise ValidationError('O valor não pode ser negativo.')
+        return valor
+
+    def clean_dia_vencimento(self):
+        dia = self.cleaned_data.get('dia_vencimento') or 10
+        if not 1 <= dia <= 31:
+            raise ValidationError('Informe um dia entre 1 e 31.')
+        return dia
 
 
 class ModalidadeForm(CadastroAcademiaForm):
     class Meta:
         model = Modalidade
-        fields = ('nome', 'descricao', 'valor_padrao', 'dia_vencimento', 'ativo')
-        labels = {'descricao': 'Descrição', 'valor_padrao': 'Valor padrão da mensalidade (R$)', 'dia_vencimento': 'Dia de vencimento'}
+        fields = ('nome', 'descricao', 'ativo')
+        labels = {'descricao': 'Descrição'}
+        help_texts = {'nome': 'Ex.: Judô, Jiu-jítsu, Muay Thai, Natação. Valores e horários ficam nas turmas.'}
 
-    def clean_valor_padrao(self):
-        valor = self.cleaned_data['valor_padrao']
-        if valor < 0:
-            raise ValidationError('O valor não pode ser negativo.')
-        return valor
 
-    def clean_dia_vencimento(self):
-        dia = self.cleaned_data['dia_vencimento']
-        if not 1 <= dia <= 31:
-            raise ValidationError('Informe um dia entre 1 e 31.')
-        return dia
+class GraduacaoInlineForm(forms.ModelForm):
+    class Meta:
+        model = Graduacao
+        fields = ('nome', 'ordem', 'ativo')
+        labels = {'nome': 'Faixa / graduação', 'ordem': 'Ordem'}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['ordem'].required = False
+        self.fields['ordem'].initial = None
+        self.fields['ativo'].initial = True
+
+    def has_changed(self):
+        # Linha nova só conta se o nome foi preenchido; a linha em branco do fim é ignorada.
+        if self.instance.pk:
+            return super().has_changed()
+        return bool((self.data.get(self.add_prefix('nome')) or '').strip())
+
+    def clean_ordem(self):
+        return self.cleaned_data.get('ordem') or 1
+
+
+class BaseGraduacaoFormSet(forms.BaseInlineFormSet):
+    """Formset das faixas exibido dentro do cadastro da modalidade."""
+
+    def __init__(self, *args, academia=None, **kwargs):
+        self.academia = academia
+        super().__init__(*args, **kwargs)
+
+    def add_fields(self, form, index):
+        super().add_fields(form, index)
+        for field in form.fields.values():
+            field.widget.attrs['class'] = 'form-check-input' if isinstance(field.widget, forms.CheckboxInput) else 'form-control'
+
+    def save(self, commit=True):
+        for form in self.forms:
+            if form.instance.pk is None:
+                form.instance.academia = self.academia
+        return super().save(commit=commit)
+
+
+GraduacaoFormSet = forms.inlineformset_factory(
+    Modalidade,
+    Graduacao,
+    form=GraduacaoInlineForm,
+    formset=BaseGraduacaoFormSet,
+    extra=1,
+    can_delete=True,
+)

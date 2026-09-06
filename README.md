@@ -26,10 +26,10 @@ Todas as entidades principais pertencem a uma `Academia`, o que permite operar m
 - **Academia**: nome, nome fantasia, CNPJ, contato.
 - **Responsavel**: responsável financeiro, vinculado a uma academia.
 - **Atleta**: vinculado a uma academia e, opcionalmente, a um responsável financeiro. Possui status (`ativo`, `inativo`, `trancado`) e faixa.
-- **Modalidade**: modalidade (luta ou esporte) oferecida pela academia, com valor padrão e dia de vencimento.
-- **Graduacao**: graduação/faixa de uma modalidade, com ordem de evolução.
-- **Turma**: turma de uma modalidade, com unidade/polo, professor responsável, dias da semana, horário e local.
-- **Matricula**: liga um atleta a uma modalidade (e opcionalmente turma), define valor de mensalidade e dia de vencimento próprios.
+- **Modalidade**: modalidade (luta ou esporte) oferecida pela academia — apenas nome e descrição. Valores e horários ficam nas turmas.
+- **Graduacao**: graduação/faixa de uma modalidade, com ordem de evolução. Cadastrada dentro da própria modalidade.
+- **Turma**: turma de uma modalidade, com unidade/polo, professor responsável, dias da semana, horário, local, valor de referência da mensalidade e dia de vencimento.
+- **Matricula**: liga um atleta a uma modalidade (e opcionalmente turma). Valor de mensalidade e dia de vencimento vêm da turma e podem ser ajustados por matrícula.
 - **Mensalidade**: cobrança mensal gerada a partir de uma matrícula, com competência, vencimento, status (`pendente`, `paga`, `vencida`, `cancelada`, `isenta`) e campo `asaas_payment_id` (preparado para integração com o [Asaas](https://www.asaas.com/)).
 
 ## Como rodar localmente

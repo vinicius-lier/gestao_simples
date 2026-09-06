@@ -25,8 +25,6 @@ class GerarMensalidadesTests(TestCase):
         self.modalidade = Modalidade.objects.create(
             academia=self.academia,
             nome="Jiu-jitsu",
-            valor_padrao=Decimal("150.00"),
-            dia_vencimento=10,
         )
         self.matricula = Matricula.objects.create(
             academia=self.academia,
@@ -156,8 +154,6 @@ class MensalidadeTestCase(TestCase):
         self.modalidade = Modalidade.objects.create(
             academia=self.academia,
             nome="Judô Infantil",
-            valor_padrao=Decimal("150.00"),
-            dia_vencimento=10,
         )
 
         self.matricula = Matricula.objects.create(

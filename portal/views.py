@@ -111,28 +111,37 @@ def pagina_publica(request):
 @require_http_methods(['GET', 'POST'])
 def cadastros(request, tipo, pk=None, novo=False):
     from academias.models import Unidade
-    from modalidades.models import Professor, Turma, Modalidade, Graduacao
-    from .forms import UnidadeForm, ProfessorForm, TurmaForm, ModalidadeForm, GraduacaoForm
+    from modalidades.models import Professor, Turma, Modalidade
+    from .forms import UnidadeForm, ProfessorForm, TurmaForm, ModalidadeForm, GraduacaoFormSet
     cadastro = {
         'unidades': (Unidade, UnidadeForm, 'Unidades / polos', 'unidade'),
         'professores': (Professor, ProfessorForm, 'Professores', 'professor'),
         'turmas': (Turma, TurmaForm, 'Turmas', 'turma'),
         'modalidades': (Modalidade, ModalidadeForm, 'Modalidades', 'modalidade'),
-        'graduacoes': (Graduacao, GraduacaoForm, 'Graduações / faixas', 'graduação'),
     }
     model, form_class, titulo, singular = cadastro[tipo]
     objetos = model.objects.filter(academia=request.academia).order_by('nome')
-    if tipo == 'graduacoes':
-        objetos = objetos.filter(modalidade__academia=request.academia).order_by('modalidade__nome', 'ordem', 'nome')
     if not novo and pk is None:
         return render(request, 'portal/cadastros.html', {'objetos': objetos, 'tipo': tipo, 'titulo': titulo})
     if not request.administrador_academia:
         raise PermissionDenied('Somente o administrador da academia pode alterar estes cadastros.')
     instance = get_object_or_404(objetos, pk=pk) if pk else None
-    form = form_class(request.POST if request.method == 'POST' else None, instance=instance, academia=request.academia)
-    if request.method == 'POST' and form.is_valid():
+    data = request.POST if request.method == 'POST' else None
+    form = form_class(data, instance=instance, academia=request.academia)
+    faixas = None
+    if tipo == 'modalidades':
+        faixas = GraduacaoFormSet(data, instance=instance or Modalidade(), prefix='faixa', academia=request.academia)
+    valido = form.is_valid()
+    if faixas is not None:
+        valido = faixas.is_valid() and valido
+    if request.method == 'POST' and valido:
         with transaction.atomic():
             obj = form.save()
+            if faixas is not None:
+                faixas.instance = obj
+                faixas.save()
         messages.success(request, f'{obj.nome}: cadastro salvo.')
         return redirect('portal:' + tipo)
-    return render(request, 'portal/cadastro_form.html', {'form': form, 'tipo': tipo, 'titulo': titulo, 'singular': singular, 'objeto': instance})
+    return render(request, 'portal/cadastro_form.html', {
+        'form': form, 'faixas': faixas, 'tipo': tipo, 'titulo': titulo, 'singular': singular, 'objeto': instance,
+    })

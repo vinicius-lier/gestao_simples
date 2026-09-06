@@ -31,15 +31,11 @@ class MatriculaTestCase(TestCase):
         self.modalidade_a = Modalidade.objects.create(
             academia=self.academia_a,
             nome="Judô Infantil",
-            valor_padrao=Decimal("150.00"),
-            dia_vencimento=10,
         )
 
         self.modalidade_b = Modalidade.objects.create(
             academia=self.academia_b,
             nome="Judô Adulto",
-            valor_padrao=Decimal("180.00"),
-            dia_vencimento=10,
         )
 
         self.turma_a = Turma.objects.create(

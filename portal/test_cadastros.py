@@ -14,7 +14,7 @@ class NovosCadastrosTests(TestCase):
         self.acesso = AcessoAcademia.objects.create(usuario=self.user, academia=self.a, administrador=True)
         self.unit = Unidade.objects.create(academia=self.a, nome='Matriz')
         self.unit2 = Unidade.objects.create(academia=self.a, nome='Polo 2')
-        self.s = Modalidade.objects.create(academia=self.a, nome='Judô', valor_padrao=150)
+        self.s = Modalidade.objects.create(academia=self.a, nome='Judô')
         self.p = Professor.objects.create(academia=self.a, nome='Professora')
         self.client.force_login(self.user)
 
@@ -88,24 +88,57 @@ class NovosCadastrosTests(TestCase):
         self.assertEqual(self.client.post('/alunos/novo/',data).status_code,200)
         self.assertFalse(Atleta.objects.exists())
 
+    def test_matricula_puxa_valor_e_vencimento_da_turma(self):
+        turma=Turma.objects.create(academia=self.a,modalidade=self.s,unidade=self.unit,nome='T1',valor_mensalidade='222.00',dia_vencimento=7)
+        data=self.payload();data['matricula-turma']=turma.pk
+        data['matricula-valor_mensalidade']='';data['matricula-dia_vencimento']=''
+        self.assertEqual(self.client.post('/alunos/novo/',data).status_code,302)
+        m=Atleta.objects.get().matriculas.get()
+        self.assertEqual((str(m.valor_mensalidade),m.dia_vencimento),('222.00',7))
 
-    def test_modalidade_criar_editar_validar_e_isolar(self):
-        data={'nome':'Judô adulto','descricao':'Aulas regulares','valor_padrao':'180.00','dia_vencimento':'10','ativo':'on'}
-        self.assertEqual(self.client.post('/modalidades/novo/',data).status_code,302)
-        modalidade=Modalidade.objects.get(nome='Judô adulto')
-        self.assertEqual(modalidade.academia,self.a)
-        self.assertContains(self.client.get('/modalidades/'),'Judô adulto')
-        data['valor_padrao']='200.00'
-        self.assertEqual(self.client.post(f'/modalidades/{modalidade.pk}/editar/',data).status_code,302)
-        modalidade.refresh_from_db();self.assertEqual(modalidade.valor_padrao,200)
-        for changes in [{'dia_vencimento':'32'},{'valor_padrao':'-1'}]:
-            self.assertEqual(self.client.post('/modalidades/novo/',{**data,**changes}).status_code,200)
-        outro=Modalidade.objects.create(academia=self.b,nome='Modalidade secreta',valor_padrao=100)
-        self.assertNotContains(self.client.get('/modalidades/'),'Modalidade secreta')
-        self.assertEqual(self.client.get(f'/modalidades/{outro.pk}/editar/').status_code,404)
-        self.acesso.administrador=False;self.acesso.save()
-        self.assertEqual(self.client.post('/modalidades/novo/',data).status_code,403)
 
+    def faixas(self, *linhas, total=None, initial=0):
+        base = {'faixa-TOTAL_FORMS': str(total if total is not None else max(len(linhas), 1)),
+                'faixa-INITIAL_FORMS': str(initial), 'faixa-MIN_NUM_FORMS': '0', 'faixa-MAX_NUM_FORMS': '1000'}
+        for i, linha in enumerate(linhas):
+            for campo, valor in linha.items():
+                base[f'faixa-{i}-{campo}'] = valor
+        return base
+
+    def test_modalidade_so_tem_nome_sem_valores(self):
+        data = {'nome': 'Judô adulto', 'descricao': 'Aulas regulares', 'ativo': 'on', **self.faixas()}
+        self.assertEqual(self.client.post('/modalidades/novo/', data).status_code, 302)
+        modalidade = Modalidade.objects.get(nome='Judô adulto')
+        self.assertEqual(modalidade.academia, self.a)
+        self.assertFalse(hasattr(modalidade, 'valor_padrao'))
+        self.assertContains(self.client.get('/modalidades/'), 'Judô adulto')
+        data['nome'] = 'Judô kids'
+        self.assertEqual(self.client.post(f'/modalidades/{modalidade.pk}/editar/', data).status_code, 302)
+        modalidade.refresh_from_db()
+        self.assertEqual(modalidade.nome, 'Judô kids')
+        outro = Modalidade.objects.create(academia=self.b, nome='Modalidade secreta')
+        self.assertNotContains(self.client.get('/modalidades/'), 'Modalidade secreta')
+        self.assertEqual(self.client.get(f'/modalidades/{outro.pk}/editar/').status_code, 404)
+        self.acesso.administrador = False
+        self.acesso.save()
+        self.assertEqual(self.client.post('/modalidades/novo/', data).status_code, 403)
+
+    def test_graduacoes_inline_na_modalidade(self):
+        from modalidades.models import Graduacao
+        criar = {'nome': 'Judô', 'ativo': 'on', **self.faixas({'nome': 'Azul', 'ordem': '2', 'ativo': 'on'})}
+        self.assertEqual(self.client.post(f'/modalidades/{self.s.pk}/editar/', criar).status_code, 302)
+        faixa = Graduacao.objects.get(nome='Azul')
+        self.assertEqual((faixa.academia_id, faixa.modalidade_id), (self.a.pk, self.s.pk))
+        self.assertContains(self.client.get('/modalidades/'), '1 faixa')
+        editar = {'nome': 'Judô', 'ativo': 'on',
+                  **self.faixas({'id': faixa.pk, 'nome': 'Azul', 'ordem': '5', 'ativo': 'on'}, initial=1)}
+        self.assertEqual(self.client.post(f'/modalidades/{self.s.pk}/editar/', editar).status_code, 302)
+        faixa.refresh_from_db()
+        self.assertEqual(faixa.ordem, 5)
+        remover = {'nome': 'Judô', 'ativo': 'on',
+                   **self.faixas({'id': faixa.pk, 'nome': 'Azul', 'ordem': '5', 'DELETE': 'on'}, initial=1)}
+        self.assertEqual(self.client.post(f'/modalidades/{self.s.pk}/editar/', remover).status_code, 302)
+        self.assertFalse(Graduacao.objects.filter(pk=faixa.pk).exists())
 
     def test_professor_faixa_judo_e_graduacao_legada(self):
         from modalidades.models import Graduacao
@@ -121,23 +154,18 @@ class NovosCadastrosTests(TestCase):
         self.assertEqual(response.status_code,302)
         professor.refresh_from_db();self.assertEqual(professor.graduacao,'Faixa preta terceiro dan')
 
-    def test_graduacoes_por_modalidade_e_isolamento(self):
+    def test_professor_nao_aceita_faixa_de_outra_academia(self):
         from modalidades.models import Graduacao
-        data = {'modalidade': self.s.pk, 'nome': 'Azul', 'ordem': 2, 'ativo': 'on'}
-        self.assertEqual(self.client.post('/graduacoes/novo/', data).status_code, 302)
-        faixa = Graduacao.objects.get(nome='Azul')
-        self.assertContains(self.client.get('/graduacoes/'), 'Azul')
-        self.assertContains(self.client.get('/modalidades/'), 'Judô')
-        self.assertEqual(self.client.post('/graduacoes/novo/', data).status_code, 200)
-        outra = Modalidade.objects.create(academia=self.b, nome='Outra luta', valor_padrao=100)
-        self.assertEqual(self.client.post('/graduacoes/novo/', {**data, 'modalidade': outra.pk}).status_code, 200)
+        outra = Modalidade.objects.create(academia=self.b, nome='Outra luta')
         estrangeira = Graduacao.objects.create(academia=self.b, modalidade=outra, nome='Secreta')
-        self.assertEqual(self.client.get(f'/graduacoes/{estrangeira.pk}/editar/').status_code, 404)
         self.assertEqual(self.client.post('/professores/novo/', {'nome': 'Inválido', 'faixa': estrangeira.pk}).status_code, 200)
         self.assertFalse(Professor.objects.filter(nome='Inválido').exists())
-        self.assertEqual(self.client.post(f'/graduacoes/{faixa.pk}/editar/', {**data, 'ordem': 3}).status_code, 302)
-        faixa.refresh_from_db()
-        self.assertEqual(faixa.ordem, 3)
-        self.acesso.administrador = False
-        self.acesso.save()
-        self.assertEqual(self.client.post('/graduacoes/novo/', data).status_code, 403)
+
+    def test_turma_guarda_valor_e_horario(self):
+        data = {'nome': 'Adulto noite', 'unidade': self.unit.pk, 'modalidade': self.s.pk, 'docente': self.p.pk,
+                'horario': '19:30', 'dias_semana': 'Seg/Qua', 'valor_mensalidade': '180.00', 'dia_vencimento': '5', 'ativo': 'on'}
+        self.assertEqual(self.client.post('/turmas/novo/', data).status_code, 302)
+        turma = Turma.objects.get(nome='Adulto noite')
+        self.assertEqual((str(turma.valor_mensalidade), turma.dia_vencimento), ('180.00', 5))
+        self.assertEqual(self.client.post('/turmas/novo/', {**data, 'nome': 'X', 'valor_mensalidade': '-1'}).status_code, 200)
+        self.assertEqual(self.client.post('/turmas/novo/', {**data, 'nome': 'Y', 'dia_vencimento': '40'}).status_code, 200)

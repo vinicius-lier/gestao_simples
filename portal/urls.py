@@ -16,7 +16,7 @@ urlpatterns = [
     path('alunos/<int:pk>/matriculas/<int:matricula_pk>/editar/', views.aluno_form, name='editar_matricula'),
 ]
 
-for tipo in ('unidades', 'professores', 'turmas', 'modalidades', 'graduacoes'):
+for tipo in ('unidades', 'professores', 'turmas', 'modalidades'):
     urlpatterns += [
         path(f'{tipo}/', views.cadastros, {'tipo': tipo}, name=tipo),
         path(f'{tipo}/novo/', views.cadastros, {'tipo': tipo, 'novo': True}, name=f'{tipo}_novo'),

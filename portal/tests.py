@@ -17,8 +17,8 @@ class PortalTests(TestCase):
         self.b = Academia.objects.create(nome='Academia B', cnpj='2')
         self.user = get_user_model().objects.create_user('professor', password='senha-teste-123')
         AcessoAcademia.objects.create(usuario=self.user, academia=self.a)
-        self.s = Modalidade.objects.create(academia=self.a, nome='Judô', valor_padrao=150)
-        self.outro = Modalidade.objects.create(academia=self.b, nome='Segredo B', valor_padrao=200)
+        self.s = Modalidade.objects.create(academia=self.a, nome='Judô')
+        self.outro = Modalidade.objects.create(academia=self.b, nome='Segredo B')
         self.client.force_login(self.user)
         self.payload = {'nome': 'João', 'status': 'ativo', 'responsavel_nome': 'Maria',
                         'responsavel_cpf': '123.456.789-00', 'responsavel_whatsapp': '21999999999',
@@ -97,7 +97,7 @@ class PortalTests(TestCase):
         self.assertNotContains(self.client.get('/alunos/'), 'Aluno secreto')
 
     def test_validacoes_matricula(self):
-        turma = Turma.objects.create(academia=self.a, modalidade=Modalidade.objects.create(academia=self.a, nome='Outro', valor_padrao=10), nome='Outra')
+        turma = Turma.objects.create(academia=self.a, modalidade=Modalidade.objects.create(academia=self.a, nome='Outro'), nome='Outra')
         for changes in ({'matricula-dia_vencimento': 32}, {'matricula-valor_mensalidade': '-1'}, {'matricula-data_fim': '2026-08-01'}, {'matricula-turma': turma.pk}, {'data_nascimento': '2999-01-01'}):
             with self.subTest(changes=changes):
                 self.assertEqual(self.client.post('/alunos/novo/', {**self.payload, **changes}).status_code, 200)

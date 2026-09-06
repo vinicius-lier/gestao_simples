@@ -6,3 +6,13 @@
 
 /* Escola de Judô Mêiro Fukuda — original supplied emblem */
 .school-logo{width:56px;height:56px;object-fit:contain;flex-shrink:0;border-radius:50%;background:#fff}.sidebar .brand{padding:0;gap:9px;font-size:17px}.auth-header .brand{font-size:21px}.brand-sub{color:#77777f}.login-school-logo{display:block;width:100px;height:100px;object-fit:contain;background:#fff;border-radius:50%;margin-bottom:28px}.login-story{background:#202024}.login-story h1 em{color:#fff;text-decoration:underline;text-decoration-color:#cd343d;text-decoration-thickness:4px;text-underline-offset:9px}.login-story:before,.login-story:after{border-color:#c62e3740}.stat-card.featured{background:#242428;border-color:#242428;border-top:3px solid #b5242c}.stat-card.featured strong{color:#fff}.sidebar-tip{border-left:2px solid #b5242c}.side-link.is-active{box-shadow:inset 3px 0 #b5242c}.btn-primary{--bs-btn-active-bg:#921b23;--bs-btn-active-border-color:#921b23}.form-check-input:checked{background-color:#b5242c;border-color:#b5242c}.school-logo,.login-school-logo{image-rendering:auto}@media(max-width:767px){.login-school-logo{width:72px;height:72px;margin-bottom:18px}.school-logo{width:46px;height:46px}}
+
+/* Faixas inline no cadastro da modalidade */
+.faixas-inline{border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:26px}
+.faixas-inline legend{font-size:16px;font-weight:700;padding:0;float:none;width:auto}
+.faixas-inline>.text-secondary{font-size:12px;margin:4px 0 14px}
+.faixas-rows{display:flex;flex-direction:column;gap:10px}
+.faixa-row{display:grid;grid-template-columns:2fr 90px auto auto;gap:14px;align-items:end;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fcfcfc}
+.faixa-row .field-group{margin:0}
+.faixa-row .field-group:has(input[type=checkbox]){align-self:center}
+@media(max-width:767px){.faixa-row{grid-template-columns:1fr 1fr}}

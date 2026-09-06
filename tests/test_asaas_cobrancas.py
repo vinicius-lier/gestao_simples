@@ -33,7 +33,6 @@ class CriarCobrancaAsaasTests(TestCase):
         self.modalidade = Modalidade.objects.create(
             academia=self.academia,
             nome="Jiu-jitsu",
-            valor_padrao=Decimal("150.00"),
         )
         self.matricula = Matricula.objects.create(
             academia=self.academia,

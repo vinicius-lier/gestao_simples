@@ -12,13 +12,6 @@ class Modalidade(models.Model):
     nome = models.CharField(max_length=150)
     descricao = models.TextField(blank=True)
 
-    valor_padrao = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-    )
-
-    dia_vencimento = models.PositiveSmallIntegerField(default=10)
-
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 
@@ -91,6 +84,15 @@ class Turma(models.Model):
     horario = models.TimeField(null=True, blank=True)
     local = models.CharField(max_length=150, blank=True)
 
+    valor_mensalidade = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Valor de referência da mensalidade desta turma.',
+    )
+    dia_vencimento = models.PositiveSmallIntegerField(default=10)
+
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(auto_now_add=True)
 
@@ -100,6 +102,10 @@ class Turma(models.Model):
         for campo in ('modalidade', 'unidade', 'docente'):
             if getattr(self, campo + '_id') and self.academia_id and getattr(self, campo).academia_id != self.academia_id:
                 erros[campo] = 'O cadastro pertence a outra academia.'
+        if self.valor_mensalidade is not None and self.valor_mensalidade < 0:
+            erros['valor_mensalidade'] = 'O valor não pode ser negativo.'
+        if not 1 <= self.dia_vencimento <= 31:
+            erros['dia_vencimento'] = 'O dia de vencimento deve estar entre 1 e 31.'
         if erros:
             raise ValidationError(erros)
 

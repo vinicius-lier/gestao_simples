@@ -7,8 +7,6 @@ class ModalidadeAdmin(admin.ModelAdmin):
     list_display = (
         "nome",
         "academia",
-        "valor_padrao",
-        "dia_vencimento",
         "ativo",
     )
 
@@ -32,6 +30,8 @@ class TurmaAdmin(admin.ModelAdmin):
         "professor",
         "dias_semana",
         "horario",
+        "valor_mensalidade",
+        "dia_vencimento",
         "ativo",
     )
 
