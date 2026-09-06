@@ -49,6 +49,7 @@ jobs:
           python-version: '3.12'
       - name: Validate application before connecting
         env:
+          DB_ENGINE: postgresql
           POSTGRES_DB: academia_ci
           POSTGRES_USER: academia_ci
           POSTGRES_HOST: 127.0.0.1

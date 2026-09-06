@@ -54,6 +54,7 @@ Mantenha/edite o `.env` diretamente no servidor com seu editor. N?o copie o
 DJANGO_DEBUG=false
 DJANGO_SECRET_KEY=<chave exclusiva, aleatoria, de pelo menos 50 caracteres>
 ALLOWED_HOSTS=<dominio-real>,localhost,127.0.0.1
+DB_ENGINE=postgresql
 POSTGRES_DB=<banco-existente>
 POSTGRES_USER=<usuario-do-banco>
 POSTGRES_PASSWORD=<senha-do-banco>

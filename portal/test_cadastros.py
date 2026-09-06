@@ -66,7 +66,7 @@ class NovosCadastrosTests(TestCase):
         self.acesso.save()
         casos = {
             f'/modalidades/{self.s.pk}/': ['Branca', 'Infantil'],
-            f'/turmas/{turma.pk}/': ['Judô', 'Matriz', 'Professora', 'R$ 170.00', '18:30'],
+            f'/turmas/{turma.pk}/': ['Judô', 'Matriz', 'Professora', 'R$ 170,00', '18:30'],
             f'/professores/{self.p.pk}/': ['Infantil'],
             f'/unidades/{self.unit.pk}/': ['Infantil'],
         }

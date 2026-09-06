@@ -65,10 +65,8 @@ O Compose é destinado ao desenvolvimento local. O usuário criado pela imagem
 
 ### Dados antigos do SQLite
 
-A configura??o atual usa exclusivamente PostgreSQL. `DB_ENGINE=sqlite` n?o
-altera mais o backend. Preserve o arquivo antigo e seu backup; para exportar
-seus dados ser? necess?rio um ambiente separado com a configura??o SQLite
-anterior, antes de importar para um PostgreSQL vazio. N?o execute migrations
+Use `DB_ENGINE=sqlite` no desenvolvimento e `DB_ENGINE=postgresql` na EC2.
+Preserve o SQLite e seu backup antes de transferir dados para PostgreSQL. N?o execute migrations
 esperando que elas transfiram automaticamente os dados do SQLite.
 
 Configure DJANGO_SECRET_KEY, DJANGO_DEBUG e as vari?veis POSTGRES_* do
@@ -78,3 +76,10 @@ Configure DJANGO_SECRET_KEY, DJANGO_DEBUG e as vari?veis POSTGRES_* do
 ## Status do projeto
 
 Projeto em estágio inicial. Até o momento existem apenas os modelos de dados e o cadastro via Django Admin — não há views/API pública nem frontend customizado.
+
+## Ambientes
+
+Use `.env.example.local` como referencia no Windows e `.env.example.production`
+na EC2. Se o `.env` ja existir, edite apenas as variaveis necessarias e preserve
+as credenciais. Nao sobrescreva o arquivo. A chave de desenvolvimento so e
+aceita com DEBUG=true. Consulte `deploy/README.md` para publicar.

@@ -43,7 +43,8 @@
 .status-cancelada{background:#f1f1f3;color:#888892}
 .status-isenta{background:#f3ecfb;color:#7a4fc9}
 .stat-card form{margin-top:14px}
-.cobranca-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end}
+.cobranca-actions{display:flex;flex-wrap:nowrap;gap:10px;align-items:center;justify-content:flex-end;white-space:nowrap}
+.cobranca-actions>*{flex-shrink:0}
 .cobranca-actions form{display:inline-flex;gap:6px;align-items:center}
 .cobranca-actions select{font-size:11px;padding:4px 6px;border-radius:6px;border:1px solid var(--line)}
 
