@@ -33,18 +33,18 @@ class PortalTests(TestCase):
 
     def test_login_logout_e_redirecionamento(self):
         self.client.logout()
-        self.assertRedirects(self.client.get('/'), '/login/?next=/')
+        self.assertRedirects(self.client.get('/painel/'), '/login/?next=/painel/')
         self.assertEqual(self.client.post('/login/', {'username': 'professor', 'password': 'senha-teste-123'}).status_code, 302)
         self.assertEqual(self.client.get('/logout/').status_code, 405)
         self.assertEqual(self.client.post('/logout/').status_code, 302)
-        self.assertEqual(self.client.get('/').status_code, 302)
+        self.assertEqual(self.client.get('/painel/').status_code, 302)
 
     def test_usuario_sem_academia_inativa_e_superuser(self):
         AcessoAcademia.objects.all().delete()
-        self.assertEqual(self.client.get('/').status_code, 403)
+        self.assertEqual(self.client.get('/painel/').status_code, 403)
         self.user.is_superuser = True
         self.user.save()
-        self.assertEqual(self.client.get('/').status_code, 403)
+        self.assertEqual(self.client.get('/painel/').status_code, 403)
         AcessoAcademia.objects.create(usuario=self.user, academia=self.a)
         self.a.ativo = False
         self.a.save()
@@ -54,9 +54,9 @@ class PortalTests(TestCase):
         aluno = self.criar()
         self.assertEqual(aluno.responsavel_financeiro.academia, self.a)
         self.assertEqual(aluno.matriculas.get().academia, self.a)
-        for url in ('/', '/alunos/', f'/alunos/{aluno.pk}/', f'/alunos/{aluno.pk}/editar/'):
+        for url in ('/painel/', '/alunos/', f'/alunos/{aluno.pk}/', f'/alunos/{aluno.pk}/editar/'):
             self.assertEqual(self.client.get(url).status_code, 200)
-        self.assertContains(self.client.get('/'), '1')
+        self.assertContains(self.client.get('/painel/'), '1')
 
     def test_reutiliza_cpf_normalizado_sem_alterar_asaas(self):
         r = Responsavel.objects.create(academia=self.a, nome='Maria existente', cpf='12345678900', whatsapp='21', asaas_customer_id='cus_preservado')
@@ -179,8 +179,27 @@ class PortalTests(TestCase):
         for i in range(6):
             Atleta.objects.create(academia=self.a, nome=f'Recente {i}')
         Atleta.objects.create(academia=self.b, nome='Recente secreto')
-        response = self.client.get('/')
+        response = self.client.get('/painel/')
         self.assertEqual(len(response.context['recentes']), 5)
         self.assertContains(response, 'Recente 5')
         self.assertNotContains(response, 'Recente 0')
         self.assertNotContains(response, 'Recente secreto')
+
+
+class PaginaPublicaTests(TestCase):
+    def test_pagina_acessivel_sem_login(self):
+        response = self.client.get('/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Keiko Fukuda')
+        self.assertContains(response, 'https://www.instagram.com/escoladejudokeikofukuda/')
+        self.assertEqual(self.client.get('/painel/').status_code, 302)
+
+    def test_somente_fotos_publicadas_e_texto_escapado(self):
+        from .models import PaginaPublica, FotoPublica
+        PaginaPublica.objects.create(historia='<script>alert(1)</script>')
+        FotoPublica.objects.create(titulo='Foto privada', url='https://example.com/private.jpg')
+        FotoPublica.objects.create(titulo='Foto aprovada', url='https://example.com/public.jpg', publicada=True)
+        response = self.client.get('/')
+        self.assertContains(response, 'Foto aprovada')
+        self.assertNotContains(response, 'Foto privada')
+        self.assertNotContains(response, '<script>alert(1)</script>')

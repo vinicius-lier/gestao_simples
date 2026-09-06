@@ -13,3 +13,17 @@ class Academia(models.Model):
 
     def __str__(self):
         return self.nome
+
+class Unidade(models.Model):
+    academia = models.ForeignKey(Academia, on_delete=models.CASCADE, related_name='unidades')
+    nome = models.CharField(max_length=150)
+    endereco = models.CharField(max_length=250, blank=True)
+    telefone = models.CharField(max_length=20, blank=True)
+    ativo = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['nome']
+        constraints = [models.UniqueConstraint(fields=['academia', 'nome'], name='unidade_nome_academia')]
+
+    def __str__(self):
+        return self.nome

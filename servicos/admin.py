@@ -45,3 +45,9 @@ class TurmaAdmin(admin.ModelAdmin):
         "servico",
         "ativo",
     )
+from .models import Graduacao
+
+@admin.register(Graduacao)
+class GraduacaoAdmin(admin.ModelAdmin):
+    list_display = ("nome", "modalidade", "ordem", "academia", "ativo")
+    list_filter = ("academia", "modalidade")

@@ -27,6 +27,7 @@ class Responsavel(models.Model):
 
 
 class Atleta(models.Model):
+    proprio_responsavel = models.BooleanField(default=False, verbose_name='o aluno é o responsável financeiro')
     STATUS = [
         ("ativo", "Ativo"),
         ("inativo", "Inativo"),

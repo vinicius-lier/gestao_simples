@@ -1,1 +1,19 @@
-{% extends 'portal/base.html' %}{% block title %}Entrar • Academia{% endblock %}{% block content %}<div class="login-layout"><section class="login-story"><div><span class="eyebrow">Dentro e fora do tatame</span><h1>O próximo nível da sua <em>academia.</em></h1><p>Alunos, responsáveis e matrículas em um só lugar. Organize a rotina e dedique mais tempo a quem está evoluindo.</p></div><div class="story-footer"><span class="story-icon" aria-hidden="true">↗</span><span>Disciplina no treino.<br>Clareza na gestão.</span></div></section><section class="login-panel"><span class="eyebrow mb-3">Seu espaço de gestão</span><h2>Bom ter você aqui.</h2><p class="text-secondary">Entre para acompanhar sua academia.</p><form method="post">{% csrf_token %}{{ form.as_p }}<input type="hidden" name="next" value="{{ next }}"><button class="btn btn-primary w-100">Entrar na academia &nbsp; →</button></form><p class="login-note">Primeiro acesso? Solicite ao administrador seu usuário e o vínculo à academia.</p></section></div>{% endblock %}
+{% extends 'portal/base.html' %}{% block title %}Entrar • Academia{% endblock %}{% block content %}<div
+    class="login-layout">
+    <section class="login-story">
+        <div><span class="eyebrow">Dentro e fora do tatame</span>
+            <h1>O próximo nível da sua <em>academia.</em></h1>
+            <p>Alunos, responsáveis e matrículas em um só lugar. Organize a rotina e dedique mais tempo a quem está
+                evoluindo.</p>
+        </div>
+        <div class="story-footer"><span class="story-icon" aria-hidden="true">↗</span><span>Disciplina no
+                treino.<br>Clareza na gestão.</span></div>
+    </section>
+    <section class="login-panel"><span class="eyebrow mb-3">Seu espaço de gestão</span>
+        <h2>Bom ter você aqui.</h2>
+        <p class="text-secondary">Entre para acompanhar sua academia.</p>
+        <form method="post">{% csrf_token %}{{ form.as_p }}<input type="hidden" name="next" value="{{ next }}"><button
+                class="btn btn-primary w-100">Entrar na academia &nbsp; →</button></form>
+        <p class="login-note">Primeiro acesso? Solicite ao administrador seu usuário e o vínculo à academia.</p>
+    </section>
+</div>{% endblock %}

@@ -53,14 +53,29 @@
   next.addEventListener('click', () => { if (valid(current)) show(current + 1); });
   const guardian = document.getElementById('id_responsavel');
   const fresh = document.querySelector('.new-guardian');
+  const self = document.getElementById('id_proprio_responsavel');
+  const selfFields = document.querySelector('.self-guardian');
   function guardianMode() {
-    const existing = Boolean(guardian.value);
-    fresh.hidden = existing;
+    const isSelf = Boolean(self?.checked);
+    const existing = Boolean(guardian.value) && !isSelf;
+    guardian.disabled = isSelf;
+    guardian.closest('.field-group').hidden = isSelf;
+    if (selfFields) {
+      selfFields.hidden = !isSelf;
+      selfFields.querySelectorAll('input').forEach(input => {
+        input.disabled = !isSelf;
+        input.required = isSelf && input.id === 'id_aluno_whatsapp';
+      });
+    }
+    const cpf = document.getElementById('id_cpf');
+    if (cpf) cpf.required = isSelf;
+    fresh.hidden = existing || isSelf;
     fresh.querySelectorAll('input').forEach(input => {
-      input.disabled = existing;
-      input.required = !existing && ['id_responsavel_nome', 'id_responsavel_whatsapp'].includes(input.id);
+      input.disabled = existing || isSelf;
+      input.required = !existing && !isSelf && ['id_responsavel_nome', 'id_responsavel_whatsapp'].includes(input.id);
     });
   }
+  self?.addEventListener('change', guardianMode);
   guardian.addEventListener('change', guardianMode);
   guardianMode();
   form.addEventListener('submit', e => {

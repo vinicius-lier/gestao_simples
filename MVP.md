@@ -49,3 +49,12 @@ python manage.py makemigrations --check --dry-run
 ```
 
 Os testes do portal cobrem autenticação, academia ausente/inativa, isolamento, formulários, reutilização de responsável, edição, rollback, CSRF, busca e paginação. Os testes financeiros e Asaas originais permanecem intactos.
+
+
+## Polos, professores e turmas
+
+No menu do sistema, administradores podem cadastrar e editar unidades/polos, professores e turmas. Turmas vinculam polo, serviço e professor. Cadastros antigos foram vinculados à Matriz; nomes de professores existentes foram preservados e associados ao novo cadastro.
+
+Superusuários ou usuários com a opção “administrador da academia” no acesso podem gerenciar esses cadastros. Um administrador pode abrir o detalhe do aluno e criar outra matrícula; transferir uma matrícula de polo também exige administrador. Os filtros de acesso atuais continuam sendo por Academia; permissões de visualização individuais por polo ainda não estão implementadas.
+
+No cadastro do aluno, marque “O próprio aluno é o responsável financeiro” e informe CPF e WhatsApp. O sistema cria/reutiliza um Responsavel compatível com a integração Asaas e preserva os identificadores existentes. Não dispara cobranças ao cadastrar.

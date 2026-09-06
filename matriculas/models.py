@@ -7,6 +7,7 @@ from servicos.models import Servico, Turma
 
 
 class Matricula(models.Model):
+    unidade = models.ForeignKey('academias.Unidade', on_delete=models.PROTECT, null=True, blank=True, related_name='matriculas')
     academia = models.ForeignKey(
         Academia,
         on_delete=models.CASCADE,
@@ -51,6 +52,11 @@ class Matricula(models.Model):
 
     def clean(self):
         erros = {}
+        if self.unidade_id and self.academia_id and self.unidade.academia_id != self.academia_id:
+            erros['unidade'] = 'A unidade pertence a outra academia.'
+        if self.turma_id and self.unidade_id and self.turma.unidade_id != self.unidade_id:
+            erros['turma'] = 'A turma não pertence à unidade selecionada.'
+
 
         if (
             self.academia_id
