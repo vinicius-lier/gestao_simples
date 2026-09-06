@@ -41,7 +41,7 @@ INSTALLED_APPS = [
 
     "academias",
     "atletas",
-    "servicos",
+    "modalidades",
     "matriculas",
     "financeiro",
 ]

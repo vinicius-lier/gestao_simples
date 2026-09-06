@@ -7,7 +7,7 @@ class MatriculaAdmin(admin.ModelAdmin):
     list_display = (
         "atleta",
         "academia",
-        "servico",
+        "modalidade",
         "turma",
         "valor_mensalidade",
         "dia_vencimento",
@@ -16,12 +16,12 @@ class MatriculaAdmin(admin.ModelAdmin):
 
     search_fields = (
         "atleta__nome",
-        "servico__nome",
+        "modalidade__nome",
     )
 
     list_filter = (
         "academia",
-        "servico",
+        "modalidade",
         "turma",
         "ativo",
     )

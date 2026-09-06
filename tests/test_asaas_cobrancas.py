@@ -10,7 +10,7 @@ from financeiro.models import Mensalidade
 from integracoes.asaas.client import AsaasAPIError
 from integracoes.asaas.services import criar_cobranca_asaas
 from matriculas.models import Matricula
-from servicos.models import Servico
+from modalidades.models import Modalidade
 
 
 class CriarCobrancaAsaasTests(TestCase):
@@ -30,7 +30,7 @@ class CriarCobrancaAsaasTests(TestCase):
             nome="Atleta Teste",
             responsavel_financeiro=self.responsavel,
         )
-        self.servico = Servico.objects.create(
+        self.modalidade = Modalidade.objects.create(
             academia=self.academia,
             nome="Jiu-jitsu",
             valor_padrao=Decimal("150.00"),
@@ -38,7 +38,7 @@ class CriarCobrancaAsaasTests(TestCase):
         self.matricula = Matricula.objects.create(
             academia=self.academia,
             atleta=self.atleta,
-            servico=self.servico,
+            modalidade=self.modalidade,
             valor_mensalidade=Decimal("135.50"),
             data_inicio=date(2026, 1, 1),
         )

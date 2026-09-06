@@ -5,7 +5,7 @@ from django.utils import timezone
 from academias.models import Academia, Unidade
 from atletas.models import Atleta, Responsavel
 from matriculas.models import Matricula
-from servicos.models import Servico, Turma, Professor, Graduacao
+from modalidades.models import Modalidade, Turma, Professor, Graduacao
 
 
 def digits(value):
@@ -106,7 +106,7 @@ class AlunoForm(forms.ModelForm):
 class MatriculaForm(forms.ModelForm):
     class Meta:
         model = Matricula
-        fields = ('unidade', 'servico', 'turma', 'valor_mensalidade', 'dia_vencimento', 'data_inicio', 'data_fim', 'ativo')
+        fields = ('unidade', 'modalidade', 'turma', 'valor_mensalidade', 'dia_vencimento', 'data_inicio', 'data_fim', 'ativo')
         widgets = {key: forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}) for key in ('data_inicio', 'data_fim')}
 
     def __init__(self, *args, academia, **kwargs):
@@ -114,9 +114,8 @@ class MatriculaForm(forms.ModelForm):
         self.instance.academia = academia
         self.fields['unidade'].queryset = Unidade.objects.filter(academia=academia)
         self.fields['unidade'].required = self.fields['unidade'].queryset.exists()
-        self.fields['servico'].label = 'Modalidade'
-        self.fields['servico'].queryset = Servico.objects.filter(academia=academia)
-        self.fields['turma'].queryset = Turma.objects.filter(academia=academia, servico__academia=academia)
+        self.fields['modalidade'].queryset = Modalidade.objects.filter(academia=academia)
+        self.fields['turma'].queryset = Turma.objects.filter(academia=academia, modalidade__academia=academia)
         for field in self.fields.values():
             field.widget.attrs['class'] = 'form-check-input' if isinstance(field.widget, forms.CheckboxInput) else 'form-select' if isinstance(field.widget, forms.Select) else 'form-control'
 
@@ -133,7 +132,7 @@ class CadastroAcademiaForm(forms.ModelForm):
         self.instance.academia = academia
         for name, field in self.fields.items():
             field.widget.attrs['class'] = 'form-check-input' if isinstance(field.widget, forms.CheckboxInput) else 'form-select' if isinstance(field.widget, forms.Select) else 'form-control'
-        for name, model in [('unidade', Unidade), ('servico', Servico), ('docente', Professor)]:
+        for name, model in [('unidade', Unidade), ('modalidade', Modalidade), ('docente', Professor)]:
             if name in self.fields:
                 self.fields[name].queryset = model.objects.filter(academia=academia)
                 self.fields[name].required = True
@@ -172,20 +171,19 @@ class GraduacaoForm(CadastroAcademiaForm):
 
     def __init__(self, *args, academia, **kwargs):
         super().__init__(*args, academia=academia, **kwargs)
-        self.fields['modalidade'].queryset = Servico.objects.filter(academia=academia)
+        self.fields['modalidade'].queryset = Modalidade.objects.filter(academia=academia)
 
 
 class TurmaForm(CadastroAcademiaForm):
     class Meta:
         model = Turma
-        labels = {'servico': 'Modalidade'}
-        fields = ('nome', 'unidade', 'servico', 'docente', 'dias_semana', 'horario', 'local', 'ativo')
+        fields = ('nome', 'unidade', 'modalidade', 'docente', 'dias_semana', 'horario', 'local', 'ativo')
         widgets = {'horario': forms.TimeInput(format='%H:%M', attrs={'type': 'time'})}
 
 
-class ServicoForm(CadastroAcademiaForm):
+class ModalidadeForm(CadastroAcademiaForm):
     class Meta:
-        model = Servico
+        model = Modalidade
         fields = ('nome', 'descricao', 'valor_padrao', 'dia_vencimento', 'ativo')
         labels = {'descricao': 'Descrição', 'valor_padrao': 'Valor padrão da mensalidade (R$)', 'dia_vencimento': 'Dia de vencimento'}
 

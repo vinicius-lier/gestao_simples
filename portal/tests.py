@@ -7,7 +7,7 @@ from django.urls import reverse
 from academias.models import Academia
 from atletas.models import Atleta, Responsavel
 from matriculas.models import Matricula
-from servicos.models import Servico, Turma
+from modalidades.models import Modalidade, Turma
 from .models import AcessoAcademia
 
 
@@ -17,12 +17,12 @@ class PortalTests(TestCase):
         self.b = Academia.objects.create(nome='Academia B', cnpj='2')
         self.user = get_user_model().objects.create_user('professor', password='senha-teste-123')
         AcessoAcademia.objects.create(usuario=self.user, academia=self.a)
-        self.s = Servico.objects.create(academia=self.a, nome='Judô', valor_padrao=150)
-        self.outro = Servico.objects.create(academia=self.b, nome='Segredo B', valor_padrao=200)
+        self.s = Modalidade.objects.create(academia=self.a, nome='Judô', valor_padrao=150)
+        self.outro = Modalidade.objects.create(academia=self.b, nome='Segredo B', valor_padrao=200)
         self.client.force_login(self.user)
         self.payload = {'nome': 'João', 'status': 'ativo', 'responsavel_nome': 'Maria',
                         'responsavel_cpf': '123.456.789-00', 'responsavel_whatsapp': '21999999999',
-                        'matricula-servico': self.s.pk, 'matricula-valor_mensalidade': '150.00',
+                        'matricula-modalidade': self.s.pk, 'matricula-valor_mensalidade': '150.00',
                         'matricula-dia_vencimento': '10', 'matricula-data_inicio': '2026-09-01',
                         'matricula-ativo': 'on'}
 
@@ -80,8 +80,8 @@ class PortalTests(TestCase):
 
     def test_ids_de_outra_academia_sao_rejeitados(self):
         r = Responsavel.objects.create(academia=self.b, nome='Segredo', whatsapp='21')
-        t = Turma.objects.create(academia=self.b, servico=self.outro, nome='Segredo turma')
-        for field, value in [('responsavel', r.pk), ('matricula-servico', self.outro.pk), ('matricula-turma', t.pk)]:
+        t = Turma.objects.create(academia=self.b, modalidade=self.outro, nome='Segredo turma')
+        for field, value in [('responsavel', r.pk), ('matricula-modalidade', self.outro.pk), ('matricula-turma', t.pk)]:
             with self.subTest(field=field):
                 response = self.client.post('/alunos/novo/', {**self.payload, field: value})
                 self.assertEqual(response.status_code, 200)
@@ -97,7 +97,7 @@ class PortalTests(TestCase):
         self.assertNotContains(self.client.get('/alunos/'), 'Aluno secreto')
 
     def test_validacoes_matricula(self):
-        turma = Turma.objects.create(academia=self.a, servico=Servico.objects.create(academia=self.a, nome='Outro', valor_padrao=10), nome='Outra')
+        turma = Turma.objects.create(academia=self.a, modalidade=Modalidade.objects.create(academia=self.a, nome='Outro', valor_padrao=10), nome='Outra')
         for changes in ({'matricula-dia_vencimento': 32}, {'matricula-valor_mensalidade': '-1'}, {'matricula-data_fim': '2026-08-01'}, {'matricula-turma': turma.pk}, {'data_nascimento': '2999-01-01'}):
             with self.subTest(changes=changes):
                 self.assertEqual(self.client.post('/alunos/novo/', {**self.payload, **changes}).status_code, 200)

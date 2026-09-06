@@ -9,7 +9,7 @@ from atletas.models import Atleta
 from financeiro.models import Mensalidade
 from financeiro.services import gerar_mensalidades
 from matriculas.models import Matricula
-from servicos.models import Servico
+from modalidades.models import Modalidade
 
 
 class GerarMensalidadesTests(TestCase):
@@ -22,7 +22,7 @@ class GerarMensalidadesTests(TestCase):
             academia=self.academia,
             nome="Atleta Teste",
         )
-        self.servico = Servico.objects.create(
+        self.modalidade = Modalidade.objects.create(
             academia=self.academia,
             nome="Jiu-jitsu",
             valor_padrao=Decimal("150.00"),
@@ -31,7 +31,7 @@ class GerarMensalidadesTests(TestCase):
         self.matricula = Matricula.objects.create(
             academia=self.academia,
             atleta=self.atleta,
-            servico=self.servico,
+            modalidade=self.modalidade,
             valor_mensalidade=Decimal("135.50"),
             dia_vencimento=10,
             data_inicio=date(2026, 1, 15),
@@ -153,7 +153,7 @@ class MensalidadeTestCase(TestCase):
             nome="João da Silva",
         )
 
-        self.servico = Servico.objects.create(
+        self.modalidade = Modalidade.objects.create(
             academia=self.academia,
             nome="Judô Infantil",
             valor_padrao=Decimal("150.00"),
@@ -163,7 +163,7 @@ class MensalidadeTestCase(TestCase):
         self.matricula = Matricula.objects.create(
             academia=self.academia,
             atleta=self.atleta,
-            servico=self.servico,
+            modalidade=self.modalidade,
             valor_mensalidade=Decimal("150.00"),
             dia_vencimento=10,
             data_inicio=date(2026, 9, 1),

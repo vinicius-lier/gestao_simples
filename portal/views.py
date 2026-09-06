@@ -55,7 +55,7 @@ def detalhe(request, pk):
     responsavel = aluno.responsavel_financeiro
     if responsavel and responsavel.academia_id != request.academia.pk:
         responsavel = None
-    matriculas = aluno.matriculas.filter(academia=request.academia, servico__academia=request.academia)
+    matriculas = aluno.matriculas.filter(academia=request.academia, modalidade__academia=request.academia)
     # Do not expose legacy cross-tenant relationships.
     matriculas = [m for m in matriculas if not m.turma_id or m.turma.academia_id == request.academia.pk]
     return render(request, 'portal/detalhe.html', {'aluno': aluno, 'responsavel': responsavel, 'matriculas': matriculas})
@@ -111,14 +111,13 @@ def pagina_publica(request):
 @require_http_methods(['GET', 'POST'])
 def cadastros(request, tipo, pk=None, novo=False):
     from academias.models import Unidade
-    from servicos.models import Professor, Turma, Servico, Graduacao
-    from .forms import UnidadeForm, ProfessorForm, TurmaForm, ServicoForm, GraduacaoForm
+    from modalidades.models import Professor, Turma, Modalidade, Graduacao
+    from .forms import UnidadeForm, ProfessorForm, TurmaForm, ModalidadeForm, GraduacaoForm
     cadastro = {
         'unidades': (Unidade, UnidadeForm, 'Unidades / polos', 'unidade'),
         'professores': (Professor, ProfessorForm, 'Professores', 'professor'),
         'turmas': (Turma, TurmaForm, 'Turmas', 'turma'),
-        'servicos': (Servico, ServicoForm, 'Modalidades', 'modalidade'),
-        'modalidades': (Servico, ServicoForm, 'Modalidades', 'modalidade'),
+        'modalidades': (Modalidade, ModalidadeForm, 'Modalidades', 'modalidade'),
         'graduacoes': (Graduacao, GraduacaoForm, 'Graduações / faixas', 'graduação'),
     }
     model, form_class, titulo, singular = cadastro[tipo]

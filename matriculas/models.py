@@ -3,7 +3,7 @@ from django.db import models
 
 from academias.models import Academia
 from atletas.models import Atleta
-from servicos.models import Servico, Turma
+from modalidades.models import Modalidade, Turma
 
 
 class Matricula(models.Model):
@@ -20,8 +20,8 @@ class Matricula(models.Model):
         related_name="matriculas",
     )
 
-    servico = models.ForeignKey(
-        Servico,
+    modalidade = models.ForeignKey(
+        Modalidade,
         on_delete=models.PROTECT,
         related_name="matriculas",
     )
@@ -57,7 +57,6 @@ class Matricula(models.Model):
         if self.turma_id and self.unidade_id and self.turma.unidade_id != self.unidade_id:
             erros['turma'] = 'A turma não pertence à unidade selecionada.'
 
-
         if (
             self.academia_id
             and self.atleta_id
@@ -69,11 +68,11 @@ class Matricula(models.Model):
 
         if (
             self.academia_id
-            and self.servico_id
-            and self.servico.academia_id != self.academia_id
+            and self.modalidade_id
+            and self.modalidade.academia_id != self.academia_id
         ):
-            erros["servico"] = (
-                "O serviço pertence a outra academia."
+            erros["modalidade"] = (
+                "A modalidade pertence a outra academia."
             )
 
         if self.turma_id:
@@ -86,11 +85,11 @@ class Matricula(models.Model):
                 )
 
             if (
-                self.servico_id
-                and self.turma.servico_id != self.servico_id
+                self.modalidade_id
+                and self.turma.modalidade_id != self.modalidade_id
             ):
                 erros["turma"] = (
-                    "A turma não pertence ao serviço selecionado."
+                    "A turma não pertence à modalidade selecionada."
                 )
 
         if not 1 <= self.dia_vencimento <= 31:
@@ -115,4 +114,4 @@ class Matricula(models.Model):
         return super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.atleta.nome} - {self.servico.nome}"
+        return f"{self.atleta.nome} - {self.modalidade.nome}"

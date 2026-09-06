@@ -7,7 +7,7 @@ from django.test import TestCase
 from academias.models import Academia
 from atletas.models import Atleta
 from matriculas.models import Matricula
-from servicos.models import Servico, Turma
+from modalidades.models import Modalidade, Turma
 
 
 class MatriculaTestCase(TestCase):
@@ -28,14 +28,14 @@ class MatriculaTestCase(TestCase):
             nome="João",
         )
 
-        self.servico_a = Servico.objects.create(
+        self.modalidade_a = Modalidade.objects.create(
             academia=self.academia_a,
             nome="Judô Infantil",
             valor_padrao=Decimal("150.00"),
             dia_vencimento=10,
         )
 
-        self.servico_b = Servico.objects.create(
+        self.modalidade_b = Modalidade.objects.create(
             academia=self.academia_b,
             nome="Judô Adulto",
             valor_padrao=Decimal("180.00"),
@@ -44,7 +44,7 @@ class MatriculaTestCase(TestCase):
 
         self.turma_a = Turma.objects.create(
             academia=self.academia_a,
-            servico=self.servico_a,
+            modalidade=self.modalidade_a,
             nome="Turma A",
         )
 
@@ -58,19 +58,19 @@ class MatriculaTestCase(TestCase):
             Matricula.objects.create(
                 academia=self.academia_a,
                 atleta=atleta_b,
-                servico=self.servico_a,
+                modalidade=self.modalidade_a,
                 turma=self.turma_a,
                 valor_mensalidade=Decimal("150.00"),
                 dia_vencimento=10,
                 data_inicio=date(2026, 9, 1),
             )
 
-    def test_nao_permite_servico_de_outra_academia(self):
+    def test_nao_permite_modalidade_de_outra_academia(self):
         with self.assertRaises(ValidationError):
             Matricula.objects.create(
                 academia=self.academia_a,
                 atleta=self.atleta_a,
-                servico=self.servico_b,
+                modalidade=self.modalidade_b,
                 valor_mensalidade=Decimal("180.00"),
                 dia_vencimento=10,
                 data_inicio=date(2026, 9, 1),
@@ -81,7 +81,7 @@ class MatriculaTestCase(TestCase):
             Matricula.objects.create(
                 academia=self.academia_a,
                 atleta=self.atleta_a,
-                servico=self.servico_a,
+                modalidade=self.modalidade_a,
                 turma=self.turma_a,
                 valor_mensalidade=Decimal("150.00"),
                 dia_vencimento=40,
@@ -93,7 +93,7 @@ class MatriculaTestCase(TestCase):
             Matricula.objects.create(
                 academia=self.academia_a,
                 atleta=self.atleta_a,
-                servico=self.servico_a,
+                modalidade=self.modalidade_a,
                 turma=self.turma_a, 
                 valor_mensalidade=Decimal("150.00"),
                 dia_vencimento=10,
@@ -105,7 +105,7 @@ class MatriculaTestCase(TestCase):
         matricula = Matricula.objects.create(
             academia=self.academia_a,
             atleta=self.atleta_a,
-            servico=self.servico_a,
+            modalidade=self.modalidade_a,
             turma=self.turma_a,
             valor_mensalidade=Decimal("150.00"),
             dia_vencimento=10,

@@ -14,8 +14,8 @@ Sistema de gestão para academias (ex: academias de artes marciais), construído
 |---|---|
 | `academias` | Cadastro das academias (tenant principal do sistema) |
 | `atletas` | Atletas e seus responsáveis financeiros |
-| `servicos` | Serviços oferecidos (ex: modalidades) e turmas |
-| `matriculas` | Vínculo entre um atleta, um serviço/turma e o valor da mensalidade |
+| `modalidades` | Modalidades oferecidas (lutas, esportes), suas graduações/faixas, professores e turmas |
+| `matriculas` | Vínculo entre um atleta, uma modalidade/turma e o valor da mensalidade |
 | `financeiro` | Mensalidades geradas a partir das matrículas |
 | `config` | Configurações do projeto Django (settings, urls, wsgi/asgi) |
 
@@ -26,9 +26,10 @@ Todas as entidades principais pertencem a uma `Academia`, o que permite operar m
 - **Academia**: nome, nome fantasia, CNPJ, contato.
 - **Responsavel**: responsável financeiro, vinculado a uma academia.
 - **Atleta**: vinculado a uma academia e, opcionalmente, a um responsável financeiro. Possui status (`ativo`, `inativo`, `trancado`) e faixa.
-- **Servico**: modalidade/serviço oferecido pela academia, com valor padrão e dia de vencimento.
-- **Turma**: turma de um serviço, com professor, dias da semana, horário e local.
-- **Matricula**: liga um atleta a um serviço (e opcionalmente turma), define valor de mensalidade e dia de vencimento próprios.
+- **Modalidade**: modalidade (luta ou esporte) oferecida pela academia, com valor padrão e dia de vencimento.
+- **Graduacao**: graduação/faixa de uma modalidade, com ordem de evolução.
+- **Turma**: turma de uma modalidade, com unidade/polo, professor responsável, dias da semana, horário e local.
+- **Matricula**: liga um atleta a uma modalidade (e opcionalmente turma), define valor de mensalidade e dia de vencimento próprios.
 - **Mensalidade**: cobrança mensal gerada a partir de uma matrícula, com competência, vencimento, status (`pendente`, `paga`, `vencida`, `cancelada`, `isenta`) e campo `asaas_payment_id` (preparado para integração com o [Asaas](https://www.asaas.com/)).
 
 ## Como rodar localmente

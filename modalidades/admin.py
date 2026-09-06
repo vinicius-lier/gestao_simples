@@ -1,9 +1,9 @@
 from django.contrib import admin
-from .models import Servico, Turma
+from .models import Modalidade, Turma, Graduacao
 
 
-@admin.register(Servico)
-class ServicoAdmin(admin.ModelAdmin):
+@admin.register(Modalidade)
+class ModalidadeAdmin(admin.ModelAdmin):
     list_display = (
         "nome",
         "academia",
@@ -28,7 +28,7 @@ class TurmaAdmin(admin.ModelAdmin):
     list_display = (
         "nome",
         "academia",
-        "servico",
+        "modalidade",
         "professor",
         "dias_semana",
         "horario",
@@ -42,10 +42,10 @@ class TurmaAdmin(admin.ModelAdmin):
 
     list_filter = (
         "academia",
-        "servico",
+        "modalidade",
         "ativo",
     )
-from .models import Graduacao
+
 
 @admin.register(Graduacao)
 class GraduacaoAdmin(admin.ModelAdmin):

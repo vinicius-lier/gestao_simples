@@ -2,11 +2,11 @@ from django.db import models
 from academias.models import Academia
 
 
-class Servico(models.Model):
+class Modalidade(models.Model):
     academia = models.ForeignKey(
         Academia,
         on_delete=models.CASCADE,
-        related_name="servicos",
+        related_name="modalidades",
     )
 
     nome = models.CharField(max_length=150)
@@ -32,7 +32,7 @@ class Servico(models.Model):
 
 class Graduacao(models.Model):
     academia = models.ForeignKey(Academia, on_delete=models.CASCADE)
-    modalidade = models.ForeignKey(Servico, on_delete=models.PROTECT, related_name='graduacoes')
+    modalidade = models.ForeignKey(Modalidade, on_delete=models.PROTECT, related_name='graduacoes')
     nome = models.CharField(max_length=100)
     ordem = models.PositiveSmallIntegerField(default=1)
     ativo = models.BooleanField(default=True)
@@ -79,8 +79,8 @@ class Turma(models.Model):
         related_name="turmas",
     )
 
-    servico = models.ForeignKey(
-        Servico,
+    modalidade = models.ForeignKey(
+        Modalidade,
         on_delete=models.PROTECT,
         related_name="turmas",
     )
@@ -97,11 +97,11 @@ class Turma(models.Model):
     def clean(self):
         from django.core.exceptions import ValidationError
         erros = {}
-        for campo in ('servico', 'unidade', 'docente'):
+        for campo in ('modalidade', 'unidade', 'docente'):
             if getattr(self, campo + '_id') and self.academia_id and getattr(self, campo).academia_id != self.academia_id:
                 erros[campo] = 'O cadastro pertence a outra academia.'
         if erros:
             raise ValidationError(erros)
 
     def __str__(self):
-        return f"{self.servico.nome} - {self.nome}"
+        return f"{self.modalidade.nome} - {self.nome}"
