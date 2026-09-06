@@ -11,10 +11,13 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate
 # Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env  # preencha ASAAS_BASE_URL/ASAAS_API_KEY para usar o Pix (ver abaixo)
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
+
+Sem o `.env` preenchido, o sistema funciona normalmente — só o botão **Gerar Pix** do financeiro falha com uma mensagem amigável ("ASAAS_BASE_URL não configurada"), em vez de gerar a cobrança. Isso é esperado, não é bug.
 
 No `/admin/`, o superusuário deve cadastrar a academia, as modalidades e as turmas desejadas. Cadastre um usuário comum (sem acesso de equipe) e, em **Acessos às academias**, vincule-o à academia. Cada usuário tem uma academia. Apenas superusuários podem gerenciar esses vínculos.
 
