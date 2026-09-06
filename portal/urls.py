@@ -18,6 +18,7 @@ urlpatterns = [
     path('financeiro/cobrancas/', views.financeiro_cobrancas, name='financeiro_cobrancas'),
     path('financeiro/cobrancas/<int:pk>/pagar/', views.financeiro_marcar_pago, name='financeiro_marcar_pago'),
     path('financeiro/cobrancas/<int:pk>/pix/', views.financeiro_gerar_pix, name='financeiro_gerar_pix'),
+    path('financeiro/cobrancas/<int:pk>/pix/qrcode/', views.financeiro_pix_qrcode, name='financeiro_pix_qrcode'),
 ]
 
 for tipo in ('unidades', 'professores', 'turmas', 'modalidades'):

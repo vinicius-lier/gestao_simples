@@ -16,6 +16,20 @@
   shade?.addEventListener('click', closeMenu);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(); });
   document.querySelectorAll('[data-dismiss]').forEach(button => button.addEventListener('click', () => button.closest('[role=status]').remove()));
+  // Delegado em document: cobre também o botão "Copiar código" dentro do
+  // modal de detalhe, cujo conteúdo é injetado depois via fetch.
+  document.addEventListener('click', async event => {
+    const button = event.target.closest('[data-copy]');
+    if (!button) return;
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy);
+      const original = button.textContent;
+      button.textContent = 'Copiado!';
+      setTimeout(() => { button.textContent = original; }, 1800);
+    } catch (_) {
+      button.closest('.pix-copia')?.querySelector('textarea')?.select();
+    }
+  });
   const dialog = document.querySelector('.search-dialog');
   const openSearch = () => { if (dialog && !dialog.open) { dialog.showModal(); dialog.querySelector('input').focus(); } };
   document.querySelector('[data-open-search]')?.addEventListener('click', openSearch);

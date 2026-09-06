@@ -252,3 +252,25 @@ def financeiro_gerar_pix(request, pk):
     else:
         messages.success(request, 'Cobrança Pix gerada no Asaas.')
     return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
+
+
+@academia_required
+def financeiro_pix_qrcode(request, pk):
+    """Tela com o QR code e o código copia-e-cola da cobrança já gerada.
+    Abre como página normal (funciona sem JS) e também é usada como
+    conteúdo do modal de detalhe (mesmo mecanismo de [data-detalhe])."""
+    from financeiro.models import Mensalidade
+    from integracoes.asaas.client import AsaasAPIError
+    from integracoes.asaas.services import obter_pix_mensalidade
+    mensalidade = get_object_or_404(
+        Mensalidade.objects.select_related('matricula__atleta'), pk=pk, academia=request.academia
+    )
+    pix, erro = None, None
+    if not mensalidade.asaas_payment_id:
+        erro = 'Esta mensalidade ainda não tem uma cobrança Pix gerada.'
+    else:
+        try:
+            pix = obter_pix_mensalidade(mensalidade)
+        except (ValueError, AsaasAPIError) as error:
+            erro = str(error)
+    return render(request, 'portal/financeiro_pix.html', {'mensalidade': mensalidade, 'pix': pix, 'erro': erro})

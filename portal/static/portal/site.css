@@ -46,3 +46,9 @@
 .cobranca-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end}
 .cobranca-actions form{display:inline-flex;gap:6px;align-items:center}
 .cobranca-actions select{font-size:11px;padding:4px 6px;border-radius:6px;border:1px solid var(--line)}
+
+/* Pix: QR code + copia e cola */
+.pix-card{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+.pix-qrcode{width:220px;height:220px;border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;flex-shrink:0}
+.pix-copia{flex:1;min-width:220px;display:flex;flex-direction:column;gap:10px}
+.pix-copia textarea{font-size:12px;font-family:monospace;resize:vertical}

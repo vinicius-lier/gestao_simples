@@ -120,3 +120,41 @@ class FinanceiroPortalTests(TestCase):
         resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pix/", {}, follow=True)
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "Não foi possível gerar a cobrança Pix")
+
+    def test_lista_cobrancas_mostra_link_do_qrcode_so_com_cobranca_gerada(self):
+        html = self.client.get("/financeiro/cobrancas/").content.decode("utf8")
+        self.assertNotIn("Ver QR Code", html)
+        self.assertIn("Gerar Pix", html)
+
+        self.pendente.asaas_payment_id = "pay_abc"
+        self.pendente.save(update_fields=["asaas_payment_id"])
+        html = self.client.get("/financeiro/cobrancas/").content.decode("utf8")
+        self.assertIn("Ver QR Code", html)
+        self.assertIn(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/", html)
+
+    @patch("integracoes.asaas.services.AsaasClient")
+    def test_tela_do_pix_mostra_qrcode_e_codigo_copia_e_cola(self, mock_client_class):
+        self.pendente.asaas_payment_id = "pay_abc"
+        self.pendente.save(update_fields=["asaas_payment_id"])
+        mock_client_class.return_value.obter_pix_qrcode.return_value = {
+            "payload": "00020126...copia-e-cola",
+            "encodedImage": "aW1hZ2Vt",
+            "expirationDate": "2026-09-20 23:59:59",
+        }
+
+        resposta = self.client.get(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/")
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "00020126...copia-e-cola")
+        self.assertContains(resposta, "aW1hZ2Vt")
+        self.assertContains(resposta, "detalhe-conteudo")
+
+    def test_tela_do_pix_sem_cobranca_mostra_mensagem_amigavel(self):
+        resposta = self.client.get(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "ainda não tem uma cobrança Pix gerada")
+
+    def test_tela_do_pix_isola_por_academia(self):
+        self.assertEqual(
+            self.client.get(f"/financeiro/cobrancas/{self.mensalidade_b.pk}/pix/qrcode/").status_code, 404
+        )
