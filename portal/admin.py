@@ -35,3 +35,21 @@ class FotoPublicaAdmin(AcessoAcademiaAdmin):
     list_display = ('titulo', 'ordem', 'publicada')
     search_fields = ('titulo', 'legenda')
     list_filter = ('publicada',)
+
+
+from .models import TokenAcessoResponsavel
+
+
+@admin.register(TokenAcessoResponsavel)
+class TokenAcessoResponsavelAdmin(AcessoAcademiaAdmin):
+    # Somente leitura: o token é sensível e a criação/consumo acontece
+    # sempre pelo fluxo da aplicação, nunca à mão.
+    list_display = ('responsavel', 'criado_em', 'expira_em', 'usado_em')
+    search_fields = ('responsavel__nome',)
+    exclude = ('token',)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

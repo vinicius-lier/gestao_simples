@@ -6,11 +6,12 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 from atletas.models import Atleta
 from matriculas.models import Matricula
 from .forms import AlunoForm, MatriculaForm
-from .models import AcessoAcademia
+from .models import AcessoAcademia, TokenAcessoResponsavel
 
 
 def redirecionamento_seguro(request, padrao):
@@ -274,3 +275,37 @@ def financeiro_pix_qrcode(request, pk):
         except (ValueError, AsaasAPIError) as error:
             erro = str(error)
     return render(request, 'portal/financeiro_pix.html', {'mensalidade': mensalidade, 'pix': pix, 'erro': erro})
+
+
+@academia_required
+@require_http_methods(['POST'])
+def gerar_acesso_responsavel(request, pk):
+    """Gera um link de acesso ao portal do responsável. Se a API do
+    WhatsApp estiver configurada, envia sozinho; senão, mostra o link
+    para o operador mandar manualmente (mesmo caminho de sempre)."""
+    from integracoes.whatsapp.client import WhatsAppAPIError
+    from integracoes.whatsapp.services import enviar_acesso_portal_responsavel
+
+    aluno = get_object_or_404(Atleta, pk=pk, academia=request.academia)
+    responsavel = aluno.responsavel_financeiro
+    if responsavel is None or responsavel.academia_id != request.academia.pk:
+        messages.error(request, 'Este aluno não tem responsável financeiro cadastrado.')
+        return redirect('portal:detalhe', pk=aluno.pk)
+
+    acesso = TokenAcessoResponsavel.gerar(responsavel)
+    link = request.build_absolute_uri(reverse('portal:responsavel_entrar', args=[acesso.token]))
+
+    try:
+        enviar_acesso_portal_responsavel(responsavel, link)
+    except ValueError:
+        pass  # API do WhatsApp não configurada: operador envia manualmente abaixo
+    except WhatsAppAPIError as error:
+        messages.warning(request, f'Não deu para enviar automaticamente pelo WhatsApp: {error}')
+    else:
+        messages.success(request, f'Acesso enviado automaticamente para {responsavel.nome} pelo WhatsApp.')
+        return redirect('portal:detalhe', pk=aluno.pk)
+
+    mensagem = f'Olá, {responsavel.nome}! Aqui está o link para acompanhar as mensalidades e pagar: {link}'
+    return render(request, 'portal/acesso_responsavel_gerado.html', {
+        'aluno': aluno, 'responsavel': responsavel, 'link': link, 'mensagem': mensagem,
+    })

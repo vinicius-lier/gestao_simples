@@ -30,3 +30,12 @@ def link_cobranca_whatsapp(mensalidade):
         f"com vencimento em {mensalidade.vencimento:%d/%m/%Y}."
     )
     return f"https://wa.me/{numero}?text={quote(mensagem)}"
+
+
+@register.simple_tag
+def link_whatsapp(numero, mensagem):
+    """wa.me genérico: qualquer número + mensagem prontos."""
+    numero = _numero_whatsapp(numero)
+    if not numero:
+        return ''
+    return f"https://wa.me/{numero}?text={quote(mensagem)}"

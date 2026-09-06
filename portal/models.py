@@ -1,5 +1,9 @@
+import secrets
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class AcessoAcademia(models.Model):
@@ -29,6 +33,44 @@ class PaginaPublica(models.Model):
 
     def __str__(self):
         return self.titulo
+
+
+class TokenAcessoResponsavel(models.Model):
+    """Link de acesso ao portal do responsável — sem senha. O staff gera
+    (ou, no futuro, o próprio sistema via API do WhatsApp) e envia; um
+    clique válido abre uma sessão comum no navegador do responsável,
+    que dura o tempo padrão de sessão do Django. Token de uso único."""
+
+    responsavel = models.ForeignKey(
+        'atletas.Responsavel', on_delete=models.CASCADE, related_name='tokens_acesso'
+    )
+    token = models.CharField(max_length=64, unique=True, editable=False)
+    criado_em = models.DateTimeField(auto_now_add=True)
+    expira_em = models.DateTimeField()
+    usado_em = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'link de acesso do responsável'
+        verbose_name_plural = 'links de acesso dos responsáveis'
+
+    def __str__(self):
+        return f'{self.responsavel} — {self.criado_em:%d/%m/%Y %H:%M}'
+
+    @classmethod
+    def gerar(cls, responsavel, validade_horas=24):
+        return cls.objects.create(
+            responsavel=responsavel,
+            token=secrets.token_urlsafe(32),
+            expira_em=timezone.now() + timedelta(hours=validade_horas),
+        )
+
+    @property
+    def valido(self):
+        return self.usado_em is None and self.expira_em > timezone.now()
+
+    def consumir(self):
+        self.usado_em = timezone.now()
+        self.save(update_fields=['usado_em'])
 
 
 class FotoPublica(models.Model):

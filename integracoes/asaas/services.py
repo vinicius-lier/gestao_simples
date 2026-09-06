@@ -46,7 +46,7 @@ def sincronizar_responsavel_asaas(responsavel):
     return customer_id
 
 
-def criar_cobranca_asaas(mensalidade):
+def criar_cobranca_asaas(mensalidade, billing_type="PIX"):
     if mensalidade.status == "paga":
         raise ValueError("Uma mensalidade paga não pode ser cobrada.")
 
@@ -71,7 +71,7 @@ def criar_cobranca_asaas(mensalidade):
     asaas = AsaasClient()
     cobranca = asaas.criar_cobranca(
         customer=customer_id,
-        billing_type="PIX",
+        billing_type=billing_type,
         valor=mensalidade.valor,
         vencimento=mensalidade.vencimento,
         descricao=(
@@ -86,9 +86,18 @@ def criar_cobranca_asaas(mensalidade):
         )
 
     mensalidade.asaas_payment_id = payment_id
-    mensalidade.save(update_fields=["asaas_payment_id"])
+    mensalidade.asaas_invoice_url = cobranca.get("invoiceUrl") or ""
+    mensalidade.asaas_bank_slip_url = cobranca.get("bankSlipUrl") or ""
+    mensalidade.save(update_fields=["asaas_payment_id", "asaas_invoice_url", "asaas_bank_slip_url"])
 
     return payment_id
+
+
+def criar_cobranca_multipla_asaas(mensalidade):
+    """Como criar_cobranca_asaas, mas com billing_type=UNDEFINED: o Asaas
+    deixa o próprio pagador escolher Pix, boleto ou cartão na hora de
+    pagar. Usada na página pública do responsável."""
+    return criar_cobranca_asaas(mensalidade, billing_type="UNDEFINED")
 
 
 def obter_pix_mensalidade(mensalidade):

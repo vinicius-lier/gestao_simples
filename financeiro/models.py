@@ -84,6 +84,18 @@ class Mensalidade(models.Model):
         blank=True,
     )
 
+    asaas_invoice_url = models.URLField(
+        max_length=300,
+        blank=True,
+        help_text='Página de pagamento hospedada pelo Asaas (Pix, boleto ou cartão).',
+    )
+
+    asaas_bank_slip_url = models.URLField(
+        max_length=300,
+        blank=True,
+        help_text='PDF do boleto, quando a cobrança aceita esse meio.',
+    )
+
     criado_em = models.DateTimeField(auto_now_add=True)
 
     objects = MensalidadeQuerySet.as_manager()

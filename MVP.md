@@ -50,7 +50,21 @@ A integração Asaas e a geração de mensalidades existente foram preservadas. 
 
 Endpoint público (`POST`, isento de CSRF) que recebe a confirmação de pagamento do Asaas e marca a mensalidade correspondente como paga automaticamente — sem conferência manual. Aceita `PAYMENT_RECEIVED` e `PAYMENT_CONFIRMED`, casando pelo `asaas_payment_id`. Configure `ASAAS_WEBHOOK_TOKEN` (mesmo token cadastrado no painel do Asaas) para exigir o cabeçalho `asaas-access-token`; sem essa variável definida, o endpoint aceita qualquer chamada — use isso só em desenvolvimento.
 
-**Ainda não implementado** (fora do escopo deste MVP financeiro): desconto/bolsa/isenção com valor e motivo próprios, lembretes automáticos por WhatsApp, boleto e cartão além do Pix, gráfico de receita por mês, e uma tabela de pagamentos separada da mensalidade (hoje a mensalidade acumula os dois papéis, o que é suficiente enquanto não há pagamento parcial).
+### Portal do responsável (`/responsavel/`)
+
+Área pública, sem o login de staff, onde o responsável financeiro acompanha as mensalidades dos próprios alunos e paga por Pix, boleto ou cartão.
+
+- **Acesso**: sem senha. O staff clica **"Gerar acesso ao portal de pagamentos"** no detalhe do aluno (`AcessoAcademia`/administrador não é exigido para isso — qualquer usuário da academia pode gerar). Isso cria um `TokenAcessoResponsavel` (link de uso único, válido por 24h) e tenta enviar pelo WhatsApp automaticamente; se a API do WhatsApp não estiver configurada, mostra o link para o operador mandar manualmente (mesmo padrão wa.me usado no financeiro).
+- Ao abrir o link, o navegador ganha uma sessão comum (`request.session['responsavel_id']`) que dura o padrão de sessão do Django — não precisa do link de novo até expirar os cookies.
+- **Painel**: lista os alunos vinculados àquele responsável e as mensalidades de cada um, com botão **Pagar** nas pendentes/atrasadas.
+- **Pagar**: gera (ou reaproveita) uma cobrança Asaas com `billing_type=UNDEFINED` (`criar_cobranca_multipla_asaas`), mostra o QR/copia-e-cola do Pix na hora, um link do boleto (PDF) e um botão "Pagar com cartão" que abre o checkout hospedado do próprio Asaas (`invoiceUrl`) — cartão nunca passa pelo nosso servidor.
+- Isolamento: toda consulta filtra por `matricula__atleta__responsavel_financeiro=request.responsavel` — um responsável nunca alcança mensalidade de outra família, mesmo advinhando o ID na URL.
+
+### WhatsApp Cloud API (`integracoes/whatsapp/`)
+
+Cliente da API oficial da Meta, mesmo formato do cliente do Asaas. Usado para enviar automaticamente o acesso ao portal (`enviar_acesso_portal_responsavel`) e, futuramente, avisos de cobrança perto do vencimento (`enviar_cobranca_responsavel`, ainda sem um agendador chamando). Exige `WHATSAPP_PHONE_NUMBER_ID` e `WHATSAPP_ACCESS_TOKEN` (`.env.example`) e templates aprovados no Meta Business Manager (nomes configuráveis via `WHATSAPP_TEMPLATE_ACESSO`/`WHATSAPP_TEMPLATE_COBRANCA`). Sem configurar, todo fluxo cai automaticamente no link manual — nada quebra.
+
+**Ainda não implementado** (fora do escopo deste MVP financeiro): geração de mensalidade automaticamente perto do vencimento com envio proativo (hoje é preciso rodar `gerar_mensalidades` e depois gerar o acesso/cobrança manualmente), desconto/bolsa/isenção com valor e motivo próprios, gráfico de receita por mês, e uma tabela de pagamentos separada da mensalidade (hoje a mensalidade acumula os dois papéis, o que é suficiente enquanto não há pagamento parcial).
 
 Bootstrap é carregado por CDN e precisa de internet para aplicar a aparência. O portal não altera as permissões dos demais Django Admins: contas operacionais devem permanecer sem `is_staff`; o Admin é reservado à administração confiável.
 
