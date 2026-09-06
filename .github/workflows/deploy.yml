@@ -1,0 +1,97 @@
+name: Deploy EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: academia-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    defaults:
+      run:
+        shell: bash
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate application before connecting
+        env:
+          DB_ENGINE: sqlite
+          DJANGO_DEBUG: 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install -r requirements.txt
+          python manage.py check
+          python manage.py test --noinput
+
+      - name: Configure verified SSH connection
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test "$EC2_USER" = ubuntu
+          [[ "$EC2_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          umask 077
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/ec2_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host production
+            HostName $EC2_HOST
+            User $EC2_USER
+            IdentityFile ~/.ssh/ec2_deploy
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            ConnectTimeout 15
+            ServerAliveInterval 15
+            ServerAliveCountMax 3
+          EOF
+
+      - name: Validate EC2 prerequisites
+        run: |
+          set -euo pipefail
+          ssh production 'set -eu; test "$(id -un)" = ubuntu; command -v rsync; test -d /home/ubuntu/apps/gestao_simples; test -f /home/ubuntu/apps/gestao_simples/.env; test -x /home/ubuntu/apps/gestao_simples/.venv/bin/python'
+
+      - name: Transfer application (preserve server files)
+        run: |
+          set -euo pipefail
+          rsync -az --safe-links --no-owner --no-group --omit-dir-times \
+            --exclude='.git/' --exclude='.github/' \
+            --exclude='.env' --exclude='.env.*' --exclude='.venv/' \
+            --exclude='media/' --exclude='staticfiles/' --exclude='local/' \
+            --exclude='db.sqlite3*' --exclude='__pycache__/' --exclude='*.pyc' \
+            --exclude='*.log' --exclude='dados-migracao*.json' \
+            ./ production:/home/ubuntu/apps/gestao_simples/
+
+      - name: Apply deploy
+        run: |
+          set -euo pipefail
+          ssh production 'bash /home/ubuntu/apps/gestao_simples/deploy/deploy.sh'
+
+      - name: Remove SSH credentials
+        if: always()
+        run: |
+          set -euo pipefail
+          rm -f ~/.ssh/ec2_deploy ~/.ssh/config ~/.ssh/known_hosts

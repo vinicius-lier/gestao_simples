@@ -6,3 +6,7 @@ db.sqlite3
 dados-migracao*.json
 .vscode/
 eof
+
+staticfiles/
+media/
+local/

@@ -29,7 +29,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-^=cc_@lrg+wgj+7losut#zi9i1fad#5k3ft@bej-b&lpgyxw0!'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_DEBUG', 'true').lower() in ('1', 'true', 'yes')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', SECRET_KEY if DEBUG else '')
+if not SECRET_KEY:
+    raise ImproperlyConfigured('Defina DJANGO_SECRET_KEY quando DJANGO_DEBUG=false.')
 
 # Hosts extras (ex.: domínio de túnel ngrok/localtunnel para testar
 # webhooks localmente) via variável de ambiente, separados por vírgula.
@@ -155,6 +158,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 
 # Email

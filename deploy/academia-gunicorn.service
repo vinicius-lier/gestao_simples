@@ -1,0 +1,24 @@
+[Unit]
+Description=Academia Gestao Gunicorn
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/apps/gestao_simples
+# config.settings loads .env via python-dotenv, also used by management commands.
+# Keep .env owned by ubuntu with mode 0600; do not duplicate shell/systemd parsing.
+Environment=DJANGO_SETTINGS_MODULE=config.settings
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/apps/gestao_simples/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 --access-logfile - --error-logfile - config.wsgi:application
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0022
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,2 @@
+# Install as root-owned 0440 in /etc/sudoers.d/academia-deploy
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart academia-gunicorn, /usr/bin/systemctl reload nginx
