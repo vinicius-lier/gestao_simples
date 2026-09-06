@@ -114,3 +114,45 @@ class Mensalidade(models.Model):
     @property
     def esta_atrasada(self):
         return self.status in ("pendente", "vencida") and self.vencimento < date.today()
+
+
+class LembreteCobranca(models.Model):
+    """Registra o disparo de cada estágio do lembrete automático de
+    cobrança, para garantir que cada estágio seja enviado no máximo uma
+    vez por mensalidade (sem virar máquina de spam)."""
+
+    CINCO_DIAS = "5_dias"
+    UM_DIA = "1_dia"
+    VENCIMENTO = "vencimento"
+    ATRASADA = "atrasada"
+
+    ESTAGIOS = [
+        (CINCO_DIAS, "5 dias antes do vencimento"),
+        (UM_DIA, "1 dia antes do vencimento"),
+        (VENCIMENTO, "No dia do vencimento"),
+        (ATRASADA, "Mensalidade atrasada"),
+    ]
+
+    mensalidade = models.ForeignKey(
+        Mensalidade,
+        on_delete=models.CASCADE,
+        related_name="lembretes",
+    )
+
+    estagio = models.CharField(
+        max_length=20,
+        choices=ESTAGIOS,
+    )
+
+    enviado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["mensalidade", "estagio"],
+                name="lembrete_unico_por_estagio",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.mensalidade} - {self.get_estagio_display()}"

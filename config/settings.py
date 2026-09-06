@@ -152,3 +152,8 @@ MESSAGE_TAGS = {_messages.ERROR: 'danger'}
 # painel do Asaas). Sem isso configurado, o endpoint fica aberto — use só
 # em desenvolvimento.
 ASAAS_WEBHOOK_TOKEN = os.getenv('ASAAS_WEBHOOK_TOKEN', '')
+
+# Base para montar links absolutos fora de uma request (ex.: o comando
+# enviar_lembretes_cobranca, rodado por cron/agendador). Em produção,
+# aponte para o domínio real com https.
+SITE_URL = os.getenv('SITE_URL', 'http://127.0.0.1:8000')

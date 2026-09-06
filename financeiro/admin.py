@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Mensalidade
+from .models import LembreteCobranca, Mensalidade
 
 
 @admin.register(Mensalidade)
@@ -26,3 +26,11 @@ class MensalidadeAdmin(admin.ModelAdmin):
     )
 
     date_hierarchy = "vencimento"
+
+
+@admin.register(LembreteCobranca)
+class LembreteCobrancaAdmin(admin.ModelAdmin):
+    list_display = ("mensalidade", "estagio", "enviado_em")
+    list_filter = ("estagio",)
+    search_fields = ("mensalidade__matricula__atleta__nome",)
+    date_hierarchy = "enviado_em"

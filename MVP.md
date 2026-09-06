@@ -62,9 +62,22 @@ Endpoint público (`POST`, isento de CSRF) que recebe a confirmação de pagamen
 
 ### WhatsApp Cloud API (`integracoes/whatsapp/`)
 
-Cliente da API oficial da Meta, mesmo formato do cliente do Asaas. Usado para enviar automaticamente o acesso ao portal (`enviar_acesso_portal_responsavel`) e, futuramente, avisos de cobrança perto do vencimento (`enviar_cobranca_responsavel`, ainda sem um agendador chamando). Exige `WHATSAPP_PHONE_NUMBER_ID` e `WHATSAPP_ACCESS_TOKEN` (`.env.example`) e templates aprovados no Meta Business Manager (nomes configuráveis via `WHATSAPP_TEMPLATE_ACESSO`/`WHATSAPP_TEMPLATE_COBRANCA`). Sem configurar, todo fluxo cai automaticamente no link manual — nada quebra.
+Cliente da API oficial da Meta, mesmo formato do cliente do Asaas. Usado para enviar automaticamente o acesso ao portal (`enviar_acesso_portal_responsavel`), o botão manual "Enviar cobrança" do painel financeiro e os lembretes automáticos abaixo (todos via `enviar_cobranca_responsavel`). Exige `WHATSAPP_PHONE_NUMBER_ID` e `WHATSAPP_ACCESS_TOKEN` (`.env.example`) e templates aprovados no Meta Business Manager (nomes configuráveis via `WHATSAPP_TEMPLATE_ACESSO`/`WHATSAPP_TEMPLATE_COBRANCA`). Sem configurar, todo fluxo cai automaticamente no link manual (wa.me) — nada quebra.
 
-**Ainda não implementado** (fora do escopo deste MVP financeiro): geração de mensalidade automaticamente perto do vencimento com envio proativo (hoje é preciso rodar `gerar_mensalidades` e depois gerar o acesso/cobrança manualmente), desconto/bolsa/isenção com valor e motivo próprios, gráfico de receita por mês, e uma tabela de pagamentos separada da mensalidade (hoje a mensalidade acumula os dois papéis, o que é suficiente enquanto não há pagamento parcial).
+No painel financeiro, o botão único **"Enviar cobrança"** substitui o antigo par "Cobrar" (wa.me manual) + "Enviar cobrança": ele tenta mandar pela API automaticamente e só cai para o link manual se o WhatsApp não estiver configurado ou a chamada falhar.
+
+### Lembretes automáticos de cobrança (`financeiro/lembretes.py`)
+
+Comando `enviar_lembretes_cobranca` (agendar para rodar 1x por dia via cron/Agendador de Tarefas do Windows — o projeto não agenda nada sozinho) que avisa o responsável pelo WhatsApp em 4 estágios, cada um disparado **no máximo uma vez por mensalidade**:
+
+1. **5 dias antes** do vencimento;
+2. **1 dia antes**, se ainda não paga;
+3. **no dia** do vencimento, se ainda não paga;
+4. **atrasada** — dispara uma vez ao ficar em atraso; não repete todo dia depois disso (evita virar máquina de spam).
+
+Controle de idempotência: tabela `LembreteCobranca` (`mensalidade` + `estagio`, único), criada só depois do envio dar certo — se falhar (WhatsApp não configurado, API fora do ar, responsável sem WhatsApp cadastrado), tenta de novo na próxima execução em vez de desistir para sempre. O link enviado é o mesmo link de pagamento de uso único do portal do responsável (`TokenAcessoResponsavel` + `?next=`), montado com a variável `SITE_URL` (`.env.example`) já que o comando roda fora de uma request HTTP.
+
+**Ainda não implementado** (fora do escopo deste MVP financeiro): desconto/bolsa/isenção com valor e motivo próprios, gráfico de receita por mês, e uma tabela de pagamentos separada da mensalidade (hoje a mensalidade acumula os dois papéis, o que é suficiente enquanto não há pagamento parcial).
 
 Bootstrap é carregado por CDN e precisa de internet para aplicar a aparência. O portal não altera as permissões dos demais Django Admins: contas operacionais devem permanecer sem `is_staff`; o Admin é reservado à administração confiável.
 
