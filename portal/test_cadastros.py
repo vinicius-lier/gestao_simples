@@ -139,6 +139,14 @@ class NovosCadastrosTests(TestCase):
         m=Atleta.objects.get().matriculas.get()
         self.assertEqual((str(m.valor_mensalidade),m.dia_vencimento),('222.00',7))
 
+    def test_form_matricula_anota_turma_para_filtro_no_navegador(self):
+        turma=Turma.objects.create(academia=self.a,modalidade=self.s,unidade=self.unit2,nome='TX',valor_mensalidade='99.90',dia_vencimento=3)
+        html=self.client.get('/alunos/novo/').content.decode('utf8')
+        self.assertIn(f'data-modalidade="{self.s.pk}"',html)
+        self.assertIn(f'data-unidade="{self.unit2.pk}"',html)
+        self.assertIn('data-valor="99.90"',html)
+        self.assertIn('data-vencimento="3"',html)
+
 
     def faixas(self, *linhas, total=None, initial=0):
         base = {'faixa-TOTAL_FORMS': str(total if total is not None else max(len(linhas), 1)),

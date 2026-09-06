@@ -127,6 +127,37 @@
   self?.addEventListener('change', guardianMode);
   guardian.addEventListener('change', guardianMode);
   guardianMode();
+
+  const mModalidade = document.getElementById('id_matricula-modalidade');
+  const mUnidade = document.getElementById('id_matricula-unidade');
+  const mTurma = document.getElementById('id_matricula-turma');
+  const mValor = document.getElementById('id_matricula-valor_mensalidade');
+  const mVenc = document.getElementById('id_matricula-dia_vencimento');
+  if (mTurma) {
+    const options = [...mTurma.options];
+    function filterTurmas() {
+      const mod = mModalidade && mModalidade.value;
+      const uni = mUnidade && mUnidade.value;
+      options.forEach(opt => {
+        if (!opt.value) return;
+        const okMod = !mod || opt.dataset.modalidade === mod;
+        const okUni = !uni || !opt.dataset.unidade || opt.dataset.unidade === uni;
+        opt.hidden = opt.disabled = !(okMod && okUni);
+        if (opt.hidden && opt.selected) mTurma.value = '';
+      });
+    }
+    function fillFromTurma() {
+      const opt = mTurma.selectedOptions[0];
+      if (!opt || !opt.value) return;
+      if (mValor && !mValor.value && opt.dataset.valor) mValor.value = opt.dataset.valor;
+      if (mVenc && !mVenc.value && opt.dataset.vencimento) mVenc.value = opt.dataset.vencimento;
+    }
+    mModalidade?.addEventListener('change', filterTurmas);
+    mUnidade?.addEventListener('change', filterTurmas);
+    mTurma.addEventListener('change', fillFromTurma);
+    filterTurmas();
+  }
+
   form.addEventListener('submit', e => {
     for (let i = 0; i < panels.length; i++) { if (!valid(i)) { e.preventDefault(); return; } }
   });

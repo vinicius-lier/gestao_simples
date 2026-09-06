@@ -103,11 +103,32 @@ class AlunoForm(forms.ModelForm):
             return super().save()
 
 
+class TurmaSelect(forms.Select):
+    """Anota cada <option> de turma com dados para o filtro/preenchimento no navegador."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.turmas = {}
+
+    def create_option(self, name, value, label, selected, index, subindex=None, attrs=None):
+        option = super().create_option(name, value, label, selected, index, subindex, attrs)
+        turma = self.turmas.get(str(getattr(value, 'value', value)))
+        if turma is not None:
+            option['attrs'].update({
+                'data-modalidade': turma.modalidade_id,
+                'data-unidade': turma.unidade_id or '',
+                'data-valor': '' if turma.valor_mensalidade is None else turma.valor_mensalidade,
+                'data-vencimento': turma.dia_vencimento,
+            })
+        return option
+
+
 class MatriculaForm(forms.ModelForm):
     class Meta:
         model = Matricula
         fields = ('unidade', 'modalidade', 'turma', 'valor_mensalidade', 'dia_vencimento', 'data_inicio', 'data_fim', 'ativo')
         widgets = {key: forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}) for key in ('data_inicio', 'data_fim')}
+        widgets['turma'] = TurmaSelect
 
     def __init__(self, *args, academia, **kwargs):
         super().__init__(*args, **kwargs)
@@ -115,7 +136,9 @@ class MatriculaForm(forms.ModelForm):
         self.fields['unidade'].queryset = Unidade.objects.filter(academia=academia)
         self.fields['unidade'].required = self.fields['unidade'].queryset.exists()
         self.fields['modalidade'].queryset = Modalidade.objects.filter(academia=academia)
-        self.fields['turma'].queryset = Turma.objects.filter(academia=academia, modalidade__academia=academia)
+        turmas_qs = Turma.objects.filter(academia=academia, modalidade__academia=academia).select_related('modalidade', 'unidade')
+        self.fields['turma'].queryset = turmas_qs
+        self.fields['turma'].widget.turmas = {str(t.pk): t for t in turmas_qs}
         # Valor e vencimento vêm da turma; ficam editáveis para exceções (bolsa, desconto).
         self.fields['valor_mensalidade'].required = False
         self.fields['dia_vencimento'].required = False
