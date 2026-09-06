@@ -18,6 +18,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: academia_ci
+          POSTGRES_USER: academia_ci
+          # Isolated ephemeral CI database; never use trust on EC2.
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U academia_ci -d academia_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     defaults:
       run:
         shell: bash
@@ -34,10 +49,14 @@ jobs:
           python-version: '3.12'
       - name: Validate application before connecting
         env:
-          DB_ENGINE: sqlite
+          POSTGRES_DB: academia_ci
+          POSTGRES_USER: academia_ci
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: '5432'
           DJANGO_DEBUG: 'true'
         run: |
           set -euo pipefail
+          export DJANGO_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
           python -m pip install -r requirements.txt
           python manage.py check
           python manage.py test --noinput

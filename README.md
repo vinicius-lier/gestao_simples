@@ -63,55 +63,17 @@ valida o certificado e o hostname e exige uma CA confiável configurada no clien
 O Compose é destinado ao desenvolvimento local. O usuário criado pela imagem
 é administrador; em produção utilize uma credencial restrita ao banco da aplicação.
 
-### Transferir dados do SQLite
+### Dados antigos do SQLite
 
-Faça backup de `db.sqlite3` e interrompa as escritas durante a transferência.
-Use um PostgreSQL novo/vazio. Com o `.env` já configurado para PostgreSQL,
-execute no PowerShell (não crie um superusuário no destino antes da importação):
+A configura??o atual usa exclusivamente PostgreSQL. `DB_ENGINE=sqlite` n?o
+altera mais o backend. Preserve o arquivo antigo e seu backup; para exportar
+seus dados ser? necess?rio um ambiente separado com a configura??o SQLite
+anterior, antes de importar para um PostgreSQL vazio. N?o execute migrations
+esperando que elas transfiram automaticamente os dados do SQLite.
 
-```powershell
-$env:DB_ENGINE = 'sqlite'
-.\.venv\Scripts\python.exe manage.py dumpdata --all --natural-foreign --natural-primary --exclude contenttypes --exclude auth.permission --output dados-migracao.json
-Remove-Item Env:DB_ENGINE
-.\.venv\Scripts\python.exe manage.py migrate
-.\.venv\Scripts\python.exe manage.py loaddata dados-migracao.json
-.\.venv\Scripts\python.exe manage.py check --database default
-```
-
-Pare se qualquer comando falhar. Confira login, cadastros, matrículas e valores
-financeiros antes de liberar novas escritas. A exportação contém dados pessoais
-e hashes de senha; mantenha-a protegida e fora do Git. O SQLite original não é
-apagado. Para voltar a usá-lo, configure `DB_ENGINE=sqlite`; escritas feitas no
-PostgreSQL não são copiadas de volta automaticamente.
-
-Sem `DB_ENGINE`, o projeto mantém SQLite por compatibilidade com ambientes
-existentes. Esta etapa prepara o banco; a publicação ainda requer revisar
-`SECRET_KEY`, `DEBUG`, hosts, HTTPS, arquivos estáticos e backups.
-
-Referências: [Django e PostgreSQL](https://docs.djangoproject.com/en/dev/ref/databases/#postgresql-notes)
-e [instalação do Psycopg](https://www.psycopg.org/psycopg3/docs/basic/install.html).
-
-### SQLite (alternativa local)
-
-```bash
-# criar e ativar ambiente virtual
-python -m venv .venv
-source .venv/bin/activate
-
-# instalar dependências
-pip install -r requirements.txt
-
-# aplicar migrações
-python manage.py migrate
-
-# criar um superusuário para acessar o admin
-python manage.py createsuperuser
-
-# subir o servidor de desenvolvimento
-python manage.py runserver
-```
-
-Acesse `http://127.0.0.1:8000/admin/` e faça login com o superusuário criado.
+Configure DJANGO_SECRET_KEY, DJANGO_DEBUG e as vari?veis POSTGRES_* do
+`.env.example` antes de iniciar o projeto. Para publica??o na EC2, consulte
+[deploy/README.md](deploy/README.md).
 
 ## Status do projeto
 

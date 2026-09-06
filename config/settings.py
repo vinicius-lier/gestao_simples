@@ -14,29 +14,18 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from django.core.exceptions import ImproperlyConfigured
 
-load_dotenv()  # lê o .env antes de qualquer os.getenv() deste arquivo
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
+SECRET_KEY = os.getenv("DJANGO_SECRET_KEY")
+DEBUG = os.getenv("DJANGO_DEBUG", "false").lower() == "true"
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
-
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-^=cc_@lrg+wgj+7losut#zi9i1fad#5k3ft@bej-b&lpgyxw0!'
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DJANGO_DEBUG', 'true').lower() in ('1', 'true', 'yes')
-SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', SECRET_KEY if DEBUG else '')
-if not SECRET_KEY:
-    raise ImproperlyConfigured('Defina DJANGO_SECRET_KEY quando DJANGO_DEBUG=false.')
-
-# Hosts extras (ex.: domínio de túnel ngrok/localtunnel para testar
-# webhooks localmente) via variável de ambiente, separados por vírgula.
-ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '').split(',') if h.strip()]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
 
 
 # Application definition
@@ -90,37 +79,20 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-DB_ENGINE = os.getenv('DB_ENGINE', 'sqlite').strip().lower()
-if DB_ENGINE == 'postgresql':
-    required = ('POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'POSTGRES_HOST')
-    missing = [name for name in required if not os.getenv(name, '').strip()]
-    if missing:
-        raise ImproperlyConfigured('Configure no ambiente: ' + ', '.join(missing))
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ['POSTGRES_DB'],
-            'USER': os.environ['POSTGRES_USER'],
-            'PASSWORD': os.environ['POSTGRES_PASSWORD'],
-            'HOST': os.environ['POSTGRES_HOST'],
-            'PORT': os.getenv('POSTGRES_PORT', '5432'),
-            'CONN_MAX_AGE': int(os.getenv('DB_CONN_MAX_AGE', '0')),
-            'CONN_HEALTH_CHECKS': True,
-            'OPTIONS': {
-                'sslmode': os.getenv('POSTGRES_SSLMODE', 'prefer'),
-                'connect_timeout': 10,
-            },
-        }
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("POSTGRES_DB"),
+        "USER": os.getenv("POSTGRES_USER"),
+        "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
+        "HOST": os.getenv("POSTGRES_HOST", "127.0.0.1"),
+        "PORT": os.getenv("POSTGRES_PORT", "5432"),
+        "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
+        "OPTIONS": {
+            "sslmode": os.getenv("POSTGRES_SSLMODE", "prefer"),
+        },
     }
-elif DB_ENGINE == 'sqlite':
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
-else:
-    raise ImproperlyConfigured('DB_ENGINE deve ser sqlite ou postgresql.')
+}
 
 
 # Password validation
@@ -145,9 +117,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'pt-br'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'America/Sao_Paulo'
 
 USE_I18N = True
 

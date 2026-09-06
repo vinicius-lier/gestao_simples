@@ -23,7 +23,7 @@ if len(settings.SECRET_KEY) < 50 or settings.SECRET_KEY.startswith('django-insec
 if not settings.ALLOWED_HOSTS or '*' in settings.ALLOWED_HOSTS:
     raise SystemExit('Configure explicit ALLOWED_HOSTS')
 if settings.DATABASES['default']['ENGINE'] != 'django.db.backends.postgresql':
-    raise SystemExit('Deploy requires DB_ENGINE=postgresql')
+    raise SystemExit('Deploy requires the PostgreSQL backend')
 PY
 python manage.py check
 python manage.py migrate --noinput
