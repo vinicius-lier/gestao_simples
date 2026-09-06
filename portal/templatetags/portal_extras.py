@@ -14,25 +14,6 @@ def _numero_whatsapp(digitos):
 
 
 @register.simple_tag
-def link_cobranca_whatsapp(mensalidade):
-    """Monta o link wa.me para cobrar uma mensalidade, já com a mensagem
-    preenchida. Retorna vazio se não houver responsável ou WhatsApp
-    cadastrado."""
-    aluno = mensalidade.matricula.atleta
-    responsavel = aluno.responsavel_financeiro
-    numero = _numero_whatsapp(getattr(responsavel, 'whatsapp', ''))
-    if not numero:
-        return ''
-
-    mensagem = (
-        f"Olá! A mensalidade de {aluno.nome} referente a "
-        f"{mensalidade.competencia:%m/%Y} está no valor de R$ {mensalidade.valor}, "
-        f"com vencimento em {mensalidade.vencimento:%d/%m/%Y}."
-    )
-    return f"https://wa.me/{numero}?text={quote(mensagem)}"
-
-
-@register.simple_tag
 def link_whatsapp(numero, mensagem):
     """wa.me genérico: qualquer número + mensagem prontos."""
     numero = _numero_whatsapp(numero)
