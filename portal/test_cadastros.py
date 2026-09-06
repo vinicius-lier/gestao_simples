@@ -105,6 +105,15 @@ class NovosCadastrosTests(TestCase):
         self.assertFalse(Atleta.objects.exists())
         self.assertFalse(Responsavel.objects.exists())
 
+    def test_cpf_com_quantidade_errada_de_digitos_e_rejeitado(self):
+        # Regressao: um CPF com 12 digitos era aceito no cadastro e so
+        # quebrava depois, ao tentar gerar a cobranca no Asaas (HTTP 400).
+        data=self.payload();data['cpf']='212454848661'
+        response=self.client.post('/alunos/novo/',data)
+        self.assertEqual(response.status_code,200)
+        self.assertContains(response,'CPF inválido')
+        self.assertFalse(Atleta.objects.exists())
+
     def test_matricula_outro_polo_so_admin(self):
         self.client.post('/alunos/novo/',self.payload())
         aluno=Atleta.objects.get()

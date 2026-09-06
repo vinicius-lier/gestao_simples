@@ -12,6 +12,17 @@ def digits(value):
     return ''.join(c for c in value if c.isdigit())
 
 
+def cpf_valido(valor):
+    """Checagem propositalmente simples: exige 11 dígitos e rejeita
+    sequências óbvias como '11111111111'. Não valida o dígito
+    verificador — o projeto usa CPFs de teste sem esse cuidado (ex.:
+    '12345678900'), e o problema real que motivou este checador foi um
+    CPF com 12 dígitos passando sem aviso e só quebrando depois, ao
+    gerar cobrança no Asaas."""
+    numeros = digits(valor)
+    return len(numeros) == 11 and numeros != numeros[0] * 11
+
+
 class AlunoForm(forms.ModelForm):
     proprio_responsavel = forms.BooleanField(required=False, label='O próprio aluno é o responsável financeiro')
     aluno_whatsapp = forms.CharField(max_length=20, required=False, label='WhatsApp do aluno')
@@ -50,6 +61,18 @@ class AlunoForm(forms.ModelForm):
             raise ValidationError('O nascimento não pode estar no futuro.')
         return value
 
+    def clean_cpf(self):
+        value = self.cleaned_data.get('cpf', '')
+        if value and not cpf_valido(value):
+            raise ValidationError('CPF inválido. Confira os números digitados.')
+        return value
+
+    def clean_responsavel_cpf(self):
+        value = self.cleaned_data.get('responsavel_cpf', '')
+        if value and not cpf_valido(value):
+            raise ValidationError('CPF inválido. Confira os números digitados.')
+        return value
+
     def clean_responsavel_whatsapp(self):
         value = self.cleaned_data['responsavel_whatsapp']
         if value and not digits(value):
@@ -59,7 +82,7 @@ class AlunoForm(forms.ModelForm):
     def clean(self):
         data = super().clean()
         if data.get('proprio_responsavel'):
-            if not digits(data.get('cpf', '')):
+            if not self.errors.get('cpf') and not digits(data.get('cpf', '')):
                 self.add_error('cpf', 'Informe o CPF do aluno responsável financeiro.')
             if not digits(data.get('aluno_whatsapp', '')):
                 self.add_error('aluno_whatsapp', 'Informe o WhatsApp do aluno.')
