@@ -1,0 +1,1 @@
+Ícones estão embutidos como SVG inline no index.html. Adicione arquivos aqui se precisar.

@@ -1,0 +1,235 @@
+/* ============================================================
+   Escola de Judô Keiko Fukuda — Responsividade (Mobile First)
+   Alvos: 320 · 375 · 430 · 768 · 1024 · 1440 · 1920
+   Carregar por último para sobrescrever com min-width.
+   ============================================================ */
+
+/* ---------- ≥ 480px — celulares maiores ---------- */
+@media (min-width: 480px) {
+  .hero__actions .btn {
+    flex: 0 1 auto;
+  }
+
+  .pillars {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .testimonials {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- ≥ 640px ---------- */
+@media (min-width: 640px) {
+  .classes {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .teachers {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .gallery__item--feature {
+    grid-column: span 2;
+    aspect-ratio: 4 / 3;
+  }
+}
+
+/* ---------- ≥ 768px — tablet / navegação desktop ---------- */
+@media (min-width: 768px) {
+  :root {
+    --header-h: 84px;
+  }
+
+  /* Navegação horizontal */
+  .nav-toggle,
+  .nav-backdrop {
+    display: none;
+  }
+
+  .primary-nav {
+    position: static;
+    width: auto;
+    padding: 0;
+    background: transparent;
+    box-shadow: none;
+    transform: none;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-lg);
+    overflow: visible;
+  }
+
+  .primary-nav__list {
+    flex-direction: row;
+    gap: var(--space-md);
+  }
+
+  .primary-nav__link {
+    padding: 0.4rem 0;
+    font-size: var(--fs-small);
+    border-bottom: 2px solid transparent;
+  }
+
+  .primary-nav__link:hover,
+  .primary-nav__link[aria-current="true"] {
+    border-bottom-color: var(--color-primary);
+  }
+
+  .primary-nav .btn {
+    display: none;
+  }
+
+  .header-cta {
+    display: inline-flex;
+  }
+
+  /* Hero em duas colunas */
+  .hero__inner {
+    grid-template-columns: 1.05fr 0.95fr;
+    align-items: center;
+    gap: var(--space-2xl);
+  }
+
+  .hero__content {
+    max-width: none;
+  }
+
+  /* Origem do nome */
+  .origin__inner {
+    grid-template-columns: 0.85fr 1.15fr;
+  }
+
+  .origin__media {
+    order: -1;
+  }
+
+  /* Aulas */
+  .classes {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Professores */
+  .teachers {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Depoimentos */
+  .testimonials {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Localização */
+  .location__inner {
+    grid-template-columns: 0.9fr 1.1fr;
+    align-items: start;
+  }
+
+  /* Galeria em mosaico assimétrico */
+  .gallery {
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-xs);
+  }
+
+  .gallery__item--feature {
+    grid-column: span 2;
+    grid-row: span 2;
+    aspect-ratio: auto;
+  }
+
+  /* Footer */
+  .site-footer__grid {
+    grid-template-columns: 1.4fr 1fr;
+    align-items: start;
+  }
+}
+
+/* ---------- ≥ 1024px — desktop ---------- */
+@media (min-width: 1024px) {
+  .pillars {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .section__head {
+    margin-bottom: var(--space-2xl);
+  }
+
+  /* Metodologia horizontal com linha de conexão */
+  .method {
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--space-lg);
+  }
+
+  .method::before {
+    content: "";
+    position: absolute;
+    left: 1.25rem;
+    right: 1.25rem;
+    top: 1.25rem;
+    height: 1.5px;
+    background: var(--color-border);
+  }
+
+  .method__step {
+    padding-left: 0;
+    padding-top: 3.75rem;
+  }
+
+  .method__step::before {
+    left: 0;
+    top: 0;
+    background: var(--color-bg);
+  }
+
+  /* Hero: respiro extra */
+  .hero__inner {
+    padding-block: var(--space-3xl) var(--section-y);
+  }
+
+  .hero__kanji {
+    font-size: 20rem;
+    top: -5rem;
+  }
+
+  /* Origem — imagem maior */
+  .origin__inner {
+    gap: var(--space-3xl);
+  }
+}
+
+/* ---------- ≥ 1280px ---------- */
+@media (min-width: 1280px) {
+  .section__head--center {
+    max-width: 46rem;
+  }
+
+  .hero__inner {
+    gap: clamp(var(--space-2xl), 8vw, 7rem);
+  }
+}
+
+/* ---------- ≥ 1536px — telas amplas ---------- */
+@media (min-width: 1536px) {
+  :root {
+    --container: 1320px;
+  }
+
+  body {
+    font-size: 1.05rem;
+  }
+}
+
+/* ---------- Impressão ---------- */
+@media print {
+  .site-header,
+  .whatsapp-float,
+  .nav-backdrop,
+  .lightbox {
+    display: none;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
