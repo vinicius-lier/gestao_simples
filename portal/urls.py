@@ -22,4 +22,5 @@ for tipo in ('unidades', 'professores', 'turmas', 'modalidades'):
         path(f'{tipo}/novo/', views.cadastros, {'tipo': tipo, 'novo': True}, name=f'{tipo}_novo'),
         path(f'{tipo}/<int:pk>/editar/', views.cadastros, {'tipo': tipo}, name=f'{tipo}_editar'),
         path(f'{tipo}/<int:pk>/excluir/', views.cadastros, {'tipo': tipo, 'excluir': True}, name=f'{tipo}_excluir'),
+        path(f'{tipo}/<int:pk>/', views.cadastros, {'tipo': tipo, 'detalhe': True}, name=f'{tipo}_detalhe'),
     ]

@@ -109,7 +109,7 @@ def pagina_publica(request):
 
 @academia_required
 @require_http_methods(['GET', 'POST'])
-def cadastros(request, tipo, pk=None, novo=False, excluir=False):
+def cadastros(request, tipo, pk=None, novo=False, excluir=False, detalhe=False):
     from django.db.models import ProtectedError
     from academias.models import Unidade
     from modalidades.models import Professor, Turma, Modalidade
@@ -120,10 +120,19 @@ def cadastros(request, tipo, pk=None, novo=False, excluir=False):
         'turmas': (Turma, TurmaForm, 'Turmas', 'turma'),
         'modalidades': (Modalidade, ModalidadeForm, 'Modalidades', 'modalidade'),
     }
+    prefetch = {
+        'unidades': ('turmas__modalidade', 'turmas__docente'),
+        'professores': ('turmas__modalidade', 'turmas__unidade'),
+        'turmas': (),
+        'modalidades': ('graduacoes', 'turmas__unidade', 'turmas__docente'),
+    }[tipo]
     model, form_class, titulo, singular = cadastro[tipo]
-    objetos = model.objects.filter(academia=request.academia).order_by('nome')
+    objetos = model.objects.filter(academia=request.academia).prefetch_related(*prefetch).order_by('nome')
     if not novo and pk is None:
         return render(request, 'portal/cadastros.html', {'objetos': objetos, 'tipo': tipo, 'titulo': titulo})
+    if detalhe:
+        obj = get_object_or_404(objetos, pk=pk)
+        return render(request, 'portal/cadastro_detalhe.html', {'obj': obj, 'tipo': tipo, 'titulo': titulo, 'singular': singular})
     if not request.administrador_academia:
         raise PermissionDenied('Somente o administrador da academia pode alterar estes cadastros.')
     instance = get_object_or_404(objetos, pk=pk) if pk else None

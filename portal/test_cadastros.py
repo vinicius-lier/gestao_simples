@@ -57,6 +57,28 @@ class NovosCadastrosTests(TestCase):
         self.assertTrue(Modalidade.objects.filter(pk=self.s.pk).exists())
         self.assertContains(resp, 'não pode ser excluído')
 
+    def test_detalhe_dos_cadastros(self):
+        from modalidades.models import Graduacao
+        Graduacao.objects.create(academia=self.a, modalidade=self.s, nome='Branca', ordem=1)
+        turma = Turma.objects.create(academia=self.a, modalidade=self.s, unidade=self.unit, docente=self.p,
+                                     nome='Infantil', horario='18:30', valor_mensalidade='170.00', dia_vencimento=5)
+        self.acesso.administrador = False  # detalhe é leitura, não exige admin
+        self.acesso.save()
+        casos = {
+            f'/modalidades/{self.s.pk}/': ['Branca', 'Infantil'],
+            f'/turmas/{turma.pk}/': ['Judô', 'Matriz', 'Professora', 'R$ 170.00', '18:30'],
+            f'/professores/{self.p.pk}/': ['Infantil'],
+            f'/unidades/{self.unit.pk}/': ['Infantil'],
+        }
+        for url, trechos in casos.items():
+            resp = self.client.get(url)
+            self.assertEqual(resp.status_code, 200, url)
+            self.assertContains(resp, 'detalhe-conteudo')
+            for trecho in trechos:
+                self.assertContains(resp, trecho, msg_prefix=url)
+        alheio = Modalidade.objects.create(academia=self.b, nome='Secreta')
+        self.assertEqual(self.client.get(f'/modalidades/{alheio.pk}/').status_code, 404)
+
     def test_turma_rejeita_relacao_outra_academia(self):
         p = Professor.objects.create(academia=self.b, nome='Secreto')
         response = self.client.post('/turmas/novo/', {'nome':'Teste', 'unidade':self.unit.pk,'modalidade':self.s.pk,'docente':p.pk,'ativo':'on'})

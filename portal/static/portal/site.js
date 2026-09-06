@@ -52,6 +52,24 @@
     });
   }
 
+  const detalheDialog = document.querySelector('[data-detalhe-dialog]');
+  if (detalheDialog) {
+    const body = detalheDialog.querySelector('[data-detalhe-body]');
+    document.querySelectorAll('a[data-detalhe]').forEach(link => link.addEventListener('click', async event => {
+      event.preventDefault();
+      body.innerHTML = '<p class="text-secondary">Carregando…</p>';
+      detalheDialog.showModal();
+      try {
+        const response = await fetch(link.href, { headers: { 'X-Requested-With': 'fetch' } });
+        const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+        const content = doc.getElementById('detalhe-conteudo');
+        if (content) body.replaceChildren(content); else window.location = link.href;
+      } catch (_) {
+        window.location = link.href;
+      }
+    }));
+  }
+
   const form = document.querySelector('[data-wizard]');
   if (!form) return;
   const panels = [...form.querySelectorAll('[data-panel]')];

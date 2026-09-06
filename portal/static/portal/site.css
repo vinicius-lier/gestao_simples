@@ -21,8 +21,17 @@
 [data-formset-add]{margin-top:14px}
 @media(max-width:767px){.faixa-row{grid-template-columns:1fr 1fr}.faixa-remove{grid-column:1/-1;width:100%}}
 
-/* Acao de excluir nas listas de cadastro */
+/* Acoes nas listas de cadastro */
 .acoes-cell{white-space:nowrap}
 .acoes-cell a{margin-right:14px}
 .link-danger-btn{border:0;background:none;padding:0;color:#a53f31;font-weight:600;font-size:inherit;cursor:pointer}
 .link-danger-btn:hover{text-decoration:underline}
+
+/* Modal de detalhes do cadastro */
+.detalhe-dialog{border:1px solid var(--line);border-radius:18px;padding:26px;width:min(94vw,620px);max-height:86vh;overflow:auto;box-shadow:0 25px 90px #20202430;color:var(--ink)}
+.detalhe-dialog::backdrop{background:#20202455;backdrop-filter:blur(4px)}
+.detalhe-dialog[open]{animation:arrive .2s ease}
+.detalhe-dialog .back-link{display:none}
+.detalhe-dialog .hero-dashboard{margin-bottom:14px}
+.detalhe-dialog .card{border:0;box-shadow:none;padding:0!important}
+.detalhe-dialog dl dt{margin-top:14px}
