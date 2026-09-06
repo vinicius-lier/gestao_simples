@@ -70,6 +70,26 @@ class ResponsavelPortalTests(TestCase):
         acesso.refresh_from_db()
         self.assertIsNotNone(acesso.usado_em)
 
+    def test_link_com_next_valido_vai_direto_para_pagar(self):
+        acesso = TokenAcessoResponsavel.gerar(self.responsavel)
+        destino = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
+        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next={destino}")
+        self.assertRedirects(resposta, destino)
+
+    def test_link_com_next_de_outra_familia_cai_no_painel(self):
+        outro_responsavel = Responsavel.objects.create(
+            academia=self.a, nome="Estranho", cpf="3", whatsapp="21977776666"
+        )
+        acesso = TokenAcessoResponsavel.gerar(outro_responsavel)
+        destino = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
+        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next={destino}")
+        self.assertRedirects(resposta, "/responsavel/")
+
+    def test_link_com_next_externo_e_ignorado(self):
+        acesso = TokenAcessoResponsavel.gerar(self.responsavel)
+        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next=https://evil.example.com/")
+        self.assertRedirects(resposta, "/responsavel/")
+
     def test_link_usado_duas_vezes_falha_na_segunda(self):
         acesso = TokenAcessoResponsavel.gerar(self.responsavel)
         self.client.get(f"/responsavel/entrar/{acesso.token}/")

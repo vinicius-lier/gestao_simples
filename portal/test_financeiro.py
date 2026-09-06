@@ -166,3 +166,26 @@ class FinanceiroPortalTests(TestCase):
         self.assertEqual(
             self.client.get(f"/financeiro/cobrancas/{self.mensalidade_b.pk}/pix/qrcode/").status_code, 404
         )
+
+    @patch("integracoes.whatsapp.services.WhatsAppClient")
+    def test_enviar_cobranca_com_whatsapp_configurado(self, mock_client_class):
+        from portal.models import TokenAcessoResponsavel
+
+        mock_client_class.return_value.enviar_template.return_value = {"ok": True}
+
+        resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/enviar/", follow=True)
+
+        self.assertContains(resposta, "enviada automaticamente")
+        kwargs = mock_client_class.return_value.enviar_template.call_args.kwargs
+        link_enviado = kwargs["parametros"][-1]
+        self.assertIn(f"/responsavel/mensalidade/{self.pendente.pk}/pagar/", link_enviado)
+        self.assertEqual(TokenAcessoResponsavel.objects.count(), 1)
+
+    def test_enviar_cobranca_sem_whatsapp_mostra_link_manual(self):
+        resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/enviar/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "/responsavel/entrar/")
+
+    def test_enviar_cobranca_isola_por_academia(self):
+        resposta = self.client.post(f"/financeiro/cobrancas/{self.mensalidade_b.pk}/enviar/")
+        self.assertEqual(resposta.status_code, 404)

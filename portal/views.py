@@ -310,3 +310,48 @@ def gerar_acesso_responsavel(request, pk):
     return render(request, 'portal/acesso_responsavel_gerado.html', {
         'aluno': aluno, 'responsavel': responsavel, 'link': link, 'mensagem': mensagem,
     })
+
+
+@academia_required
+@require_http_methods(['POST'])
+def financeiro_enviar_cobranca(request, pk):
+    """Manda a cobrança (valor, vencimento e link de pagamento) direto
+    para o responsável pelo WhatsApp. O link já entra logado e cai
+    direto na página de pagamento dessa mensalidade — não no painel
+    geral. Mesma regra de fallback do acesso ao portal: sem a API do
+    WhatsApp configurada, mostra o link para enviar na mão."""
+    from financeiro.models import Mensalidade
+    from integracoes.whatsapp.client import WhatsAppAPIError
+    from integracoes.whatsapp.services import enviar_cobranca_responsavel
+
+    mensalidade = get_object_or_404(
+        Mensalidade.objects.select_related('matricula__atleta'), pk=pk, academia=request.academia
+    )
+    aluno = mensalidade.matricula.atleta
+    responsavel = aluno.responsavel_financeiro
+    if responsavel is None or responsavel.academia_id != request.academia.pk:
+        messages.error(request, 'Este aluno não tem responsável financeiro cadastrado.')
+        return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
+
+    acesso = TokenAcessoResponsavel.gerar(responsavel)
+    destino = reverse('portal:responsavel_pagar', args=[mensalidade.pk])
+    link = request.build_absolute_uri(reverse('portal:responsavel_entrar', args=[acesso.token])) + f'?next={destino}'
+
+    try:
+        enviar_cobranca_responsavel(responsavel, mensalidade, link)
+    except ValueError:
+        pass  # API do WhatsApp não configurada: operador envia manualmente abaixo
+    except WhatsAppAPIError as error:
+        messages.warning(request, f'Não deu para enviar automaticamente pelo WhatsApp: {error}')
+    else:
+        messages.success(request, f'Cobrança enviada automaticamente para {responsavel.nome} pelo WhatsApp.')
+        return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
+
+    mensagem = (
+        f'Olá, {responsavel.nome}! A mensalidade de {aluno.nome} referente a '
+        f'{mensalidade.competencia:%m/%Y} está no valor de R$ {mensalidade.valor}, com vencimento '
+        f'em {mensalidade.vencimento:%d/%m/%Y}. Pague por aqui: {link}'
+    )
+    return render(request, 'portal/acesso_responsavel_gerado.html', {
+        'aluno': aluno, 'responsavel': responsavel, 'link': link, 'mensagem': mensagem,
+    })

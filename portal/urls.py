@@ -20,6 +20,7 @@ urlpatterns = [
     path('financeiro/cobrancas/<int:pk>/pagar/', views.financeiro_marcar_pago, name='financeiro_marcar_pago'),
     path('financeiro/cobrancas/<int:pk>/pix/', views.financeiro_gerar_pix, name='financeiro_gerar_pix'),
     path('financeiro/cobrancas/<int:pk>/pix/qrcode/', views.financeiro_pix_qrcode, name='financeiro_pix_qrcode'),
+    path('financeiro/cobrancas/<int:pk>/enviar/', views.financeiro_enviar_cobranca, name='financeiro_enviar_cobranca'),
     # Portal do responsável — área pública, sem o login de staff.
     path('responsavel/entrar/<str:token>/', views_responsavel.responsavel_entrar, name='responsavel_entrar'),
     path('responsavel/link-expirado/', views_responsavel.responsavel_link_expirado, name='responsavel_link_expirado'),

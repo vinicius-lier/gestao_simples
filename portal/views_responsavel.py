@@ -2,6 +2,7 @@
 onde ele acompanha as mensalidades dos alunos e paga por Pix, boleto ou
 cartão. Acesso por link de uso único (sem senha) — ver TokenAcessoResponsavel.
 """
+import re
 from functools import wraps
 
 from django.contrib import messages
@@ -11,6 +12,21 @@ from django.views.decorators.http import require_http_methods
 from atletas.models import Atleta, Responsavel
 from financeiro.models import Mensalidade
 from .models import TokenAcessoResponsavel
+
+_PADRAO_DESTINO_PAGAR = re.compile(r'^/responsavel/mensalidade/(\d+)/pagar/$')
+
+
+def destino_pos_login(proximo, responsavel):
+    """Só aceita redirecionar, após o login por link, para a página de
+    pagamento de uma mensalidade que realmente pertence a esse
+    responsável — nunca uma URL externa nem de outra família."""
+    correspondencia = _PADRAO_DESTINO_PAGAR.match(proximo or '')
+    if not correspondencia:
+        return None
+    existe = Mensalidade.objects.filter(
+        pk=correspondencia.group(1), matricula__atleta__responsavel_financeiro=responsavel
+    ).exists()
+    return proximo if existe else None
 
 
 def responsavel_required(view):
@@ -35,7 +51,8 @@ def responsavel_entrar(request, token):
     request.session['responsavel_id'] = acesso.responsavel_id
     request.session.set_expiry(60 * 60 * 24 * 14)  # 14 dias, como o padrão de sessão do Django
     messages.success(request, f'Bem-vindo(a), {acesso.responsavel.nome}.')
-    return redirect('portal:responsavel_painel')
+    destino = destino_pos_login(request.GET.get('next', ''), acesso.responsavel)
+    return redirect(destino) if destino else redirect('portal:responsavel_painel')
 
 
 def responsavel_link_expirado(request):
