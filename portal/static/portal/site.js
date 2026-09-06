@@ -21,6 +21,37 @@
   document.querySelector('[data-open-search]')?.addEventListener('click', openSearch);
   document.querySelector('[data-close-search]')?.addEventListener('click', () => dialog.close());
   document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && dialog) { e.preventDefault(); openSearch(); } });
+  const formset = document.querySelector('[data-formset]');
+  if (formset) {
+    const rows = formset.querySelector('[data-formset-rows]');
+    const template = formset.querySelector('[data-formset-empty]');
+    const total = document.getElementById('id_faixa-TOTAL_FORMS');
+    formset.querySelector('[data-formset-add]')?.addEventListener('click', () => {
+      const index = Number(total.value);
+      const holder = document.createElement('div');
+      holder.innerHTML = template.innerHTML.replace(/__prefix__/g, index).trim();
+      const row = holder.firstElementChild;
+      rows.appendChild(row);
+      total.value = index + 1;
+      row.querySelector('input, select')?.focus();
+    });
+    rows.addEventListener('click', event => {
+      const button = event.target.closest('[data-faixa-remove]');
+      if (!button) return;
+      const row = button.closest('.faixa-row');
+      const id = row.querySelector('input[name$="-id"]');
+      const del = row.querySelector('input[name$="-DELETE"]');
+      if (id && id.value) {
+        if (del) del.checked = true;               // faixa salva: marca para excluir ao salvar
+      } else {
+        row.querySelectorAll('input:not([type=hidden]), select').forEach(el => {
+          if (el.type === 'checkbox') el.checked = false; else el.value = '';
+        });                                          // faixa nova: esvazia para ser ignorada
+      }
+      row.hidden = true;
+    });
+  }
+
   const form = document.querySelector('[data-wizard]');
   if (!form) return;
   const panels = [...form.querySelectorAll('[data-panel]')];

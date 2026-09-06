@@ -15,4 +15,8 @@
 .faixa-row{display:grid;grid-template-columns:2fr 90px auto auto;gap:14px;align-items:end;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fcfcfc}
 .faixa-row .field-group{margin:0}
 .faixa-row .field-group:has(input[type=checkbox]){align-self:center}
-@media(max-width:767px){.faixa-row{grid-template-columns:1fr 1fr}}
+.faixa-row .field-group:has(input[name$="-DELETE"]){display:none}
+.faixa-remove{align-self:center;justify-self:center;border:1px solid var(--line);background:#fff;color:#a53f31;width:30px;height:30px;border-radius:8px;font-size:13px;line-height:1;cursor:pointer}
+.faixa-remove:hover{background:#fff0ed;border-color:#e2b3ab}
+[data-formset-add]{margin-top:14px}
+@media(max-width:767px){.faixa-row{grid-template-columns:1fr 1fr}.faixa-remove{grid-column:1/-1;width:100%}}
