@@ -20,3 +20,9 @@
 .faixa-remove:hover{background:#fff0ed;border-color:#e2b3ab}
 [data-formset-add]{margin-top:14px}
 @media(max-width:767px){.faixa-row{grid-template-columns:1fr 1fr}.faixa-remove{grid-column:1/-1;width:100%}}
+
+/* Acao de excluir nas listas de cadastro */
+.acoes-cell{white-space:nowrap}
+.acoes-cell a{margin-right:14px}
+.link-danger-btn{border:0;background:none;padding:0;color:#a53f31;font-weight:600;font-size:inherit;cursor:pointer}
+.link-danger-btn:hover{text-decoration:underline}

@@ -109,7 +109,8 @@ def pagina_publica(request):
 
 @academia_required
 @require_http_methods(['GET', 'POST'])
-def cadastros(request, tipo, pk=None, novo=False):
+def cadastros(request, tipo, pk=None, novo=False, excluir=False):
+    from django.db.models import ProtectedError
     from academias.models import Unidade
     from modalidades.models import Professor, Turma, Modalidade
     from .forms import UnidadeForm, ProfessorForm, TurmaForm, ModalidadeForm, GraduacaoFormSet
@@ -126,6 +127,15 @@ def cadastros(request, tipo, pk=None, novo=False):
     if not request.administrador_academia:
         raise PermissionDenied('Somente o administrador da academia pode alterar estes cadastros.')
     instance = get_object_or_404(objetos, pk=pk) if pk else None
+    if excluir:
+        if request.method == 'POST':
+            try:
+                with transaction.atomic():
+                    instance.delete()
+                messages.success(request, f'{instance.nome}: cadastro excluído.')
+            except ProtectedError:
+                messages.error(request, f'{instance.nome} não pode ser excluído: há turmas, matrículas ou faixas vinculadas.')
+        return redirect('portal:' + tipo)
     data = request.POST if request.method == 'POST' else None
     form = form_class(data, instance=instance, academia=request.academia)
     faixas = None

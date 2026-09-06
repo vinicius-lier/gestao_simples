@@ -36,6 +36,27 @@ class NovosCadastrosTests(TestCase):
             self.assertEqual(self.client.get(path).status_code, 403)
             self.assertEqual(self.client.post(path, {'nome':'Bloqueado'}).status_code, 403)
 
+    def test_excluir_cadastro(self):
+        prof = Professor.objects.create(academia=self.a, nome='Temporário')
+        alheio = Professor.objects.create(academia=self.b, nome='De outra')
+        self.assertEqual(self.client.get(f'/professores/{prof.pk}/excluir/').status_code, 302)  # GET só redireciona
+        self.assertTrue(Professor.objects.filter(pk=prof.pk).exists())
+        self.assertEqual(self.client.post(f'/professores/{prof.pk}/excluir/').status_code, 302)
+        self.assertFalse(Professor.objects.filter(pk=prof.pk).exists())
+        self.assertEqual(self.client.post(f'/professores/{alheio.pk}/excluir/').status_code, 404)
+        self.acesso.administrador = False
+        self.acesso.save()
+        p2 = Professor.objects.create(academia=self.a, nome='Outro')
+        self.assertEqual(self.client.post(f'/professores/{p2.pk}/excluir/').status_code, 403)
+        self.assertTrue(Professor.objects.filter(pk=p2.pk).exists())
+
+    def test_excluir_bloqueado_por_vinculo(self):
+        Turma.objects.create(academia=self.a, modalidade=self.s, unidade=self.unit, nome='T')
+        resp = self.client.post(f'/modalidades/{self.s.pk}/excluir/', follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Modalidade.objects.filter(pk=self.s.pk).exists())
+        self.assertContains(resp, 'não pode ser excluído')
+
     def test_turma_rejeita_relacao_outra_academia(self):
         p = Professor.objects.create(academia=self.b, nome='Secreto')
         response = self.client.post('/turmas/novo/', {'nome':'Teste', 'unidade':self.unit.pk,'modalidade':self.s.pk,'docente':p.pk,'ativo':'on'})

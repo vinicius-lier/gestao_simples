@@ -136,3 +136,7 @@ MAILERS = {
 LOGIN_URL = 'portal:login'
 LOGIN_REDIRECT_URL = 'portal:dashboard'
 LOGOUT_REDIRECT_URL = 'portal:login'
+
+# Bootstrap usa "danger" para erro
+from django.contrib.messages import constants as _messages  # noqa: E402
+MESSAGE_TAGS = {_messages.ERROR: 'danger'}
