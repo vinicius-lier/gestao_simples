@@ -117,9 +117,14 @@ class Mensalidade(models.Model):
 
 
 class LembreteCobranca(models.Model):
-    """Registra o disparo de cada estágio do lembrete automático de
-    cobrança, para garantir que cada estágio seja enviado no máximo uma
-    vez por mensalidade (sem virar máquina de spam)."""
+    """Registro operacional de cada estágio do lembrete automático de
+    cobrança de uma mensalidade.
+
+    O `UniqueConstraint(mensalidade, estagio)` garante que cada estágio
+    existe no máximo uma vez por mensalidade (nada de spam). O registro é
+    criado ANTES da tentativa de envio e passa por `pendente` -> `enviado`
+    ou `pendente`/`erro` -> `erro`. Só `status=enviado` bloqueia novas
+    tentativas; `status=erro` pode ser retentado na próxima execução."""
 
     CINCO_DIAS = "5_dias"
     UM_DIA = "1_dia"
@@ -133,6 +138,16 @@ class LembreteCobranca(models.Model):
         (ATRASADA, "Mensalidade atrasada"),
     ]
 
+    PENDENTE = "pendente"
+    ENVIADO = "enviado"
+    ERRO = "erro"
+
+    STATUS = [
+        (PENDENTE, "Pendente"),
+        (ENVIADO, "Enviado"),
+        (ERRO, "Erro"),
+    ]
+
     mensalidade = models.ForeignKey(
         Mensalidade,
         on_delete=models.CASCADE,
@@ -144,7 +159,23 @@ class LembreteCobranca(models.Model):
         choices=ESTAGIOS,
     )
 
-    enviado_em = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS,
+        default=PENDENTE,
+    )
+
+    tentativas = models.PositiveIntegerField(default=0)
+
+    ultimo_erro = models.TextField(blank=True, default="")
+
+    provider = models.CharField(max_length=30, blank=True, default="")
+
+    provider_message_id = models.CharField(max_length=200, blank=True, default="")
+
+    enviado_em = models.DateTimeField(null=True, blank=True)
+
+    atualizado_em = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
         constraints = [
@@ -156,3 +187,8 @@ class LembreteCobranca(models.Model):
 
     def __str__(self):
         return f"{self.mensalidade} - {self.get_estagio_display()}"
+
+    @property
+    def concluido(self):
+        """Estágio já entregue — não deve ser reenviado automaticamente."""
+        return self.status == self.ENVIADO

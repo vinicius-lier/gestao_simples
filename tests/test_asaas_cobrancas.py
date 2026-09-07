@@ -73,6 +73,7 @@ class CriarCobrancaAsaasTests(TestCase):
             valor=Decimal("135.50"),
             vencimento=date(2026, 9, 10),
             descricao="Mensalidade 09/2026",
+            external_reference=f"mensalidade:{self.mensalidade.pk}",
         )
 
     @patch("integracoes.asaas.services.AsaasClient")
@@ -197,6 +198,7 @@ class CriarCobrancaAsaasTests(TestCase):
                     valor=Decimal("135.50"),
                     vencimento=date(2026, 9, 10),
                     descricao="Mensalidade 09/2026",
+                    external_reference=f"mensalidade:{self.mensalidade.pk}",
                 )
             ],
         )

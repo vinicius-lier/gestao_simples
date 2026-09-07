@@ -105,6 +105,7 @@ class AsaasClient:
         vencimento,
         descricao,
         billing_type="PIX",
+        external_reference=None,
     ):
         url = f"{self.base_url}/payments"
         dados = {
@@ -114,6 +115,12 @@ class AsaasClient:
             "dueDate": vencimento.isoformat(),
             "description": descricao,
         }
+
+        # Identificador estável da cobrança do lado do sistema. Permite
+        # reconciliar (ver listar_cobrancas) quando um timeout esconde a
+        # resposta de uma criação que, no Asaas, foi concluída.
+        if external_reference:
+            dados["externalReference"] = external_reference
 
         try:
             response = requests.post(
@@ -128,6 +135,50 @@ class AsaasClient:
         self._validar_resposta(response)
 
         return self._obter_json(response)
+
+    def listar_cobrancas(self, external_reference=None, customer=None, status=None, limit=None):
+        """Lista cobranças, opcionalmente filtrando por externalReference —
+        usado para reconciliar uma criação cujo resultado se perdeu (timeout)
+        sem gerar uma segunda cobrança."""
+        url = f"{self.base_url}/payments"
+
+        params = {}
+        if external_reference:
+            params["externalReference"] = external_reference
+        if customer:
+            params["customer"] = customer
+        if status:
+            params["status"] = status
+        if limit:
+            params["limit"] = limit
+
+        try:
+            response = requests.get(
+                url,
+                headers=self.headers,
+                params=params,
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            self._erro_de_conexao(exc)
+
+        self._validar_resposta(response)
+
+        return self._obter_json(response)
+
+    def buscar_cobranca_por_external_reference(self, external_reference):
+        """Retorna a primeira cobrança com o externalReference informado, ou
+        None. Base da reconciliação idempotente."""
+        if not external_reference:
+            return None
+
+        resultado = self.listar_cobrancas(external_reference=external_reference)
+        dados = resultado.get("data") if isinstance(resultado, dict) else None
+
+        if dados:
+            return dados[0]
+
+        return None
 
     def buscar_cliente_por_cpf_cnpj(self, cpf_cnpj):
         url = f"{self.base_url}/customers"

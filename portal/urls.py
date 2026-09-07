@@ -1,6 +1,6 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from . import views, views_responsavel
+from . import views, views_responsavel, views_whatsapp
 
 app_name = 'portal'
 urlpatterns = [
@@ -21,6 +21,13 @@ urlpatterns = [
     path('financeiro/cobrancas/<int:pk>/pix/', views.financeiro_gerar_pix, name='financeiro_gerar_pix'),
     path('financeiro/cobrancas/<int:pk>/pix/qrcode/', views.financeiro_pix_qrcode, name='financeiro_pix_qrcode'),
     path('financeiro/cobrancas/<int:pk>/enviar/', views.financeiro_enviar_cobranca, name='financeiro_enviar_cobranca'),
+    # Configurações → WhatsApp (Evolution API). Tenant = request.academia.
+    path('configuracoes/whatsapp/', views_whatsapp.whatsapp_config, name='whatsapp_config'),
+    path('configuracoes/whatsapp/criar/', views_whatsapp.whatsapp_criar, name='whatsapp_criar'),
+    path('configuracoes/whatsapp/qrcode/', views_whatsapp.whatsapp_qrcode, name='whatsapp_qrcode'),
+    path('configuracoes/whatsapp/status/', views_whatsapp.whatsapp_status, name='whatsapp_status'),
+    path('configuracoes/whatsapp/desconectar/', views_whatsapp.whatsapp_desconectar, name='whatsapp_desconectar'),
+    path('configuracoes/whatsapp/numero/', views_whatsapp.whatsapp_numero, name='whatsapp_numero'),
     # Portal do responsável — área pública, sem o login de staff.
     path('responsavel/entrar/<str:token>/', views_responsavel.responsavel_entrar, name='responsavel_entrar'),
     path('responsavel/link-expirado/', views_responsavel.responsavel_link_expirado, name='responsavel_link_expirado'),

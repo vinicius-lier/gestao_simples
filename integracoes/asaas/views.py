@@ -40,6 +40,17 @@ def webhook_pagamento(request):
         return JsonResponse({"status": "ok"})
 
     token_esperado = getattr(settings, "ASAAS_WEBHOOK_TOKEN", "")
+    exige_token = getattr(
+        settings, "ASAAS_WEBHOOK_REQUIRE_TOKEN", not settings.DEBUG
+    )
+
+    if exige_token and not token_esperado:
+        # Produção sem token configurado: recusa eventos em vez de aceitar
+        # qualquer chamada. Ver settings.ASAAS_WEBHOOK_REQUIRE_TOKEN.
+        return JsonResponse(
+            {"detail": "webhook do Asaas não configurado"}, status=503
+        )
+
     if token_esperado and request.headers.get("asaas-access-token") != token_esperado:
         return JsonResponse({"detail": "token inválido"}, status=401)
 

@@ -18,9 +18,16 @@ from django.contrib import admin
 from django.urls import include, path
 
 from integracoes.asaas.views import webhook_pagamento
+from integracoes.evolution.views import webhook_conexao as webhook_evolution
 
 urlpatterns = [
     path('', include('portal.urls')),
     path('admin/', admin.site.urls),
     path('webhooks/asaas/', webhook_pagamento, name='webhook_asaas'),
+    path('webhooks/evolution/', webhook_evolution, name='webhook_evolution'),
+    path(
+        'webhooks/evolution/<str:instancia>/',
+        webhook_evolution,
+        name='webhook_evolution_instancia',
+    ),
 ]

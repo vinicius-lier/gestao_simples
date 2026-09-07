@@ -1,0 +1,101 @@
+{% extends 'portal/base.html' %}{% block title %}WhatsApp • Configurações{% endblock %}{% block content %}
+<div class="hero-dashboard mt-3">
+  <div>
+    <p class="eyebrow">Configurações</p>
+    <h1>WhatsApp</h1>
+    <p class="text-secondary mb-0">Conexão de WhatsApp desta academia para os avisos de cobrança.</p>
+  </div>
+</div>
+
+{% with status=config.status_conexao %}
+<div class="card p-4 mt-3">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+    <div>
+      <p class="mb-1"><strong>Provedor:</strong> {{ config.get_provider_display }}</p>
+      <p class="mb-1"><strong>Instância:</strong> {{ config.evolution_instance_name|default:'—' }}</p>
+      <p class="mb-1"><strong>Número:</strong> {{ config.numero_whatsapp|default:'—' }}</p>
+      <p class="mb-0">
+        <strong>Status:</strong>
+        <span class="badge {% if status == 'conectado' %}bg-success{% elif status == 'aguardando_qrcode' %}bg-warning text-dark{% elif status == 'erro' %}bg-danger{% else %}bg-secondary{% endif %}">
+          {{ config.get_status_conexao_display }}
+        </span>
+        {% if config.ultimo_status %}<span class="small text-secondary">— {{ config.ultimo_status }}</span>{% endif %}
+      </p>
+      {% if config.ultima_conexao_em %}<p class="small text-secondary mb-0">Última conexão: {{ config.ultima_conexao_em }}</p>{% endif %}
+    </div>
+  </div>
+</div>
+{% endwith %}
+
+{% if qrcode %}
+<div class="card p-4 mt-3 pix-card">
+  {% if qrcode.base64 %}
+  <img class="pix-qrcode" src="{{ qrcode.base64 }}" alt="QR Code para parear o WhatsApp" width="260" height="260">
+  {% endif %}
+  {% if qrcode.code %}
+  <div class="pix-copia">
+    <label for="wa-qr-code" class="visually-hidden">Código de pareamento</label>
+    <textarea id="wa-qr-code" class="form-control" readonly rows="3">{{ qrcode.code }}</textarea>
+    <button type="button" class="btn btn-outline-primary" data-copy="{{ qrcode.code }}">Copiar código</button>
+  </div>
+  {% endif %}
+  <p class="small text-secondary mb-0 mt-2">Abra o WhatsApp no celular → Aparelhos conectados → Conectar um aparelho e leia o código. Depois use “Verificar status”.</p>
+</div>
+{% endif %}
+
+{% if administrador_academia %}
+<div class="card p-4 mt-3">
+  <h2 class="h5">Ações</h2>
+  <div class="d-flex gap-2 flex-wrap">
+    <form method="post" action="{% url 'portal:whatsapp_criar' %}">{% csrf_token %}<button class="btn btn-outline-secondary">Criar conexão</button></form>
+    <form method="post" action="{% url 'portal:whatsapp_qrcode' %}">{% csrf_token %}<button class="btn btn-primary">Gerar QR Code</button></form>
+    <form method="post" action="{% url 'portal:whatsapp_status' %}">{% csrf_token %}<button class="btn btn-outline-secondary">Verificar status</button></form>
+    <form method="post" action="{% url 'portal:whatsapp_desconectar' %}">{% csrf_token %}<button class="btn btn-outline-danger">Desconectar</button></form>
+  </div>
+</div>
+
+<form method="post" action="{% url 'portal:whatsapp_numero' %}" class="card p-4 mt-3">{% csrf_token %}
+  <h2 class="h5">Trocar número</h2>
+  <p class="text-secondary">Encerra a sessão atual; será preciso parear o novo número com um novo QR Code.</p>
+  <div class="d-flex gap-2 flex-wrap align-items-end">
+    <div>
+      <label for="numero_whatsapp" class="form-label">Novo número (com DDD)</label>
+      <input id="numero_whatsapp" name="numero_whatsapp" class="form-control" inputmode="tel" placeholder="21999998888">
+    </div>
+    <button class="btn btn-outline-secondary">Trocar número</button>
+  </div>
+</form>
+
+<form method="post" class="card p-4 mt-3">{% csrf_token %}
+  <h2 class="h5">Configuração</h2>
+  <div class="fields-grid">
+    <div>
+      <label for="provider" class="form-label">Provedor</label>
+      <select id="provider" name="provider" class="form-select">
+        {% for valor, rotulo in providers %}<option value="{{ valor }}" {% if config.provider == valor %}selected{% endif %}>{{ rotulo }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="evolution_base_url" class="form-label">Evolution — URL base</label>
+      <input id="evolution_base_url" name="evolution_base_url" class="form-control" value="{{ config.evolution_base_url }}" placeholder="https://evolution.suaempresa.com">
+    </div>
+    <div>
+      <label for="evolution_instance_name" class="form-label">Nome da instância</label>
+      <input id="evolution_instance_name" name="evolution_instance_name" class="form-control" value="{{ config.evolution_instance_name }}">
+    </div>
+    <div>
+      <label for="credencial_ref" class="form-label">Variável de ambiente da API key</label>
+      <input id="credencial_ref" name="credencial_ref" class="form-control" value="{{ config.credencial_ref }}" placeholder="EVOLUTION_API_KEY_MINHA_ACADEMIA">
+      <small class="text-secondary">Só o nome. O valor da chave nunca é guardado no banco.</small>
+    </div>
+    <div>
+      <label for="n8n_webhook_url" class="form-label">n8n — webhook (opcional, fase futura)</label>
+      <input id="n8n_webhook_url" name="n8n_webhook_url" class="form-control" value="{{ config.n8n_webhook_url }}">
+    </div>
+  </div>
+  <div class="wizard-actions"><button class="btn btn-primary">Salvar configuração</button></div>
+</form>
+{% else %}
+<div class="card p-4 mt-3"><p class="mb-0 text-secondary">Somente o administrador da academia pode alterar esta configuração.</p></div>
+{% endif %}
+{% endblock %}

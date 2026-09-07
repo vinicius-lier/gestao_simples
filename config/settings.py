@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from django.core.exceptions import ImproperlyConfigured
 
 
 # =============================================================================
@@ -24,16 +23,15 @@ load_dotenv(BASE_DIR / ".env")
 # SECURITY
 # =============================================================================
 
-DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or (
-    "django-insecure-dev-only" if DEBUG else ""
+SECRET_KEY = os.getenv(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-dev-only",
 )
-if not DEBUG and (
-    not SECRET_KEY
-    or SECRET_KEY.startswith("django-insecure-")
-    or SECRET_KEY == "CHANGE_ME"
-):
-    raise ImproperlyConfigured("Configure uma DJANGO_SECRET_KEY exclusiva em producao.")
+
+DEBUG = os.getenv(
+    "DJANGO_DEBUG",
+    "true",
+).lower() == "true"
 
 
 ALLOWED_HOSTS = [
@@ -127,7 +125,7 @@ TEMPLATES = [
 DB_ENGINE = os.getenv(
     "DB_ENGINE",
     "sqlite",
-).strip().lower()
+).lower()
 
 
 if DB_ENGINE == "postgresql":
@@ -174,7 +172,7 @@ if DB_ENGINE == "postgresql":
         }
     }
 
-elif DB_ENGINE == "sqlite":
+else:
 
     DATABASES = {
         "default": {
@@ -182,9 +180,6 @@ elif DB_ENGINE == "sqlite":
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
-
-else:
-    raise ImproperlyConfigured("DB_ENGINE deve ser sqlite ou postgresql.")
 
 
 # =============================================================================
@@ -312,6 +307,15 @@ ASAAS_WEBHOOK_TOKEN = os.getenv(
     "",
 )
 
+# Em produção (DEBUG=False) o webhook do Asaas só aceita eventos com o
+# cabeçalho 'asaas-access-token' válido. Se o token não estiver configurado,
+# o endpoint recusa todo POST (503) em vez de aceitar qualquer chamada.
+# Em desenvolvimento (DEBUG=True) o comportamento permissivo é mantido.
+ASAAS_WEBHOOK_REQUIRE_TOKEN = os.getenv(
+    "ASAAS_WEBHOOK_REQUIRE_TOKEN",
+    "true" if not DEBUG else "false",
+).lower() == "true"
+
 
 # =============================================================================
 # META / WHATSAPP CLOUD API
@@ -341,6 +345,55 @@ META_WHATSAPP_WEBHOOK_VERIFY_TOKEN = os.getenv(
     "META_WHATSAPP_WEBHOOK_VERIFY_TOKEN",
     "",
 )
+
+
+# =============================================================================
+# N8N (contrato preparado — não acionado no fluxo de lembretes ainda)
+# =============================================================================
+
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
+N8N_TOKEN = os.getenv("N8N_TOKEN", "")
+N8N_TIMEOUT = int(os.getenv("N8N_TIMEOUT", "10"))
+
+
+# =============================================================================
+# EVOLUTION API
+#
+# A API key de cada academia NÃO fica aqui nem no banco: fica numa variável
+# de ambiente cujo NOME é guardado em IntegracaoWhatsApp.credencial_ref
+# (ex.: EVOLUTION_API_KEY_KEIKO). Não crie uma EVOLUTION_API_KEY global.
+# =============================================================================
+
+EVOLUTION_TIMEOUT = int(os.getenv("EVOLUTION_TIMEOUT", "15"))
+
+# Webhook opcional de eventos de conexão (connection.update / qrcode.updated).
+EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
+EVOLUTION_WEBHOOK_REQUIRE_TOKEN = os.getenv(
+    "EVOLUTION_WEBHOOK_REQUIRE_TOKEN",
+    "true" if not DEBUG else "false",
+).lower() == "true"
+
+
+# =============================================================================
+# LEMBRETES DE COBRANÇA — chaves de ativação da FASE 2
+#
+# Ambas começam desligadas: o lembrete continua exatamente como hoje
+# (envia link de pagamento via provedor Meta). Quando a automação estiver
+# pronta, ligue por ambiente.
+# =============================================================================
+
+# Gera/garante a cobrança Asaas (UNDEFINED) antes de enviar o lembrete,
+# para o Pix copia-e-cola já existir na mensagem.
+LEMBRETES_GERAM_COBRANCA_ASAAS = os.getenv(
+    "LEMBRETES_GERAM_COBRANCA_ASAAS",
+    "false",
+).lower() == "true"
+
+# Envia o payload ao n8n (que aciona a Evolution) em vez do provedor Meta.
+LEMBRETES_ENVIAM_N8N = os.getenv(
+    "LEMBRETES_ENVIAM_N8N",
+    "false",
+).lower() == "true"
 
 
 # =============================================================================

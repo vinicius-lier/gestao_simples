@@ -30,7 +30,15 @@ class MensalidadeAdmin(admin.ModelAdmin):
 
 @admin.register(LembreteCobranca)
 class LembreteCobrancaAdmin(admin.ModelAdmin):
-    list_display = ("mensalidade", "estagio", "enviado_em")
-    list_filter = ("estagio",)
+    list_display = (
+        "mensalidade",
+        "estagio",
+        "status",
+        "tentativas",
+        "provider",
+        "enviado_em",
+    )
+    list_filter = ("estagio", "status", "provider")
     search_fields = ("mensalidade__matricula__atleta__nome",)
     date_hierarchy = "enviado_em"
+    readonly_fields = ("atualizado_em",)
