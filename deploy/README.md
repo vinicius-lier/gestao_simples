@@ -93,6 +93,21 @@ N?o use `--now` nessa etapa: o primeiro deploy instala o c?digo e depend?ncias
 antes de iniciar o servi?o. Atualiza??es futuras da unit exigem instala??o
 administrativa e daemon-reload; o Actions n?o pode alterar arquivos de root.
 
+### Lembretes de cobranca (timer)
+
+O envio diario de lembretes por WhatsApp roda por um systemd timer, instalado
+uma vez como admin (o Actions nao mexe em arquivos de root):
+
+```bash
+sudo install -o root -g root -m 644 deploy/academia-lembretes.service /etc/systemd/system/academia-lembretes.service
+sudo install -o root -g root -m 644 deploy/academia-lembretes.timer   /etc/systemd/system/academia-lembretes.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now academia-lembretes.timer
+```
+
+Passo a passo completo do WhatsApp/Evolution (servidor no compose, conexao por
+QR, teste e rollback): `deploy/EVOLUTION.md`.
+
 Sudoers m?nimo (os nomes sem `.service` coincidem com o script):
 
 ```sudoers
