@@ -22,8 +22,13 @@ class WhatsAppProvider(ABC):
     nome = ""
 
     @abstractmethod
-    def enviar_cobranca(self, responsavel, mensalidade, link):
+    def enviar_cobranca(self, responsavel, mensalidade, link, estagio=None):
         """Envia o aviso de cobrança da mensalidade ao responsável.
+
+        ``estagio`` é um dos valores de ``LembreteCobranca.ESTAGIOS``
+        (``"5_dias"``, ``"1_dia"``, ``"vencimento"``, ``"atrasada"``) — usado
+        pelos provedores que conseguem variar o texto pelo contexto (hoje,
+        Evolution). ``None`` é um envio manual/avulso, fora da régua.
 
         Deve devolver um dict normalizado::
 
@@ -35,3 +40,16 @@ class WhatsAppProvider(ABC):
     def enviar_acesso(self, responsavel, link):
         """Envia o link de acesso ao portal do responsável. Mesmo contrato
         de retorno/erro de ``enviar_cobranca``."""
+
+    def enviar_convite_matricula(self, nome, telefone, link, contexto=""):
+        """Envia o link de um convite de matrícula (texto livre) direto
+        para a família, sem sair do app. Mesmo contrato de retorno/erro
+        de ``enviar_cobranca``.
+
+        Provedores baseados em templates pré-aprovados (Meta) não têm um
+        template de convite de matrícula hoje — a implementação padrão
+        recusa com ``WhatsAppProviderError`` e a tela cai no link manual.
+        Só o Evolution (texto livre) sobrescreve isto."""
+        raise WhatsAppProviderError(
+            "Este provedor de WhatsApp não suporta o envio direto do convite de matrícula."
+        )

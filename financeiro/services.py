@@ -7,11 +7,26 @@ from django.utils import timezone
 from matriculas.models import Matricula
 from financeiro.models import Mensalidade
 
+def _criar_ou_obter_mensalidade(matricula, ano, mes):
+    competencia = date(ano, mes, 1)
+    ultimo_dia_mes = monthrange(ano, mes)[1]
+    vencimento = date(ano, mes, min(matricula.dia_vencimento, ultimo_dia_mes))
+
+    return Mensalidade.objects.get_or_create(
+        matricula=matricula,
+        competencia=competencia,
+        defaults={
+            "academia": matricula.academia,
+            "valor": matricula.valor_mensalidade,
+            "vencimento": vencimento,
+            "status": "pendente",
+        },
+    )
+
+
 def gerar_mensalidades(ano, mes):
     competencia = date(ano, mes, 1)
-
-    ultimo_dia_mes = monthrange(ano, mes)[1]
-    fim_mes = date(ano, mes, ultimo_dia_mes)
+    fim_mes = date(ano, mes, monthrange(ano, mes)[1])
 
     matriculas = Matricula.objects.filter(
         ativo=True,
@@ -24,28 +39,7 @@ def gerar_mensalidades(ano, mes):
     existentes = 0
 
     for matricula in matriculas:
-        dia_vencimento = min(
-            matricula.dia_vencimento,
-            ultimo_dia_mes,
-        )
-
-        vencimento = date(
-            ano,
-            mes,
-            dia_vencimento,
-        )
-
-        mensalidade, criada = Mensalidade.objects.get_or_create(
-            matricula=matricula,
-            competencia=competencia,
-            defaults={
-                "academia": matricula.academia,
-                "valor": matricula.valor_mensalidade,
-                "vencimento": vencimento,
-                "status": "pendente",
-            },
-        )
-
+        _mensalidade, criada = _criar_ou_obter_mensalidade(matricula, ano, mes)
         if criada:
             criadas += 1
         else:
@@ -55,6 +49,23 @@ def gerar_mensalidades(ano, mes):
         "criadas": criadas,
         "existentes": existentes,
     }
+
+
+def gerar_mensalidade_inicial(matricula):
+    """Garante a mensalidade do vencimento mais próximo da data de início
+    da matrícula assim que ela fica ativa — sem esperar o próximo disparo
+    mensal de ``gerar_mensalidades``. Idempotente (get_or_create): chamar
+    de novo numa matrícula que já tem a mensalidade não duplica."""
+    data_inicio = matricula.data_inicio
+    if data_inicio.day <= matricula.dia_vencimento:
+        ano, mes = data_inicio.year, data_inicio.month
+    else:
+        ano, mes = data_inicio.year, data_inicio.month + 1
+        if mes > 12:
+            ano, mes = ano + 1, 1
+
+    mensalidade, _criada = _criar_ou_obter_mensalidade(matricula, ano, mes)
+    return mensalidade
 
 
 def registrar_pagamento(mensalidade, forma_pagamento="", quando=None):

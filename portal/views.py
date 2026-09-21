@@ -104,6 +104,9 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
                             if outras.exists():
                                 raise ValidationError('Somente o administrador pode autorizar matrícula em outro polo.')
                         inscricao.save()
+                        if inscricao.ativo:
+                            from financeiro.services import gerar_mensalidade_inicial
+                            gerar_mensalidade_inicial(inscricao)
             except ValidationError as error:
                 form.add_error(None, ValidationError(error.messages))
             else:
@@ -114,7 +117,9 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
 
 def pagina_publica(request):
     from .models import PaginaPublica, FotoPublica
+    from .views_experimentais import contexto_publico
     return render(request, 'portal/publica.html', {
+        **contexto_publico(request),
         'pagina': PaginaPublica.objects.order_by('pk').first(),
         'fotos': FotoPublica.objects.filter(publicada=True),
     })
@@ -223,6 +228,40 @@ def financeiro_cobrancas(request):
 
 @academia_required
 @require_http_methods(['POST'])
+def matricula_ativar(request, pk, matricula_pk):
+    """Ativa a matrícula direto do cadastro do aluno — um clique, sem
+    passar pelo formulário de edição. Se ela veio de um convite de
+    matrícula ainda 'preenchido', ativa pelo mesmo caminho do convite
+    (mantém o status do convite em sincronia); senão, liga só o campo."""
+    if not request.administrador_academia:
+        raise PermissionDenied('Somente o administrador da academia ativa matrículas.')
+
+    from .models import ConviteMatricula
+    from .services_matricula import ativar_convite
+
+    matricula = get_object_or_404(
+        Matricula, pk=matricula_pk, atleta__pk=pk, academia=request.academia,
+    )
+    if matricula.ativo:
+        messages.info(request, 'Esta matrícula já está ativa.')
+        return redirect('portal:detalhe', pk=pk)
+
+    convite = ConviteMatricula.objects.filter(
+        matricula=matricula, status=ConviteMatricula.PREENCHIDO,
+    ).first()
+    if convite is not None:
+        ativar_convite(convite)
+    else:
+        from financeiro.services import gerar_mensalidade_inicial
+        matricula.ativo = True
+        matricula.save(update_fields=['ativo'])
+        gerar_mensalidade_inicial(matricula)
+    messages.success(request, 'Matrícula ativada.')
+    return redirect('portal:detalhe', pk=pk)
+
+
+@academia_required
+@require_http_methods(['POST'])
 def financeiro_marcar_pago(request, pk):
     from financeiro.models import Mensalidade
     from financeiro.services import registrar_pagamento
@@ -284,8 +323,8 @@ def gerar_acesso_responsavel(request, pk):
     """Gera um link de acesso ao portal do responsável. Se a API do
     WhatsApp estiver configurada, envia sozinho; senão, mostra o link
     para o operador mandar manualmente (mesmo caminho de sempre)."""
-    from integracoes.whatsapp.client import WhatsAppAPIError
-    from integracoes.whatsapp.services import enviar_acesso_portal_responsavel
+    from integracoes.whatsapp import enviar_acesso
+    from integracoes.whatsapp.base import WhatsAppProviderError
 
     aluno = get_object_or_404(Atleta, pk=pk, academia=request.academia)
     responsavel = aluno.responsavel_financeiro
@@ -297,10 +336,10 @@ def gerar_acesso_responsavel(request, pk):
     link = request.build_absolute_uri(reverse('portal:responsavel_entrar', args=[acesso.token]))
 
     try:
-        enviar_acesso_portal_responsavel(responsavel, link)
+        enviar_acesso(request.academia, responsavel, link)
     except ValueError:
         pass  # API do WhatsApp não configurada: operador envia manualmente abaixo
-    except WhatsAppAPIError as error:
+    except WhatsAppProviderError as error:
         messages.warning(request, f'Não deu para enviar automaticamente pelo WhatsApp: {error}')
     else:
         messages.success(request, f'Acesso enviado automaticamente para {responsavel.nome} pelo WhatsApp.')
@@ -320,9 +359,10 @@ def financeiro_enviar_cobranca(request, pk):
     direto na página de pagamento dessa mensalidade — não no painel
     geral. Mesma regra de fallback do acesso ao portal: sem a API do
     WhatsApp configurada, mostra o link para enviar na mão."""
+    from financeiro.lembretes import calcular_estagio
     from financeiro.models import Mensalidade
-    from integracoes.whatsapp.client import WhatsAppAPIError
-    from integracoes.whatsapp.services import enviar_cobranca_responsavel
+    from integracoes.whatsapp import enviar_cobranca
+    from integracoes.whatsapp.base import WhatsAppProviderError
 
     mensalidade = get_object_or_404(
         Mensalidade.objects.select_related('matricula__atleta'), pk=pk, academia=request.academia
@@ -338,10 +378,13 @@ def financeiro_enviar_cobranca(request, pk):
     link = request.build_absolute_uri(reverse('portal:responsavel_entrar', args=[acesso.token])) + f'?next={destino}'
 
     try:
-        enviar_cobranca_responsavel(responsavel, mensalidade, link)
+        enviar_cobranca(
+            request.academia, responsavel, mensalidade, link,
+            estagio=calcular_estagio(mensalidade),
+        )
     except ValueError:
         pass  # API do WhatsApp não configurada: operador envia manualmente abaixo
-    except WhatsAppAPIError as error:
+    except WhatsAppProviderError as error:
         messages.warning(request, f'Não deu para enviar automaticamente pelo WhatsApp: {error}')
     else:
         messages.success(request, f'Cobrança enviada automaticamente para {responsavel.nome} pelo WhatsApp.')

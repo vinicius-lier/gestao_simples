@@ -1,4 +1,10 @@
 import secrets
+from .models_experimentais import (
+    AulaExperimental,
+    ConfiguracaoExperimental,
+    InscricaoExperimental,
+)
+from .models_matricula import ConviteMatricula
 from datetime import timedelta
 
 from django.conf import settings

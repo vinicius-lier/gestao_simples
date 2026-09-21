@@ -11,6 +11,7 @@ __all__ = [
     "get_provider",
     "enviar_cobranca",
     "enviar_acesso",
+    "enviar_convite_matricula",
     "normalizar_telefone",
     "WhatsAppProvider",
     "WhatsAppProviderError",
@@ -41,13 +42,28 @@ def get_provider(academia):
     return MetaWhatsAppProvider(config)
 
 
-def enviar_cobranca(academia, responsavel, mensalidade, link):
+def enviar_cobranca(academia, responsavel, mensalidade, link, estagio=None):
     """Ponto único de envio do aviso de cobrança. Retorna o dict normalizado
     do provedor (`provider`, `message_id`, `raw`) e levanta
-    ``WhatsAppProviderError`` em falha."""
-    return get_provider(academia).enviar_cobranca(responsavel, mensalidade, link)
+    ``WhatsAppProviderError`` em falha.
+
+    ``estagio`` (opcional) identifica o estágio da régua de lembretes —
+    ver ``financeiro.models.LembreteCobranca.ESTAGIOS`` — para provedores
+    que variam o texto pelo contexto (Evolution). ``None`` para um envio
+    manual/avulso."""
+    return get_provider(academia).enviar_cobranca(
+        responsavel, mensalidade, link, estagio=estagio
+    )
 
 
 def enviar_acesso(academia, responsavel, link):
     """Ponto único de envio do link de acesso ao portal do responsável."""
     return get_provider(academia).enviar_acesso(responsavel, link)
+
+
+def enviar_convite_matricula(academia, nome, telefone, link, contexto=""):
+    """Envia o link de um convite de matrícula direto pelo WhatsApp, sem
+    sair do app. Hoje só o provedor Evolution suporta texto livre —
+    levanta ``WhatsAppProviderError`` para provedores baseados em
+    template (Meta), e a tela chamadora cai no link manual."""
+    return get_provider(academia).enviar_convite_matricula(nome, telefone, link, contexto)

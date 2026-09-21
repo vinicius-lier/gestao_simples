@@ -1,0 +1,7 @@
+{% extends 'portal/publica_base.html' %}{% block title %}Matrícula enviada{% endblock %}{% block content %}
+<section class="section">
+  <p class="eyebrow">MATRÍCULA ENVIADA</p>
+  <h2>Recebemos seus dados</h2>
+  <p>A matrícula para <strong>{{ alvo }}</strong> foi enviada e está em análise pela escola. Em breve a equipe confirma a vaga e o início das aulas.</p>
+  <p><a class="button red" href="{% url 'portal:publica' %}">Voltar para a escola</a></p>
+</section>{% endblock %}

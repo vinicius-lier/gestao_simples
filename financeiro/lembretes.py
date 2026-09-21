@@ -146,7 +146,7 @@ def enviar_lembretes(hoje=None, academia=None):
         lembrete.tentativas += 1
         try:
             resultado = _enviar_cobranca_whatsapp(
-                mensalidade.academia, responsavel, mensalidade, link
+                mensalidade.academia, responsavel, mensalidade, link, estagio=estagio
             )
         except (ValueError, WhatsAppProviderError) as exc:
             lembrete.status = LembreteCobranca.ERRO

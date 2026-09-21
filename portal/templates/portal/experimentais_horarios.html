@@ -1,0 +1,17 @@
+<section id="experimental" class="section">
+  <p class="eyebrow">VENHA CONHECER O TATAME</p><h2>Agende sua aula experimental</h2>
+  <p>Escolha a unidade, a modalidade e um horário. A disponibilidade será conferida novamente ao enviar sua inscrição.</p>
+  <form method="get" action="#experimental" class="experimental-filtros">
+    <label>Unidade <select name="unidade"><option value="">Todas as unidades</option>{% for u in unidades_experimentais %}<option value="{{ u.pk }}" {% if unidade_filtro == u.pk|stringformat:'s' %}selected{% endif %}>{{ u.academia.nome }} — {{ u.nome }}</option>{% endfor %}</select></label>
+    <label>Modalidade <select name="modalidade"><option value="">Todas as modalidades</option>{% for m in modalidades_experimentais %}<option value="{{ m.pk }}" {% if modalidade_filtro == m.pk|stringformat:'s' %}selected{% endif %}>{{ m.nome }}</option>{% endfor %}</select></label>
+    <button class="button red btn btn-primary">Ver horários</button>
+  </form>
+  <div class="experimental-horarios">
+  {% for a in aulas_experimentais %}<article class="experimental-card card p-3 my-3">
+    <h3>{{ a.turma.modalidade.nome }} · {{ a.turma.nome }}</h3><p>{{ a.turma.unidade.academia.nome }} — {{ a.turma.unidade.nome }}<br>{% if a.inicio|date:'d/m/Y' == a.fim|date:'d/m/Y' %}{{ a.inicio|date:'d/m/Y' }}, das {{ a.inicio|date:'H:i' }} às {{ a.fim|date:'H:i' }}{% else %}De {{ a.inicio|date:'d/m/Y H:i' }} até {{ a.fim|date:'d/m/Y H:i' }}{% endif %}<br>Inscrições até {{ a.inscricoes_encerram|date:'d/m/Y H:i' }}</p>
+    {% if a.vagas_disponiveis and not a.tem_fila %}<p>{{ a.vagas_disponiveis }} vaga(s) disponível(is)</p>{% else %}<p>{{ a.vagas_disponiveis }} vaga(s) livre(s). Inscritos na fila têm prioridade.</p>{% endif %}
+    {% if a.fila_habilitada %}<p>Fila de espera habilitada. Entrar na fila não confirma uma vaga.</p>{% endif %}
+    <a class="button red btn btn-primary" href="{% url 'portal:experimental_agendar' a.pk %}">Escolher horário</a>
+  </article>{% empty %}<p role="status">Nenhum horário disponível para esta seleção. Consulte novamente mais tarde ou fale com a escola.</p>{% endfor %}
+  </div>
+</section>

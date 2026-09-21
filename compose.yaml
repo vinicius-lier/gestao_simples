@@ -24,7 +24,7 @@ services:
   # `evolution_base_url` no registro IntegracaoWhatsApp da academia.
   # ---------------------------------------------------------------------------
   evolution:
-    image: ${EVOLUTION_IMAGE:-atendai/evolution-api:v2.1.1}
+    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.3.7}
     restart: unless-stopped
     profiles: ["evolution"]
     depends_on:

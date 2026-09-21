@@ -1,0 +1,22 @@
+{% extends 'portal/base.html' %}{% block title %}Convites de matrícula{% endblock %}{% block content %}
+<h1>Convites de matrícula</h1>
+<p>Gere um link, escolha a turma e envie para a família preencher. Ao enviarem, os dados ficam salvos e a matrícula entra como <strong>pendente</strong> — você confere e ativa aqui.</p>
+
+<form method="post" class="card p-4" style="max-width:720px">{% csrf_token %}{{ form.non_field_errors }}{{ form.as_p }}
+  <button class="btn btn-primary">Gerar link</button>
+</form>
+
+<h2 class="h5 mt-4">Links gerados</h2>
+{% for c in convites %}
+<article class="card p-3 mb-2">
+  <div class="d-flex justify-content-between flex-wrap gap-2">
+    <div>
+      <a href="{% url 'portal:matricula_convite_detalhe' c.pk %}"><strong>{{ c.convidado_nome|default:c.atleta.nome|default:'(sem nome ainda)' }}</strong></a>
+      · {{ c.turma|default:c.modalidade }}{% if c.turma.unidade %} · {{ c.turma.unidade }}{% endif %}
+    </div>
+    <span>{{ c.get_status_display }}</span>
+  </div>
+  <small class="text-secondary">Criado em {{ c.criado_em|date:'d/m/Y H:i' }} · expira {{ c.expira_em|date:'d/m/Y H:i' }}{% if c.criado_por %} · por {{ c.criado_por.get_username }}{% endif %}</small>
+</article>
+{% empty %}<p>Nenhum convite gerado ainda.</p>{% endfor %}
+{% endblock %}

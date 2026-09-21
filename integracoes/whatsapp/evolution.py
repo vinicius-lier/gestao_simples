@@ -24,6 +24,18 @@ def _extrair_message_id(resp):
     return ""
 
 
+_CONTEXTO_ESTAGIO = {
+    "5_dias": "Faltam 5 dias para o vencimento da mensalidade de {aluno} ({competencia}), "
+              "no valor de R$ {valor}, em {vencimento}.",
+    "1_dia": "A mensalidade de {aluno} ({competencia}), no valor de R$ {valor}, "
+             "vence amanhã ({vencimento}).",
+    "vencimento": "A mensalidade de {aluno} ({competencia}), no valor de R$ {valor}, "
+                  "vence hoje ({vencimento}).",
+    "atrasada": "A mensalidade de {aluno} ({competencia}), no valor de R$ {valor}, "
+                "venceu em {vencimento} e está em aberto.",
+}
+
+
 class EvolutionWhatsAppProvider(WhatsAppProvider):
     nome = "evolution"
 
@@ -63,14 +75,21 @@ class EvolutionWhatsAppProvider(WhatsAppProvider):
         }
 
     # --------------------------------------------------------------- contrato
-    def enviar_cobranca(self, responsavel, mensalidade, link):
-        texto = (
-            f"Olá, {responsavel.nome}! A mensalidade de "
-            f"{mensalidade.matricula.atleta.nome} referente a "
-            f"{mensalidade.competencia:%m/%Y} está no valor de "
-            f"R$ {mensalidade.valor}, com vencimento em "
-            f"{mensalidade.vencimento:%d/%m/%Y}. Pague por aqui: {link}"
-        )
+    def enviar_cobranca(self, responsavel, mensalidade, link, estagio=None):
+        campos = {
+            "aluno": mensalidade.matricula.atleta.nome,
+            "competencia": f"{mensalidade.competencia:%m/%Y}",
+            "valor": mensalidade.valor,
+            "vencimento": f"{mensalidade.vencimento:%d/%m/%Y}",
+        }
+        molde = _CONTEXTO_ESTAGIO.get(estagio)
+        if molde is None:
+            molde = (
+                "A mensalidade de {aluno} referente a {competencia} está no "
+                "valor de R$ {valor}, com vencimento em {vencimento}."
+            )
+        contexto = molde.format(**campos)
+        texto = f"Olá, {responsavel.nome}! {contexto} Pague por aqui: {link}"
         return self._enviar_texto(responsavel.whatsapp, texto)
 
     def enviar_acesso(self, responsavel, link):
@@ -79,3 +98,12 @@ class EvolutionWhatsAppProvider(WhatsAppProvider):
             f"mensalidades e pagar: {link}"
         )
         return self._enviar_texto(responsavel.whatsapp, texto)
+
+    def enviar_convite_matricula(self, nome, telefone, link, contexto=""):
+        saudacao = f"Olá, {nome}!" if nome else "Olá!"
+        complemento = f" para {contexto}" if contexto else ""
+        texto = (
+            f"{saudacao} Aqui está o link para preencher a matrícula"
+            f"{complemento}: {link}"
+        )
+        return self._enviar_texto(telefone, texto)

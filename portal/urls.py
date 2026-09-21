@@ -1,19 +1,35 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from . import views, views_responsavel, views_whatsapp
+from . import views, views_responsavel, views_whatsapp, views_experimentais, views_matricula
 
 app_name = 'portal'
 urlpatterns = [
+    path('experimental/', views_experimentais.agendar, name='experimentais_publico'),
+    path('experimental/resultado/', views_experimentais.resultado, name='experimental_resultado'),
+    path('experimental/<int:pk>/', views_experimentais.agendar, name='experimental_agendar'),
+    path('agenda/', views_experimentais.agenda, name='agenda'),
+    path('agenda/nova/', views_experimentais.agenda, {'novo': True}, name='experimental_nova'),
+    path('agenda/configuracoes/', views_experimentais.configuracao, name='experimental_config'),
+    path('agenda/<int:pk>/', views_experimentais.agenda, name='experimental_detalhe'),
+    path('agenda/inscricoes/<int:pk>/status/', views_experimentais.status, name='experimental_status'),
+    # Convite de matrícula — link que o professor envia para a família preencher.
+    path('matricula/recebido/', views_matricula.matricula_convite_recebido, name='matricula_convite_recebido'),
+    path('matricula/<str:token>/', views_matricula.matricula_convite, name='matricula_convite'),
     path('login/', auth_views.LoginView.as_view(template_name='portal/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('', views.pagina_publica, name='publica'),
     path('painel/', views.dashboard, name='dashboard'),
     path('alunos/', views.alunos, name='alunos'),
+    path('matriculas/convites/', views_matricula.convites, name='matricula_convites'),
+    path('matriculas/convites/<int:pk>/', views_matricula.convite_detalhe, name='matricula_convite_detalhe'),
+    path('matriculas/convites/<int:pk>/acao/', views_matricula.convite_acao, name='matricula_convite_acao'),
+    path('matriculas/convites/<int:pk>/enviar/', views_matricula.convite_enviar, name='matricula_convite_enviar'),
     path('alunos/<int:pk>/matriculas/nova/', views.aluno_form, {'nova_matricula': True}, name='nova_matricula'),
     path('alunos/novo/', views.aluno_form, name='novo'),
     path('alunos/<int:pk>/', views.detalhe, name='detalhe'),
     path('alunos/<int:pk>/editar/', views.aluno_form, name='editar'),
     path('alunos/<int:pk>/matriculas/<int:matricula_pk>/editar/', views.aluno_form, name='editar_matricula'),
+    path('alunos/<int:pk>/matriculas/<int:matricula_pk>/ativar/', views.matricula_ativar, name='ativar_matricula'),
     path('alunos/<int:pk>/acesso-responsavel/', views.gerar_acesso_responsavel, name='gerar_acesso_responsavel'),
     path('financeiro/', views.financeiro_dashboard, name='financeiro'),
     path('financeiro/cobrancas/', views.financeiro_cobrancas, name='financeiro_cobrancas'),

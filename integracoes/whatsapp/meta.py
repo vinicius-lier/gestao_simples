@@ -141,7 +141,10 @@ class MetaWhatsAppProvider(WhatsAppProvider):
         # o config nesta fase — fica disponível para evoluções futuras.
         self.config = config
 
-    def enviar_cobranca(self, responsavel, mensalidade, link):
+    def enviar_cobranca(self, responsavel, mensalidade, link, estagio=None):
+        # O template aprovado no Meta Business Manager é único — não varia
+        # texto por estágio (exigiria um template extra por estágio, com
+        # nova aprovação). `estagio` é aceito só para cumprir o contrato.
         from integracoes.whatsapp.services import enviar_cobranca_responsavel
 
         resposta = enviar_cobranca_responsavel(responsavel, mensalidade, link)

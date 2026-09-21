@@ -22,7 +22,7 @@ Os servicos ficam no profile `evolution` do `compose.yaml` (nao sobem num
 No `.env` do servidor (ver `.env.example.production`):
 
 ```dotenv
-EVOLUTION_IMAGE=atendai/evolution-api:v2.1.1
+EVOLUTION_IMAGE=evoapicloud/evolution-api:v2.3.7
 EVOLUTION_PORT=8080
 EVOLUTION_SERVER_URL=http://127.0.0.1:8080
 EVOLUTION_AUTHENTICATION_API_KEY=<chave aleatoria forte>
