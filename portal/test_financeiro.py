@@ -189,3 +189,108 @@ class FinanceiroPortalTests(TestCase):
     def test_enviar_cobranca_isola_por_academia(self):
         resposta = self.client.post(f"/financeiro/cobrancas/{self.mensalidade_b.pk}/enviar/")
         self.assertEqual(resposta.status_code, 404)
+
+
+class EncerrarCobrancaTests(TestCase):
+    """Cancelar/isentar mensalidade pelo portal — só administrador."""
+
+    def setUp(self):
+        self.a = Academia.objects.create(nome="A", cnpj="EC1")
+        self.b = Academia.objects.create(nome="B", cnpj="EC2")
+        self.admin = get_user_model().objects.create_user("admin", password="senha123")
+        AcessoAcademia.objects.create(usuario=self.admin, academia=self.a, administrador=True)
+        self.operador = get_user_model().objects.create_user("operador", password="senha123")
+        AcessoAcademia.objects.create(usuario=self.operador, academia=self.a)
+        atleta = Atleta.objects.create(academia=self.a, nome="João da Silva")
+        self.matricula = Matricula.objects.create(
+            academia=self.a, atleta=atleta, modalidade=Modalidade.objects.create(academia=self.a, nome="Judô"),
+            valor_mensalidade=Decimal("120.00"), dia_vencimento=10, data_inicio=date(2026, 1, 1),
+        )
+        self.mensalidade = self.criar(date(2999, 1, 1))
+        self.client.force_login(self.admin)
+
+    def criar(self, competencia, **extra):
+        return Mensalidade.objects.create(
+            academia=self.a, matricula=self.matricula, competencia=competencia,
+            valor=Decimal("120.00"), vencimento=competencia.replace(day=10), status="pendente", **extra,
+        )
+
+    def encerrar(self, mensalidade, status):
+        return self.client.post(
+            f"/financeiro/cobrancas/{mensalidade.pk}/encerrar/", {"status": status}, follow=True
+        )
+
+    def test_admin_cancela_mensalidade_sem_cobranca_no_asaas(self):
+        with patch("integracoes.asaas.services.AsaasClient") as mock_client_class:
+            resposta = self.encerrar(self.mensalidade, "cancelada")
+        self.assertContains(resposta, "cancelada")
+        mock_client_class.assert_not_called()
+        self.mensalidade.refresh_from_db()
+        self.assertEqual(self.mensalidade.status, "cancelada")
+
+    def test_admin_isenta_mensalidade(self):
+        self.encerrar(self.mensalidade, "isenta")
+        self.mensalidade.refresh_from_db()
+        self.assertEqual(self.mensalidade.status, "isenta")
+
+    @patch("integracoes.asaas.services.AsaasClient")
+    def test_exclui_a_cobranca_no_asaas_antes_de_cancelar(self, mock_client_class):
+        mensalidade = self.criar(date(2999, 2, 1), asaas_payment_id="pay_123")
+        self.encerrar(mensalidade, "cancelada")
+        mock_client_class.return_value.remover_cobranca.assert_called_once_with("pay_123")
+        mensalidade.refresh_from_db()
+        self.assertEqual(mensalidade.status, "cancelada")
+
+    @patch("integracoes.asaas.services.AsaasClient")
+    def test_falha_no_asaas_nao_cancela_localmente(self, mock_client_class):
+        from integracoes.asaas.client import AsaasAPIError
+
+        mock_client_class.return_value.remover_cobranca.side_effect = AsaasAPIError(
+            "A API do Asaas retornou o status HTTP 400."
+        )
+        mensalidade = self.criar(date(2999, 2, 1), asaas_payment_id="pay_123")
+        resposta = self.encerrar(mensalidade, "cancelada")
+        self.assertContains(resposta, "Não foi possível alterar a mensalidade")
+        mensalidade.refresh_from_db()
+        self.assertEqual(mensalidade.status, "pendente")
+
+    def test_mensalidade_paga_nao_pode_ser_cancelada(self):
+        self.mensalidade.status = "paga"
+        self.mensalidade.save(update_fields=["status"])
+        resposta = self.encerrar(self.mensalidade, "cancelada")
+        self.assertContains(resposta, "Só mensalidades em aberto")
+        self.mensalidade.refresh_from_db()
+        self.assertEqual(self.mensalidade.status, "paga")
+
+    def test_status_invalido_e_recusado(self):
+        self.encerrar(self.mensalidade, "paga")
+        self.mensalidade.refresh_from_db()
+        self.assertEqual(self.mensalidade.status, "pendente")
+
+    def test_operador_sem_administrador_recebe_403(self):
+        self.client.force_login(self.operador)
+        resposta = self.client.post(
+            f"/financeiro/cobrancas/{self.mensalidade.pk}/encerrar/", {"status": "cancelada"}
+        )
+        self.assertEqual(resposta.status_code, 403)
+        self.mensalidade.refresh_from_db()
+        self.assertEqual(self.mensalidade.status, "pendente")
+
+    def test_botao_aparece_so_para_administrador(self):
+        url_acao = f"/financeiro/cobrancas/{self.mensalidade.pk}/encerrar/"
+        self.assertContains(self.client.get("/financeiro/cobrancas/"), url_acao)
+        self.client.force_login(self.operador)
+        self.assertNotContains(self.client.get("/financeiro/cobrancas/"), url_acao)
+
+    def test_isola_por_academia(self):
+        atleta_b = Atleta.objects.create(academia=self.b, nome="Secreto")
+        matricula_b = Matricula.objects.create(
+            academia=self.b, atleta=atleta_b, modalidade=Modalidade.objects.create(academia=self.b, nome="Karatê"),
+            valor_mensalidade=Decimal("50.00"), dia_vencimento=10, data_inicio=date(2026, 1, 1),
+        )
+        mensalidade_b = Mensalidade.objects.create(
+            academia=self.b, matricula=matricula_b, competencia=date(2026, 9, 1),
+            valor=Decimal("50.00"), vencimento=date(2026, 9, 10), status="pendente",
+        )
+        resposta = self.client.post(f"/financeiro/cobrancas/{mensalidade_b.pk}/encerrar/", {"status": "cancelada"})
+        self.assertEqual(resposta.status_code, 404)

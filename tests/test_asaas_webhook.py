@@ -61,6 +61,19 @@ class WebhookAsaasTests(TestCase):
         self.mensalidade.refresh_from_db()
         self.assertEqual(self.mensalidade.status, "pendente")
 
+    def test_pagamento_de_mensalidade_cancelada_responde_200_e_registra_aviso(self):
+        # 5xx faria o Asaas reenviar e, com falhas seguidas, pausar a fila.
+        self.mensalidade.status = "cancelada"
+        self.mensalidade.save(update_fields=["status"])
+
+        with self.assertLogs("integracoes.asaas.views", level="WARNING") as logs:
+            resposta = self.post({"event": "PAYMENT_RECEIVED", "payment": {"id": "pay_123", "billingType": "PIX"}})
+
+        self.assertEqual(resposta.status_code, 200)
+        self.assertIn("pay_123", logs.output[0])
+        self.mensalidade.refresh_from_db()
+        self.assertEqual(self.mensalidade.status, "cancelada")
+
     def test_mensalidade_ja_paga_nao_e_reprocessada(self):
         self.mensalidade.status = "paga"
         self.mensalidade.pago_em = None

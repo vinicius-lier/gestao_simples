@@ -95,8 +95,11 @@ administrativa e daemon-reload; o Actions n?o pode alterar arquivos de root.
 
 ### Lembretes de cobranca (timer)
 
-O envio diario de lembretes por WhatsApp roda por um systemd timer, instalado
-uma vez como admin (o Actions nao mexe em arquivos de root):
+A rotina diaria de cobranca (gera as mensalidades do mes e antecipa as do mes
+seguinte que vencem em ate 7 dias, depois envia os lembretes por WhatsApp) roda
+por um systemd timer, instalado uma vez como admin (o Actions nao mexe em
+arquivos de root). Sem esse timer, nenhuma mensalidade nova e criada a partir
+do 2o mes:
 
 ```bash
 sudo install -o root -g root -m 644 deploy/academia-lembretes.service /etc/systemd/system/academia-lembretes.service

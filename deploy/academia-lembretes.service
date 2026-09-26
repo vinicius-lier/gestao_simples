@@ -1,5 +1,5 @@
 [Unit]
-Description=Academia Gestao - envio diario de lembretes de cobranca (WhatsApp)
+Description=Academia Gestao - rotina diaria de cobranca (gera mensalidades e envia lembretes por WhatsApp)
 After=network-online.target postgresql.service
 Wants=network-online.target
 

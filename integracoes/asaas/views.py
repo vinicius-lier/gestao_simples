@@ -1,4 +1,5 @@
 import json
+import logging
 
 from django.conf import settings
 from django.http import JsonResponse
@@ -7,6 +8,8 @@ from django.views.decorators.http import require_http_methods
 
 from financeiro.models import Mensalidade
 from financeiro.services import registrar_pagamento
+
+logger = logging.getLogger(__name__)
 
 # Eventos do Asaas que indicam que o dinheiro entrou. Ver:
 # https://docs.asaas.com/docs/webhook-eventos
@@ -77,6 +80,18 @@ def webhook_pagamento(request):
     )
     if mensalidade is not None:
         forma = MAPA_FORMA_PAGAMENTO.get(pagamento.get("billingType"), "")
-        registrar_pagamento(mensalidade, forma_pagamento=forma)
+        try:
+            registrar_pagamento(mensalidade, forma_pagamento=forma)
+        except ValueError:
+            # Pagamento de mensalidade cancelada: responde 2xx mesmo assim.
+            # Erro aqui faria o Asaas reenviar sem parar e, com falhas
+            # seguidas, pausar a fila — travando a baixa de TODOS os pagamentos.
+            logger.warning(
+                "Asaas: pagamento %s recebido para a mensalidade %s, que está cancelada. "
+                "Conferir e estornar/regularizar manualmente.",
+                payment_id,
+                mensalidade.pk,
+            )
+            return JsonResponse({"ignorado": True, "motivo": "mensalidade cancelada"})
 
     return JsonResponse({"ok": True})

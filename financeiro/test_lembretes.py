@@ -3,6 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.test import TestCase
+from django.utils import timezone
 
 from academias.models import Academia
 from atletas.models import Atleta, Responsavel
@@ -11,6 +12,7 @@ from financeiro.models import LembreteCobranca, Mensalidade
 from integracoes.whatsapp.client import WhatsAppAPIError
 from matriculas.models import Matricula
 from modalidades.models import Modalidade
+from portal.models import TokenAcessoResponsavel
 
 HOJE = date(2026, 9, 6)
 
@@ -111,6 +113,16 @@ class EnviarLembretesTests(TestCase):
         link = kwargs["parametros"][-1]
         self.assertIn(f"/responsavel/mensalidade/{mensalidade.pk}/pagar/", link)
         self.assertTrue(link.startswith("http"))
+
+    @patch("integracoes.whatsapp.services.WhatsAppClient")
+    def test_link_do_lembrete_de_5_dias_vale_ate_depois_do_vencimento(self, mock_client_class):
+        mock_client_class.return_value.enviar_template.return_value = {"ok": True}
+        self.criar_mensalidade(HOJE + timedelta(days=5))
+
+        enviar_lembretes(hoje=HOJE)
+
+        acesso = TokenAcessoResponsavel.objects.get(responsavel=self.responsavel)
+        self.assertGreater(acesso.expira_em, timezone.now() + timedelta(days=6))
 
     @patch("integracoes.whatsapp.services.WhatsAppClient")
     def test_nao_reenvia_o_mesmo_estagio(self, mock_client_class):

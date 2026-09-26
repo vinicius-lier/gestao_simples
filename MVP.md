@@ -37,25 +37,27 @@ Academia é derivada exclusivamente do usuário autenticado. IDs de aluno, respo
 
 ## Financeiro e limites
 
-A integração Asaas e a geração de mensalidades existente foram preservadas. O formulário salva a matrícula; não dispara cobranças nem gera mensalidades automaticamente. Continue usando o comando `gerar_mensalidades` do projeto.
+A integração Asaas e a geração de mensalidades existente foram preservadas. Ao ativar a matrícula, o sistema cria a 1ª mensalidade (a do primeiro vencimento a partir da data de início). As seguintes são criadas pela **rotina diária** (`enviar_lembretes_cobranca`, ver abaixo): ela garante as mensalidades do mês corrente e antecipa as do mês seguinte que vencem em até 7 dias, a tempo do lembrete de 5 dias antes. Só entram matrículas ativas de alunos com status **ativo** — aluno trancado ou inativo não gera cobrança nova. O comando `gerar_mensalidades --ano --mes` continua disponível para gerar um mês avulso.
 
 ### Painel financeiro (`/financeiro/`)
 
 - **Painel**: previsto, recebido, a receber e em atraso do mês corrente, vencimentos dos próximos 7 dias e lista de inadimplentes. A cada acesso, mensalidades pendentes vencidas são promovidas para `vencida` automaticamente (`Mensalidade.objects.marcar_vencidas()`), sem depender de job externo.
 - **Cobranças** (`/financeiro/cobrancas/`): lista com busca por aluno, filtro por situação e por mês, paginada. Ações por linha: **Marcar como pago** (define `status`, `forma_pagamento` e `pago_em`), **Gerar Pix** (chama a integração Asaas já existente) e **Cobrar** (abre o WhatsApp do responsável com a mensagem preenchida — `portal/templatetags/portal_extras.py`).
 - Qualquer usuário vinculado à academia pode registrar pagamentos e gerar cobranças (não é uma ação restrita a administrador da academia).
+- **Cancelar / Isentar** (só administrador da academia): tira uma mensalidade em aberto da cobrança e dos lembretes. Se ela já tem cobrança no Asaas, a cobrança é excluída lá antes; se o Asaas recusar (por exemplo, porque já foi paga), nada muda localmente.
 - No detalhe do aluno, cada matrícula mostra as últimas mensalidades e o status.
 
 ### Webhook do Asaas (`/webhooks/asaas/`)
 
-Endpoint público (`POST`, isento de CSRF) que recebe a confirmação de pagamento do Asaas e marca a mensalidade correspondente como paga automaticamente — sem conferência manual. Aceita `PAYMENT_RECEIVED` e `PAYMENT_CONFIRMED`, casando pelo `asaas_payment_id`. Configure `ASAAS_WEBHOOK_TOKEN` (mesmo token cadastrado no painel do Asaas) para exigir o cabeçalho `asaas-access-token`; sem essa variável definida, o endpoint aceita qualquer chamada — use isso só em desenvolvimento.
+Endpoint público (`POST`, isento de CSRF) que recebe a confirmação de pagamento do Asaas e marca a mensalidade correspondente como paga automaticamente — sem conferência manual. Aceita `PAYMENT_RECEIVED` e `PAYMENT_CONFIRMED`, casando pelo `asaas_payment_id`. Pagamento que chega para uma mensalidade **cancelada** não altera nada, gera um aviso no log (`integracoes.asaas.views`, para conferir/estornar à mão) e responde 200 — um erro faria o Asaas reenviar e, com falhas seguidas, pausar a fila de webhooks. Configure `ASAAS_WEBHOOK_TOKEN` (mesmo token cadastrado no painel do Asaas) para exigir o cabeçalho `asaas-access-token`; sem essa variável definida, o endpoint aceita qualquer chamada — use isso só em desenvolvimento.
 
 ### Portal do responsável (`/responsavel/`)
 
 Área pública, sem o login de staff, onde o responsável financeiro acompanha as mensalidades dos próprios alunos e paga por Pix, boleto ou cartão.
 
 - **Acesso**: sem senha. O staff clica **"Gerar acesso ao portal de pagamentos"** no detalhe do aluno (`AcessoAcademia`/administrador não é exigido para isso — qualquer usuário da academia pode gerar). Isso cria um `TokenAcessoResponsavel` (link de uso único, válido por 24h) e tenta enviar pelo WhatsApp automaticamente; se a API do WhatsApp não estiver configurada, mostra o link para o operador mandar manualmente (mesmo padrão wa.me usado no financeiro).
-- Ao abrir o link, o navegador ganha uma sessão comum (`request.session['responsavel_id']`) que dura o padrão de sessão do Django — não precisa do link de novo até expirar os cookies.
+- Abrir o link mostra uma tela com o botão **Entrar**; o token só é gasto nesse clique (POST). Assim, prévia de link do WhatsApp e antivírus — que abrem o link por GET — não queimam o acesso antes da família. Links de pagamento (lembretes e "Enviar cobrança") valem 7 dias; o acesso avulso ao portal, 24h. Reabrir um link já usado no mesmo navegador segue direto, sem "link expirado".
+- Ao clicar em Entrar, o navegador ganha uma sessão comum (`request.session['responsavel_id']`) que dura o padrão de sessão do Django — não precisa do link de novo até expirar os cookies.
 - **Painel**: lista os alunos vinculados àquele responsável e as mensalidades de cada um, com botão **Pagar** nas pendentes/atrasadas.
 - **Pagar**: gera (ou reaproveita) uma cobrança Asaas com `billing_type=UNDEFINED` (`criar_cobranca_multipla_asaas`), mostra o QR/copia-e-cola do Pix na hora, um link do boleto (PDF) e um botão "Pagar com cartão" que abre o checkout hospedado do próprio Asaas (`invoiceUrl`) — cartão nunca passa pelo nosso servidor.
 - Isolamento: toda consulta filtra por `matricula__atleta__responsavel_financeiro=request.responsavel` — um responsável nunca alcança mensalidade de outra família, mesmo advinhando o ID na URL.
@@ -68,7 +70,7 @@ No painel financeiro, o botão único **"Enviar cobrança"** substitui o antigo 
 
 ### Lembretes automáticos de cobrança (`financeiro/lembretes.py`)
 
-Comando `enviar_lembretes_cobranca` (agendar para rodar 1x por dia via cron/Agendador de Tarefas do Windows — o projeto não agenda nada sozinho) que avisa o responsável pelo WhatsApp em 4 estágios, cada um disparado **no máximo uma vez por mensalidade**:
+Comando `enviar_lembretes_cobranca` — a rotina diária de cobrança (na EC2 roda pelo timer `deploy/academia-lembretes.timer`; no Windows, agende pelo Agendador de Tarefas). Primeiro gera as mensalidades pendentes de criação (ver "Financeiro e limites"), depois avisa o responsável pelo WhatsApp em 4 estágios, cada um disparado **no máximo uma vez por mensalidade**:
 
 1. **5 dias antes** do vencimento;
 2. **1 dia antes**, se ainda não paga;

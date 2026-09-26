@@ -34,6 +34,7 @@ urlpatterns = [
     path('financeiro/', views.financeiro_dashboard, name='financeiro'),
     path('financeiro/cobrancas/', views.financeiro_cobrancas, name='financeiro_cobrancas'),
     path('financeiro/cobrancas/<int:pk>/pagar/', views.financeiro_marcar_pago, name='financeiro_marcar_pago'),
+    path('financeiro/cobrancas/<int:pk>/encerrar/', views.financeiro_encerrar_cobranca, name='financeiro_encerrar_cobranca'),
     path('financeiro/cobrancas/<int:pk>/pix/', views.financeiro_gerar_pix, name='financeiro_gerar_pix'),
     path('financeiro/cobrancas/<int:pk>/pix/qrcode/', views.financeiro_pix_qrcode, name='financeiro_pix_qrcode'),
     path('financeiro/cobrancas/<int:pk>/enviar/', views.financeiro_enviar_cobranca, name='financeiro_enviar_cobranca'),

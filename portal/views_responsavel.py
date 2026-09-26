@@ -43,16 +43,36 @@ def responsavel_required(view):
     return wrapped
 
 
+@require_http_methods(['GET', 'POST'])
 def responsavel_entrar(request, token):
-    acesso = get_object_or_404(TokenAcessoResponsavel.objects.select_related('responsavel'), token=token)
+    """GET mostra a tela "Entrar" sem gastar o token; só o POST (clique do
+    responsável) consome. Robôs de prévia de link e antivírus fazem GET,
+    então não queimam o link de uso único antes da família clicar."""
+    acesso = get_object_or_404(
+        TokenAcessoResponsavel.objects.select_related('responsavel__academia'), token=token
+    )
+
+    def seguir():
+        destino = destino_pos_login(request.GET.get('next', ''), acesso.responsavel)
+        return redirect(destino) if destino else redirect('portal:responsavel_painel')
+
+    # Já entrou com este responsável neste navegador (ex.: abriu o mesmo
+    # link de novo pelo WhatsApp): segue direto, mesmo com o token gasto.
+    if request.session.get('responsavel_id') == acesso.responsavel_id:
+        return seguir()
+
     if not acesso.valido:
         return render(request, 'portal/responsavel_link_expirado.html', status=410)
+
+    if request.method == 'GET':
+        return render(request, 'portal/responsavel_entrar.html', {'academia': acesso.responsavel.academia})
+
     acesso.consumir()
+    request.session.cycle_key()
     request.session['responsavel_id'] = acesso.responsavel_id
     request.session.set_expiry(60 * 60 * 24 * 14)  # 14 dias, como o padrão de sessão do Django
     messages.success(request, f'Bem-vindo(a), {acesso.responsavel.nome}.')
-    destino = destino_pos_login(request.GET.get('next', ''), acesso.responsavel)
-    return redirect(destino) if destino else redirect('portal:responsavel_painel')
+    return seguir()
 
 
 def responsavel_link_expirado(request):

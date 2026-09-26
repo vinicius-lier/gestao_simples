@@ -64,7 +64,7 @@ class ResponsavelPortalTests(TestCase):
 
     def test_link_valido_abre_sessao_e_e_consumido(self):
         acesso = TokenAcessoResponsavel.gerar(self.responsavel)
-        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/")
+        resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/")
         self.assertRedirects(resposta, "/responsavel/")
         self.assertEqual(self.client.session.get("responsavel_id"), self.responsavel.pk)
         acesso.refresh_from_db()
@@ -73,7 +73,7 @@ class ResponsavelPortalTests(TestCase):
     def test_link_com_next_valido_vai_direto_para_pagar(self):
         acesso = TokenAcessoResponsavel.gerar(self.responsavel)
         destino = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
-        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next={destino}")
+        resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/?next={destino}")
         self.assertRedirects(resposta, destino)
 
     def test_link_com_next_de_outra_familia_cai_no_painel(self):
@@ -82,20 +82,50 @@ class ResponsavelPortalTests(TestCase):
         )
         acesso = TokenAcessoResponsavel.gerar(outro_responsavel)
         destino = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
-        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next={destino}")
+        resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/?next={destino}")
         self.assertRedirects(resposta, "/responsavel/")
 
     def test_link_com_next_externo_e_ignorado(self):
         acesso = TokenAcessoResponsavel.gerar(self.responsavel)
-        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next=https://evil.example.com/")
+        resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/?next=https://evil.example.com/")
         self.assertRedirects(resposta, "/responsavel/")
 
     def test_link_usado_duas_vezes_falha_na_segunda(self):
         acesso = TokenAcessoResponsavel.gerar(self.responsavel)
-        self.client.get(f"/responsavel/entrar/{acesso.token}/")
+        self.client.post(f"/responsavel/entrar/{acesso.token}/")
         self.client.logout()
-        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/")
+        resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/")
         self.assertEqual(resposta.status_code, 410)
+
+    def test_abrir_o_link_mostra_tela_de_entrada_sem_consumir(self):
+        # Prévia de link do WhatsApp e antivírus fazem GET: não podem
+        # queimar o token antes da família clicar.
+        acesso = TokenAcessoResponsavel.gerar(self.responsavel)
+        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Entrar")
+        self.assertNotIn("responsavel_id", self.client.session)
+        acesso.refresh_from_db()
+        self.assertIsNone(acesso.usado_em)
+
+    def test_tela_de_entrada_preserva_o_next_no_formulario(self):
+        acesso = TokenAcessoResponsavel.gerar(self.responsavel)
+        destino = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
+        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next={destino}")
+        self.assertContains(resposta, f'action="/responsavel/entrar/{acesso.token}/?next={destino}"')
+
+    def test_reabrir_link_usado_no_mesmo_navegador_segue_logado(self):
+        acesso = TokenAcessoResponsavel.gerar(self.responsavel)
+        destino = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
+        self.client.post(f"/responsavel/entrar/{acesso.token}/")
+        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next={destino}")
+        self.assertRedirects(resposta, destino, fetch_redirect_response=False)
+
+    def test_link_expirado_da_410_mesmo_no_get(self):
+        acesso = TokenAcessoResponsavel.gerar(self.responsavel)
+        acesso.expira_em = timezone.now() - timedelta(minutes=1)
+        acesso.save(update_fields=["expira_em"])
+        self.assertEqual(self.client.get(f"/responsavel/entrar/{acesso.token}/").status_code, 410)
 
     def test_link_inexistente_da_404(self):
         self.assertEqual(self.client.get("/responsavel/entrar/token-invalido/").status_code, 404)
@@ -106,7 +136,7 @@ class ResponsavelPortalTests(TestCase):
 
     def _logar(self, responsavel):
         acesso = TokenAcessoResponsavel.gerar(responsavel)
-        self.client.get(f"/responsavel/entrar/{acesso.token}/")
+        self.client.post(f"/responsavel/entrar/{acesso.token}/")
 
     def test_painel_mostra_so_os_alunos_do_proprio_responsavel(self):
         self._logar(self.responsavel)

@@ -280,6 +280,34 @@ def financeiro_marcar_pago(request, pk):
 
 @academia_required
 @require_http_methods(['POST'])
+def financeiro_encerrar_cobranca(request, pk):
+    """Cancela ou isenta uma mensalidade em aberto. Só administrador:
+    diferente de dar baixa, isso apaga uma dívida."""
+    if not request.administrador_academia:
+        raise PermissionDenied('Somente o administrador da academia cancela ou isenta mensalidades.')
+
+    from financeiro.models import Mensalidade
+    from financeiro.services import encerrar_mensalidade
+    from integracoes.asaas.client import AsaasAPIError
+
+    mensalidade = get_object_or_404(
+        Mensalidade.objects.select_related('matricula__atleta'), pk=pk, academia=request.academia
+    )
+    try:
+        encerrar_mensalidade(mensalidade, request.POST.get('status', ''))
+    except (ValueError, AsaasAPIError) as error:
+        messages.error(request, f'Não foi possível alterar a mensalidade: {error}')
+    else:
+        messages.success(
+            request,
+            f'Mensalidade {mensalidade.competencia:%m/%Y} de {mensalidade.matricula.atleta.nome}: '
+            f'{mensalidade.get_status_display().lower()}.',
+        )
+    return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
+
+
+@academia_required
+@require_http_methods(['POST'])
 def financeiro_gerar_pix(request, pk):
     from financeiro.models import Mensalidade
     from integracoes.asaas.client import AsaasAPIError
@@ -373,7 +401,7 @@ def financeiro_enviar_cobranca(request, pk):
         messages.error(request, 'Este aluno não tem responsável financeiro cadastrado.')
         return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
-    acesso = TokenAcessoResponsavel.gerar(responsavel)
+    acesso = TokenAcessoResponsavel.gerar(responsavel, validade_horas=TokenAcessoResponsavel.VALIDADE_PAGAMENTO_HORAS)
     destino = reverse('portal:responsavel_pagar', args=[mensalidade.pk])
     link = request.build_absolute_uri(reverse('portal:responsavel_entrar', args=[acesso.token])) + f'?next={destino}'
 

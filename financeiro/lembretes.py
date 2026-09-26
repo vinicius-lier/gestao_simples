@@ -35,7 +35,9 @@ def montar_link_pagamento(mensalidade, responsavel):
     pagamento da mensalidade — usado fora de uma request (comando), por
     isso monta a URL absoluta a partir de SITE_URL em vez de
     request.build_absolute_uri."""
-    acesso = TokenAcessoResponsavel.gerar(responsavel)
+    acesso = TokenAcessoResponsavel.gerar(
+        responsavel, validade_horas=TokenAcessoResponsavel.VALIDADE_PAGAMENTO_HORAS
+    )
     entrada = reverse("portal:responsavel_entrar", args=[acesso.token])
     destino = reverse("portal:responsavel_pagar", args=[mensalidade.pk])
     base = settings.SITE_URL.rstrip("/")

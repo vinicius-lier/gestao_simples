@@ -108,3 +108,43 @@ class CriarCobrancaClientTests(SimpleTestCase):
             timeout=30,
         )
         response.raise_for_status.assert_called_once_with()
+
+
+class RemoverCobrancaTests(SimpleTestCase):
+    def setUp(self):
+        env = {
+            "ASAAS_BASE_URL": "https://api.example.com/v3",
+            "ASAAS_API_KEY": "chave-teste",
+        }
+        with patch.dict("os.environ", env):
+            self.client = AsaasClient()
+
+    @patch("integracoes.asaas.client.requests.delete")
+    def test_exclui_a_cobranca(self, mock_delete):
+        response = Mock(status_code=200)
+        response.json.return_value = {"deleted": True, "id": "pay_123"}
+        mock_delete.return_value = response
+
+        resultado = self.client.remover_cobranca("pay_123")
+
+        self.assertTrue(resultado["deleted"])
+        mock_delete.assert_called_once_with(
+            "https://api.example.com/v3/payments/pay_123",
+            headers=self.client.headers,
+            timeout=30,
+        )
+
+    @patch("integracoes.asaas.client.requests.delete")
+    def test_cobranca_inexistente_retorna_none(self, mock_delete):
+        mock_delete.return_value = Mock(status_code=404)
+
+        self.assertIsNone(self.client.remover_cobranca("pay_inexistente"))
+
+    @patch("integracoes.asaas.client.requests.delete")
+    def test_cobranca_ja_paga_propaga_erro(self, mock_delete):
+        response = Mock(status_code=400)
+        response.raise_for_status.side_effect = requests.HTTPError("400")
+        mock_delete.return_value = response
+
+        with self.assertRaises(AsaasAPIError):
+            self.client.remover_cobranca("pay_pago")

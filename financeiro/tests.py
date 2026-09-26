@@ -7,7 +7,12 @@ from django.test import TestCase
 from academias.models import Academia
 from atletas.models import Atleta
 from financeiro.models import Mensalidade
-from financeiro.services import gerar_mensalidades, registrar_pagamento, resumo_financeiro
+from financeiro.services import (
+    gerar_mensalidades,
+    gerar_mensalidades_do_dia,
+    registrar_pagamento,
+    resumo_financeiro,
+)
 from matriculas.models import Matricula
 from modalidades.models import Modalidade
 
@@ -92,7 +97,7 @@ class GerarMensalidadesTests(TestCase):
         self.assertEqual(resultado, {"criadas": 0, "existentes": 0})
 
     def test_gera_quando_matricula_esteve_ativa_parte_do_mes(self):
-        self.matricula.data_inicio = date(2026, 9, 20)
+        self.matricula.data_inicio = date(2026, 9, 5)
         self.matricula.data_fim = date(2026, 9, 25)
         self.matricula.save(update_fields=["data_inicio", "data_fim"])
 
@@ -100,6 +105,35 @@ class GerarMensalidadesTests(TestCase):
 
         self.assertEqual(resultado, {"criadas": 1, "existentes": 0})
         self.assertTrue(Mensalidade.objects.exists())
+
+    def test_inicio_depois_do_vencimento_comeca_no_mes_seguinte(self):
+        # Entrou dia 20 com vencimento dia 10: setembro não gera uma
+        # cobrança que já nasceria vencida; a 1ª é a de outubro.
+        self.matricula.data_inicio = date(2026, 9, 20)
+        self.matricula.save(update_fields=["data_inicio"])
+
+        self.assertEqual(gerar_mensalidades(ano=2026, mes=9), {"criadas": 0, "existentes": 0})
+        self.assertEqual(gerar_mensalidades(ano=2026, mes=10), {"criadas": 1, "existentes": 0})
+        self.assertEqual(Mensalidade.objects.get().vencimento, date(2026, 10, 10))
+
+    def test_nao_gera_para_aluno_trancado_ou_inativo(self):
+        for status in ("trancado", "inativo"):
+            self.atleta.status = status
+            self.atleta.save(update_fields=["status"])
+
+            resultado = gerar_mensalidades(ano=2026, mes=9)
+
+            self.assertEqual(resultado, {"criadas": 0, "existentes": 0})
+        self.assertFalse(Mensalidade.objects.exists())
+
+    def test_vencimento_ate_limita_as_mensalidades_geradas(self):
+        resultado = gerar_mensalidades(ano=2026, mes=9, vencimento_ate=date(2026, 9, 9))
+
+        self.assertEqual(resultado, {"criadas": 0, "existentes": 0})
+
+        resultado = gerar_mensalidades(ano=2026, mes=9, vencimento_ate=date(2026, 9, 10))
+
+        self.assertEqual(resultado, {"criadas": 1, "existentes": 0})
 
 
     def test_gerar_mensalidades_sem_duplicar(self):
@@ -137,6 +171,58 @@ class GerarMensalidadesTests(TestCase):
             Mensalidade.objects.count(),
             1,
         )
+
+
+class GerarMensalidadesDoDiaTests(TestCase):
+    def setUp(self):
+        academia = Academia.objects.create(nome="Academia Teste", cnpj="GMD1")
+        atleta = Atleta.objects.create(academia=academia, nome="Atleta")
+        modalidade = Modalidade.objects.create(academia=academia, nome="Judô")
+        self.matricula = Matricula.objects.create(
+            academia=academia, atleta=atleta, modalidade=modalidade,
+            valor_mensalidade=Decimal("120.00"), dia_vencimento=3, data_inicio=date(2026, 1, 1),
+        )
+
+    def test_gera_o_mes_corrente(self):
+        resultado = gerar_mensalidades_do_dia(hoje=date(2026, 9, 1))
+
+        self.assertEqual(resultado, {"criadas": 1, "existentes": 0})
+        self.assertEqual(Mensalidade.objects.get().competencia, date(2026, 9, 1))
+
+    def test_antecipa_o_mes_seguinte_a_tempo_do_lembrete_de_5_dias(self):
+        # 27/09 + 7 dias = 04/10: a mensalidade que vence em 03/10 já existe
+        # no dia 27, então o lembrete de 5 dias antes (28/09) consegue sair.
+        resultado = gerar_mensalidades_do_dia(hoje=date(2026, 9, 27))
+
+        self.assertEqual(resultado, {"criadas": 2, "existentes": 0})
+        self.assertEqual(
+            sorted(Mensalidade.objects.values_list("vencimento", flat=True)),
+            [date(2026, 9, 3), date(2026, 10, 3)],
+        )
+
+    def test_nao_antecipa_mes_seguinte_fora_da_janela(self):
+        self.matricula.dia_vencimento = 20
+        self.matricula.save(update_fields=["dia_vencimento"])
+
+        gerar_mensalidades_do_dia(hoje=date(2026, 9, 27))
+
+        self.assertEqual(
+            list(Mensalidade.objects.values_list("competencia", flat=True)),
+            [date(2026, 9, 1)],
+        )
+
+    def test_rodar_de_novo_no_mesmo_dia_nao_duplica(self):
+        gerar_mensalidades_do_dia(hoje=date(2026, 9, 27))
+
+        resultado = gerar_mensalidades_do_dia(hoje=date(2026, 9, 27))
+
+        self.assertEqual(resultado, {"criadas": 0, "existentes": 2})
+        self.assertEqual(Mensalidade.objects.count(), 2)
+
+    def test_virada_de_ano(self):
+        gerar_mensalidades_do_dia(hoje=date(2026, 12, 29))
+
+        self.assertTrue(Mensalidade.objects.filter(competencia=date(2027, 1, 1)).exists())
 
 
 class MensalidadeTestCase(TestCase):

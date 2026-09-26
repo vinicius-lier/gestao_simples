@@ -220,6 +220,27 @@ class AsaasClient:
 
         return self._obter_json(response)
 
+    def remover_cobranca(self, payment_id):
+        """Exclui a cobrança no Asaas (o link de pagamento deixa de aceitar
+        Pix/boleto/cartão). Devolve None se ela já não existe lá."""
+        url = f"{self.base_url}/payments/{payment_id}"
+
+        try:
+            response = requests.delete(
+                url,
+                headers=self.headers,
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            self._erro_de_conexao(exc)
+
+        if response.status_code == 404:
+            return None
+
+        self._validar_resposta(response)
+
+        return self._obter_json(response)
+
     def buscar_cliente_por_id(self, customer_id):
         url = f"{self.base_url}/customers/{customer_id}"
 

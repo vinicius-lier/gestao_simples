@@ -182,6 +182,15 @@ def garantir_cobranca_asaas(mensalidade):
     return criar_cobranca_multipla_asaas(mensalidade)
 
 
+def remover_cobranca_asaas(mensalidade):
+    """Exclui no Asaas a cobrança da mensalidade, se houver — para o link
+    antigo parar de aceitar pagamento. Falha (ex.: a cobrança já foi paga
+    lá) levanta AsaasAPIError e deve impedir o cancelamento local."""
+    if not mensalidade.asaas_payment_id:
+        return
+    AsaasClient().remover_cobranca(mensalidade.asaas_payment_id)
+
+
 def obter_pix_mensalidade(mensalidade):
     if not mensalidade.asaas_payment_id:
         raise ValueError(
