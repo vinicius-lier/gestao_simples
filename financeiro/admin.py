@@ -16,7 +16,7 @@ class MensalidadeAdmin(admin.ModelAdmin):
 
     search_fields = (
         "matricula__atleta__nome",
-        "asaas_payment_id",
+        "woovi_correlation_id",
     )
 
     list_filter = (

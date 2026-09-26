@@ -90,13 +90,12 @@ class NovosCadastrosTests(TestCase):
     def payload(self):
         return {'nome':'Aluno adulto','cpf':'12345678900','status':'ativo','proprio_responsavel':'on','aluno_whatsapp':'21999999999','aluno_email':'aluno@example.com','matricula-unidade':self.unit.pk,'matricula-modalidade':self.s.pk,'matricula-valor_mensalidade':'150','matricula-dia_vencimento':'10','matricula-data_inicio':'2026-09-06','matricula-ativo':'on'}
 
-    def test_aluno_responsavel_financeiro_reutiliza_asaas(self):
-        r = Responsavel.objects.create(academia=self.a,nome='Aluno adulto',cpf='123.456.789-00',whatsapp='21999999999',asaas_customer_id='cus_existente')
+    def test_aluno_responsavel_financeiro_reutiliza_cadastro(self):
+        r = Responsavel.objects.create(academia=self.a,nome='Aluno adulto',cpf='123.456.789-00',whatsapp='21999999999')
         self.assertEqual(self.client.post('/alunos/novo/',self.payload()).status_code, 302)
         aluno = Atleta.objects.get()
         self.assertTrue(aluno.proprio_responsavel)
         self.assertEqual(aluno.responsavel_financeiro_id,r.pk)
-        self.assertEqual(aluno.responsavel_financeiro.asaas_customer_id,'cus_existente')
         self.assertContains(self.client.get(f'/alunos/{aluno.pk}/'), 'Próprio aluno')
 
     def test_proprio_responsavel_exige_contato_e_cpf(self):
@@ -107,7 +106,7 @@ class NovosCadastrosTests(TestCase):
 
     def test_cpf_com_quantidade_errada_de_digitos_e_rejeitado(self):
         # Regressao: um CPF com 12 digitos era aceito no cadastro e so
-        # quebrava depois, ao tentar gerar a cobranca no Asaas (HTTP 400).
+        # quebrava depois, ao tentar gerar a cobranca no gateway (HTTP 400).
         data=self.payload();data['cpf']='212454848661'
         response=self.client.post('/alunos/novo/',data)
         self.assertEqual(response.status_code,200)

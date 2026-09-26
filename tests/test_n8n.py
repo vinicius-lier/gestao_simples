@@ -9,7 +9,6 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from academias.models import Academia, IntegracaoWhatsApp
 from atletas.models import Atleta, Responsavel
 from financeiro.models import LembreteCobranca, Mensalidade
-from integracoes.asaas.client import AsaasAPIError
 from integracoes.n8n.client import N8nAPIError, N8nClient
 from integracoes.n8n.services import CAMPOS_PROIBIDOS, montar_payload_cobranca
 from matriculas.models import Matricula
@@ -34,7 +33,7 @@ class MontarPayloadCobrancaTests(TestCase):
         self.mensalidade = Mensalidade.objects.create(
             academia=self.academia, matricula=self.matricula, competencia=date(2026, 9, 1),
             valor=Decimal("150.00"), vencimento=date(2026, 9, 10), status="pendente",
-            asaas_invoice_url="https://asaas/i/abc",
+            woovi_link_pagamento="https://woovi.com/pay/abc",
         )
 
     def test_campos_principais(self):
@@ -63,7 +62,7 @@ class MontarPayloadCobrancaTests(TestCase):
         self.assertEqual(payload["responsavel_nome"], "Ana Paula")
         self.assertEqual(payload["telefone"], "5521999999999")
         self.assertEqual(payload["pix_copia_e_cola"], "00020126BR.GOV.BCB.PIX")
-        self.assertEqual(payload["asaas_invoice_url"], "https://asaas/i/abc")
+        self.assertEqual(payload["link_pagamento_pix"], "https://woovi.com/pay/abc")
 
     def test_sem_dados_pessoais_ou_segredos(self):
         payload = montar_payload_cobranca(
@@ -128,27 +127,33 @@ class PrepararPayloadN8nTests(TestCase):
             valor=Decimal("150.00"), vencimento=date(2026, 9, 10), status="pendente",
         )
 
-    @patch("integracoes.asaas.services.obter_pix_mensalidade")
-    @patch("integracoes.asaas.services.garantir_cobranca_asaas")
-    def test_monta_com_pix_e_link(self, mock_garantir, mock_pix):
+    @patch("integracoes.woovi.services.garantir_cobranca_pix")
+    def test_monta_com_pix_e_link(self, mock_garantir):
         from financeiro.lembretes import preparar_payload_n8n
 
-        mock_pix.return_value = {"payload": "00020126PIX"}
+        def gerar_pix(mensalidade):
+            mensalidade.woovi_br_code = "00020126PIX"
+            mensalidade.woovi_link_pagamento = "https://woovi.com/pay/abc"
+            return mensalidade
+
+        mock_garantir.side_effect = gerar_pix
 
         payload = preparar_payload_n8n(self.mensalidade, LembreteCobranca.CINCO_DIAS)
 
         mock_garantir.assert_called_once()
         self.assertEqual(payload["pix_copia_e_cola"], "00020126PIX")
+        self.assertEqual(payload["link_pagamento_pix"], "https://woovi.com/pay/abc")
         self.assertIn("/responsavel/entrar/", payload["link_pagamento"])
         self.assertEqual(
             payload["idempotency_key"], f"{self.mensalidade.pk}:5_dias"
         )
 
-    @patch("integracoes.asaas.services.garantir_cobranca_asaas")
+    @patch("integracoes.woovi.services.garantir_cobranca_pix")
     def test_sem_pix_ainda_monta_com_link(self, mock_garantir):
         from financeiro.lembretes import preparar_payload_n8n
+        from integracoes.woovi.client import WooviAPIError
 
-        mock_garantir.side_effect = AsaasAPIError("timeout")
+        mock_garantir.side_effect = WooviAPIError("timeout")
         payload = preparar_payload_n8n(self.mensalidade, LembreteCobranca.ATRASADA)
 
         self.assertEqual(payload["pix_copia_e_cola"], "")

@@ -9,8 +9,8 @@ Falta so infra + configuracao + agendamento.
 > **Risco operacional.** Nao ha flag que segure o envio de WhatsApp em si.
 > Assim que uma academia tiver `provider=evolution` **e** instancia conectada
 > **e** o timer rodar, saem mensagens reais. As flags
-> `LEMBRETES_GERAM_COBRANCA_ASAAS` / `LEMBRETES_ENVIAM_N8N` controlam so a
-> cobranca Asaas e o n8n, nao o disparo. Suba **uma** academia primeiro.
+> `LEMBRETES_GERAM_COBRANCA_PIX` / `LEMBRETES_ENVIAM_N8N` controlam so o
+> Pix da Woovi e o n8n, nao o disparo. Suba **uma** academia primeiro.
 
 ---
 

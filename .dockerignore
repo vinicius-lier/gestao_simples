@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+.vscode
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+db.sqlite3*
+staticfiles
+media
+local
+dados-migracao*.json
+landing

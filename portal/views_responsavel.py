@@ -106,8 +106,8 @@ def responsavel_painel(request):
 
 @responsavel_required
 def responsavel_pagar(request, pk):
-    from integracoes.asaas.client import AsaasAPIError
-    from integracoes.asaas.services import criar_cobranca_multipla_asaas, obter_pix_mensalidade
+    from integracoes.woovi.client import WooviAPIError
+    from integracoes.woovi.services import garantir_cobranca_pix
 
     mensalidade = get_object_or_404(
         Mensalidade.objects.select_related('matricula__atleta', 'matricula__modalidade', 'matricula__unidade'),
@@ -116,15 +116,13 @@ def responsavel_pagar(request, pk):
         matricula__atleta__responsavel_financeiro=request.responsavel,
     )
 
-    pix, erro = None, None
+    erro = None
     if mensalidade.status in ('pendente', 'vencida'):
         try:
-            if not mensalidade.asaas_payment_id:
-                criar_cobranca_multipla_asaas(mensalidade)
-            pix = obter_pix_mensalidade(mensalidade)
-        except (ValueError, AsaasAPIError) as error:
+            garantir_cobranca_pix(mensalidade)
+        except (ValueError, WooviAPIError) as error:
             erro = str(error)
 
     return render(request, 'portal/responsavel_pagar.html', {
-        'mensalidade': mensalidade, 'pix': pix, 'erro': erro,
+        'mensalidade': mensalidade, 'erro': erro,
     })

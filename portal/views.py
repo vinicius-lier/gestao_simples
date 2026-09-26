@@ -273,8 +273,21 @@ def financeiro_marcar_pago(request, pk):
         registrar_pagamento(mensalidade, forma_pagamento=forma)
     except ValueError as error:
         messages.error(request, str(error))
-    else:
-        messages.success(request, f'Mensalidade de {mensalidade.matricula.atleta.nome} marcada como paga.')
+        return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
+    messages.success(request, f'Mensalidade de {mensalidade.matricula.atleta.nome} marcada como paga.')
+
+    # Pago por fora (dinheiro, transferência...): tira o Pix do ar para a
+    # família não pagar de novo pelo código que recebeu no lembrete.
+    from integracoes.woovi.client import WooviAPIError
+    from integracoes.woovi.services import remover_cobranca_pix
+    try:
+        remover_cobranca_pix(mensalidade)
+    except (ValueError, WooviAPIError) as error:
+        messages.warning(
+            request,
+            f'Não foi possível cancelar o Pix na Woovi ({error}). Confira no painel da Woovi '
+            'para evitar pagamento em dobro.',
+        )
     return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
 
@@ -288,14 +301,14 @@ def financeiro_encerrar_cobranca(request, pk):
 
     from financeiro.models import Mensalidade
     from financeiro.services import encerrar_mensalidade
-    from integracoes.asaas.client import AsaasAPIError
+    from integracoes.woovi.client import WooviAPIError
 
     mensalidade = get_object_or_404(
         Mensalidade.objects.select_related('matricula__atleta'), pk=pk, academia=request.academia
     )
     try:
         encerrar_mensalidade(mensalidade, request.POST.get('status', ''))
-    except (ValueError, AsaasAPIError) as error:
+    except (ValueError, WooviAPIError) as error:
         messages.error(request, f'Não foi possível alterar a mensalidade: {error}')
     else:
         messages.success(
@@ -310,39 +323,33 @@ def financeiro_encerrar_cobranca(request, pk):
 @require_http_methods(['POST'])
 def financeiro_gerar_pix(request, pk):
     from financeiro.models import Mensalidade
-    from integracoes.asaas.client import AsaasAPIError
-    from integracoes.asaas.services import criar_cobranca_multipla_asaas
+    from integracoes.woovi.client import WooviAPIError
+    from integracoes.woovi.services import garantir_cobranca_pix
     mensalidade = get_object_or_404(Mensalidade, pk=pk, academia=request.academia)
     try:
-        criar_cobranca_multipla_asaas(mensalidade)
-    except (ValueError, AsaasAPIError) as error:
-        messages.error(request, f'Não foi possível gerar a cobrança: {error}')
+        garantir_cobranca_pix(mensalidade)
+    except (ValueError, WooviAPIError) as error:
+        messages.error(request, f'Não foi possível gerar o Pix: {error}')
     else:
-        messages.success(request, 'Cobrança gerada no Asaas (Pix, boleto e cartão).')
+        messages.success(request, 'Pix gerado na Woovi.')
     return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
 
 @academia_required
 def financeiro_pix_qrcode(request, pk):
-    """Tela com o QR code e o código copia-e-cola da cobrança já gerada.
-    Abre como página normal (funciona sem JS) e também é usada como
-    conteúdo do modal de detalhe (mesmo mecanismo de [data-detalhe])."""
+    """Tela com o QR code e o Pix copia-e-cola já gerado. Abre como página
+    normal (funciona sem JS) e também é usada como conteúdo do modal de
+    detalhe (mesmo mecanismo de [data-detalhe]). Não chama a Woovi: os
+    dados do Pix ficam gravados na mensalidade."""
     from financeiro.models import Mensalidade
-    from integracoes.asaas.client import AsaasAPIError
-    from integracoes.asaas.services import obter_pix_mensalidade
     mensalidade = get_object_or_404(
         Mensalidade.objects.select_related('matricula__atleta', 'matricula__modalidade', 'matricula__unidade'),
         pk=pk, academia=request.academia,
     )
-    pix, erro = None, None
-    if not mensalidade.asaas_payment_id:
-        erro = 'Esta mensalidade ainda não tem uma cobrança Pix gerada.'
-    else:
-        try:
-            pix = obter_pix_mensalidade(mensalidade)
-        except (ValueError, AsaasAPIError) as error:
-            erro = str(error)
-    return render(request, 'portal/financeiro_pix.html', {'mensalidade': mensalidade, 'pix': pix, 'erro': erro})
+    erro = None
+    if not mensalidade.pix_vigente:
+        erro = 'Esta mensalidade não tem um Pix vigente. Gere um novo pela lista de cobranças.'
+    return render(request, 'portal/financeiro_pix.html', {'mensalidade': mensalidade, 'erro': erro})
 
 
 @academia_required

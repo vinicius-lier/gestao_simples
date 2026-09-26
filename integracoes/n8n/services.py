@@ -1,9 +1,9 @@
 """Montagem do payload Django -> n8n.
 
-`montar_payload_cobranca` é pura: não faz I/O, não gera token, não chama o
-Asaas. Os valores derivados de integrações externas (link público já
-assinado, Pix copia-e-cola, invoice URL) entram por parâmetro, calculados
-por quem tem o contexto (ver financeiro.lembretes).
+`montar_payload_cobranca` é pura: não faz I/O, não gera token, não chama a
+Woovi. Os valores derivados de integrações externas (link público já
+assinado, Pix copia-e-cola, página de pagamento da Woovi) entram por
+parâmetro, calculados por quem tem o contexto (ver financeiro.lembretes).
 """
 from datetime import date
 
@@ -15,8 +15,7 @@ CAMPOS_PROIBIDOS = frozenset(
         "cpf",
         "email",
         "endereco",
-        "asaas_customer_id",
-        "asaas_payment_id",
+        "woovi_correlation_id",
         "token",
         "api_key",
         "credential",
@@ -40,7 +39,7 @@ def montar_payload_cobranca(
     *,
     link_pagamento="",
     pix_copia_e_cola="",
-    asaas_invoice_url=None,
+    link_pagamento_pix=None,
     hoje=None,
 ):
     """Monta o dict que o Django enviará ao n8n para um lembrete de cobrança.
@@ -68,8 +67,8 @@ def montar_payload_cobranca(
     instancia_whatsapp = config.evolution_instance_name if config is not None else ""
     instancia_whatsapp = instancia_whatsapp or ""
 
-    if asaas_invoice_url is None:
-        asaas_invoice_url = mensalidade.asaas_invoice_url or ""
+    if link_pagamento_pix is None:
+        link_pagamento_pix = mensalidade.woovi_link_pagamento or ""
 
     return {
         "evento": EVENTO_COBRANCA,
@@ -91,5 +90,5 @@ def montar_payload_cobranca(
         "telefone": normalizar_telefone(responsavel.whatsapp),
         "link_pagamento": link_pagamento or "",
         "pix_copia_e_cola": pix_copia_e_cola or "",
-        "asaas_invoice_url": asaas_invoice_url or "",
+        "link_pagamento_pix": link_pagamento_pix or "",
     }

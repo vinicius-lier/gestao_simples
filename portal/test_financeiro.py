@@ -1,9 +1,10 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from academias.models import Academia
 from atletas.models import Atleta, Responsavel
@@ -102,65 +103,103 @@ class FinanceiroPortalTests(TestCase):
         )
         self.assertRedirects(resposta, "/financeiro/cobrancas/")
 
-    @patch("integracoes.asaas.services.AsaasClient")
-    @patch("integracoes.asaas.services.sincronizar_responsavel_asaas")
-    def test_gerar_cobranca_multipla_no_asaas(self, mock_sincronizar, mock_client_class):
-        mock_sincronizar.return_value = "cus_123"
-        mock_client_class.return_value.criar_cobranca.return_value = {"id": "pay_xyz"}
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_gerar_pix_na_woovi(self, mock_client_class):
+        mock_client_class.return_value.criar_cobranca.side_effect = lambda **kw: {
+            "correlationID": kw["correlation_id"],
+            "brCode": "00020126...copia-e-cola",
+            "qrCodeImage": "https://api.woovi.com/openpix/charge/brcode/image/x.png",
+            "paymentLinkUrl": "https://woovi.com/pay/x",
+            "expiresDate": "2999-01-01T00:00:00.000Z",
+        }
 
         resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pix/", {})
 
         self.assertEqual(resposta.status_code, 302)
         self.pendente.refresh_from_db()
-        self.assertEqual(self.pendente.asaas_payment_id, "pay_xyz")
-        self.assertEqual(
-            mock_client_class.return_value.criar_cobranca.call_args.kwargs["billing_type"], "UNDEFINED"
-        )
+        self.assertTrue(self.pendente.woovi_correlation_id.startswith(f"mensalidade-{self.pendente.pk}-"))
+        self.assertEqual(self.pendente.woovi_br_code, "00020126...copia-e-cola")
+        self.assertTrue(self.pendente.pix_vigente)
+        kwargs = mock_client_class.return_value.criar_cobranca.call_args.kwargs
+        self.assertEqual(kwargs["valor_centavos"], 12000)
+        self.assertEqual(kwargs["cliente"]["name"], "Resp")
 
-    def test_gerar_pix_sem_responsavel_mostra_erro_sem_quebrar(self):
-        self.atleta.responsavel_financeiro = None
-        self.atleta.save(update_fields=["responsavel_financeiro"])
+    @override_settings(WOOVI_APP_ID="")
+    def test_gerar_pix_sem_woovi_configurada_mostra_erro_sem_quebrar(self):
         resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pix/", {}, follow=True)
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "Não foi possível gerar a cobrança:")
+        self.assertContains(resposta, "Não foi possível gerar o Pix: WOOVI_APP_ID não configurado.")
 
-    def test_lista_cobrancas_mostra_link_do_qrcode_so_com_cobranca_gerada(self):
+    def test_lista_cobrancas_mostra_link_do_qrcode_so_com_pix_vigente(self):
         html = self.client.get("/financeiro/cobrancas/").content.decode("utf8")
-        self.assertNotIn("Ver cobrança", html)
-        self.assertIn("Gerar cobrança", html)
+        self.assertNotIn("Ver Pix", html)
+        self.assertIn("Gerar Pix", html)
 
-        self.pendente.asaas_payment_id = "pay_abc"
-        self.pendente.save(update_fields=["asaas_payment_id"])
+        self.pendente.woovi_correlation_id = "mensalidade-abc"
+        self.pendente.woovi_expira_em = timezone.now() + timedelta(days=10)
+        self.pendente.save(update_fields=["woovi_correlation_id", "woovi_expira_em"])
         html = self.client.get("/financeiro/cobrancas/").content.decode("utf8")
-        self.assertIn("Ver cobrança", html)
+        self.assertIn("Ver Pix", html)
         self.assertIn(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/", html)
 
-    @patch("integracoes.asaas.services.AsaasClient")
-    def test_tela_do_pix_mostra_qrcode_boleto_e_cartao(self, mock_client_class):
-        self.pendente.asaas_payment_id = "pay_abc"
-        self.pendente.asaas_bank_slip_url = "https://sandbox.asaas.com/b/abc"
-        self.pendente.asaas_invoice_url = "https://sandbox.asaas.com/i/abc"
-        self.pendente.save(update_fields=["asaas_payment_id", "asaas_bank_slip_url", "asaas_invoice_url"])
-        mock_client_class.return_value.obter_pix_qrcode.return_value = {
-            "payload": "00020126...copia-e-cola",
-            "encodedImage": "aW1hZ2Vt",
-            "expirationDate": "2026-09-20 23:59:59",
-        }
+    def test_pix_expirado_volta_a_oferecer_gerar_pix(self):
+        self.pendente.woovi_correlation_id = "mensalidade-abc"
+        self.pendente.woovi_expira_em = timezone.now() - timedelta(minutes=1)
+        self.pendente.save(update_fields=["woovi_correlation_id", "woovi_expira_em"])
+        html = self.client.get("/financeiro/cobrancas/").content.decode("utf8")
+        self.assertNotIn(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/", html)
+
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_tela_do_pix_mostra_qrcode_e_copia_e_cola_sem_chamar_a_woovi(self, mock_client_class):
+        self.pendente.woovi_correlation_id = "mensalidade-abc"
+        self.pendente.woovi_br_code = "00020126...copia-e-cola"
+        self.pendente.woovi_qrcode_url = "https://api.woovi.com/openpix/charge/brcode/image/x.png"
+        self.pendente.woovi_link_pagamento = "https://woovi.com/pay/x"
+        self.pendente.woovi_expira_em = timezone.now() + timedelta(days=10)
+        self.pendente.save()
 
         resposta = self.client.get(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/")
 
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "00020126...copia-e-cola")
-        self.assertContains(resposta, "aW1hZ2Vt")
+        self.assertContains(resposta, "https://api.woovi.com/openpix/charge/brcode/image/x.png")
+        self.assertContains(resposta, "https://woovi.com/pay/x")
         self.assertContains(resposta, "detalhe-conteudo")
-        self.assertContains(resposta, "https://sandbox.asaas.com/b/abc")
-        self.assertContains(resposta, "https://sandbox.asaas.com/i/abc")
-        self.assertContains(resposta, "Pagar com cartão")
+        mock_client_class.assert_not_called()
 
     def test_tela_do_pix_sem_cobranca_mostra_mensagem_amigavel(self):
         resposta = self.client.get(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/")
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "ainda não tem uma cobrança Pix gerada")
+        self.assertContains(resposta, "não tem um Pix vigente")
+
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_marcar_pago_tira_o_pix_do_ar(self, mock_client_class):
+        self.pendente.woovi_correlation_id = "mensalidade-abc"
+        self.pendente.woovi_expira_em = timezone.now() + timedelta(days=10)
+        self.pendente.save(update_fields=["woovi_correlation_id", "woovi_expira_em"])
+
+        self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pagar/", {"forma_pagamento": "dinheiro"})
+
+        mock_client_class.return_value.remover_cobranca.assert_called_once_with("mensalidade-abc")
+        self.pendente.refresh_from_db()
+        self.assertEqual(self.pendente.status, "paga")
+
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_marcar_pago_avisa_se_nao_conseguir_tirar_o_pix_do_ar(self, mock_client_class):
+        from integracoes.woovi.client import WooviAPIError
+
+        mock_client_class.return_value.remover_cobranca.side_effect = WooviAPIError("fora do ar")
+        self.pendente.woovi_correlation_id = "mensalidade-abc"
+        self.pendente.woovi_expira_em = timezone.now() + timedelta(days=10)
+        self.pendente.save(update_fields=["woovi_correlation_id", "woovi_expira_em"])
+
+        resposta = self.client.post(
+            f"/financeiro/cobrancas/{self.pendente.pk}/pagar/", {"forma_pagamento": "dinheiro"}, follow=True
+        )
+
+        self.assertContains(resposta, "pagamento em dobro")
+        self.pendente.refresh_from_db()
+        self.assertEqual(self.pendente.status, "paga")
 
     def test_tela_do_pix_isola_por_academia(self):
         self.assertEqual(
@@ -220,8 +259,8 @@ class EncerrarCobrancaTests(TestCase):
             f"/financeiro/cobrancas/{mensalidade.pk}/encerrar/", {"status": status}, follow=True
         )
 
-    def test_admin_cancela_mensalidade_sem_cobranca_no_asaas(self):
-        with patch("integracoes.asaas.services.AsaasClient") as mock_client_class:
+    def test_admin_cancela_mensalidade_sem_pix(self):
+        with patch("integracoes.woovi.services.WooviClient") as mock_client_class:
             resposta = self.encerrar(self.mensalidade, "cancelada")
         self.assertContains(resposta, "cancelada")
         mock_client_class.assert_not_called()
@@ -233,22 +272,33 @@ class EncerrarCobrancaTests(TestCase):
         self.mensalidade.refresh_from_db()
         self.assertEqual(self.mensalidade.status, "isenta")
 
-    @patch("integracoes.asaas.services.AsaasClient")
-    def test_exclui_a_cobranca_no_asaas_antes_de_cancelar(self, mock_client_class):
-        mensalidade = self.criar(date(2999, 2, 1), asaas_payment_id="pay_123")
+    def criar_com_pix(self, competencia, expira_em):
+        return self.criar(competencia, woovi_correlation_id="mensalidade-123", woovi_expira_em=expira_em)
+
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_exclui_o_pix_na_woovi_antes_de_cancelar(self, mock_client_class):
+        mensalidade = self.criar_com_pix(date(2999, 2, 1), timezone.now() + timedelta(days=10))
         self.encerrar(mensalidade, "cancelada")
-        mock_client_class.return_value.remover_cobranca.assert_called_once_with("pay_123")
+        mock_client_class.return_value.remover_cobranca.assert_called_once_with("mensalidade-123")
         mensalidade.refresh_from_db()
         self.assertEqual(mensalidade.status, "cancelada")
 
-    @patch("integracoes.asaas.services.AsaasClient")
-    def test_falha_no_asaas_nao_cancela_localmente(self, mock_client_class):
-        from integracoes.asaas.client import AsaasAPIError
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_pix_ja_expirado_nao_precisa_ser_excluido(self, mock_client_class):
+        mensalidade = self.criar_com_pix(date(2999, 2, 1), timezone.now() - timedelta(minutes=1))
+        self.encerrar(mensalidade, "cancelada")
+        mock_client_class.assert_not_called()
+        mensalidade.refresh_from_db()
+        self.assertEqual(mensalidade.status, "cancelada")
 
-        mock_client_class.return_value.remover_cobranca.side_effect = AsaasAPIError(
-            "A API do Asaas retornou o status HTTP 400."
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_falha_na_woovi_nao_cancela_localmente(self, mock_client_class):
+        from integracoes.woovi.client import WooviAPIError
+
+        mock_client_class.return_value.remover_cobranca.side_effect = WooviAPIError(
+            "A API da Woovi retornou o status HTTP 400."
         )
-        mensalidade = self.criar(date(2999, 2, 1), asaas_payment_id="pay_123")
+        mensalidade = self.criar_com_pix(date(2999, 2, 1), timezone.now() + timedelta(days=10))
         resposta = self.encerrar(mensalidade, "cancelada")
         self.assertContains(resposta, "Não foi possível alterar a mensalidade")
         mensalidade.refresh_from_db()

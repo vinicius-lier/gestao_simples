@@ -2,8 +2,8 @@
 
 O envio público cria Atleta + Responsável + Matrícula **inativa**; a
 ativação (no painel) apenas liga ``Matricula.ativo``. Mensalidades só
-são geradas pelo comando ``gerar_mensalidades`` (que filtra ``ativo=True``),
-então nada toca o Asaas antes da ativação.
+são geradas para matrículas ativas, então nenhuma cobrança Pix é criada
+antes da ativação.
 """
 from datetime import date
 

@@ -33,6 +33,14 @@ DEBUG = os.getenv(
     "true",
 ).lower() == "true"
 
+if not DEBUG and (SECRET_KEY.startswith("django-insecure") or len(SECRET_KEY) < 50):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "Com DJANGO_DEBUG=false, defina uma DJANGO_SECRET_KEY exclusiva "
+        "com pelo menos 50 caracteres."
+    )
+
 
 ALLOWED_HOSTS = [
     host.strip()
@@ -72,6 +80,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serve /static/ direto do Django (no Coolify não há Nginx na frente).
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -235,6 +245,16 @@ STATIC_URL = "/static/"
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        # Sem manifest: não exige collectstatic para rodar os testes.
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+
 
 # =============================================================================
 # MEDIA FILES
@@ -289,32 +309,22 @@ MAILERS = {
 
 
 # =============================================================================
-# ASAAS
+# WOOVI (Pix)
+#
+# AppID: painel da Woovi > API/Plugins > Nova API. Testes em
+# https://api.woovi-sandbox.com; produção em https://api.woovi.com.
+# O webhook (/webhooks/woovi/) não precisa de segredo próprio: cada aviso é
+# conferido na API com este AppID antes da baixa.
 # =============================================================================
 
-ASAAS_API_KEY = os.getenv(
-    "ASAAS_API_KEY",
-    "",
+WOOVI_APP_ID = os.getenv("WOOVI_APP_ID", "")
+
+WOOVI_BASE_URL = os.getenv(
+    "WOOVI_BASE_URL",
+    "https://api.woovi-sandbox.com",
 )
 
-ASAAS_BASE_URL = os.getenv(
-    "ASAAS_BASE_URL",
-    "https://api-sandbox.asaas.com/v3",
-)
-
-ASAAS_WEBHOOK_TOKEN = os.getenv(
-    "ASAAS_WEBHOOK_TOKEN",
-    "",
-)
-
-# Em produção (DEBUG=False) o webhook do Asaas só aceita eventos com o
-# cabeçalho 'asaas-access-token' válido. Se o token não estiver configurado,
-# o endpoint recusa todo POST (503) em vez de aceitar qualquer chamada.
-# Em desenvolvimento (DEBUG=True) o comportamento permissivo é mantido.
-ASAAS_WEBHOOK_REQUIRE_TOKEN = os.getenv(
-    "ASAAS_WEBHOOK_REQUIRE_TOKEN",
-    "true" if not DEBUG else "false",
-).lower() == "true"
+WOOVI_TIMEOUT = int(os.getenv("WOOVI_TIMEOUT", "30"))
 
 
 # =============================================================================
@@ -378,14 +388,14 @@ EVOLUTION_WEBHOOK_REQUIRE_TOKEN = os.getenv(
 # LEMBRETES DE COBRANÇA — chaves de ativação da FASE 2
 #
 # Ambas começam desligadas: o lembrete continua exatamente como hoje
-# (envia link de pagamento via provedor Meta). Quando a automação estiver
-# pronta, ligue por ambiente.
+# (envia o link de pagamento pelo provedor de WhatsApp da academia).
+# Quando a automação estiver pronta, ligue por ambiente.
 # =============================================================================
 
-# Gera/garante a cobrança Asaas (UNDEFINED) antes de enviar o lembrete,
-# para o Pix copia-e-cola já existir na mensagem.
-LEMBRETES_GERAM_COBRANCA_ASAAS = os.getenv(
-    "LEMBRETES_GERAM_COBRANCA_ASAAS",
+# Gera/garante o Pix da Woovi antes de enviar o lembrete, para o Pix
+# copia-e-cola já existir no payload do n8n.
+LEMBRETES_GERAM_COBRANCA_PIX = os.getenv(
+    "LEMBRETES_GERAM_COBRANCA_PIX",
     "false",
 ).lower() == "true"
 

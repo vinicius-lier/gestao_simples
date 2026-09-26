@@ -1,6 +1,7 @@
 from datetime import date
 
 from django.db import models
+from django.utils import timezone
 
 from academias.models import Academia
 from matriculas.models import Matricula
@@ -79,21 +80,33 @@ class Mensalidade(models.Model):
         blank=True,
     )
 
-    asaas_payment_id = models.CharField(
+    # Pix da Woovi. Vale até woovi_expira_em; depois disso o próximo acesso
+    # gera outro (novo correlationID) — ver integracoes.woovi.services.
+    woovi_correlation_id = models.CharField(
         max_length=100,
         blank=True,
+        db_index=True,
     )
 
-    asaas_invoice_url = models.URLField(
-        max_length=300,
+    woovi_br_code = models.TextField(
         blank=True,
-        help_text='Página de pagamento hospedada pelo Asaas (Pix, boleto ou cartão).',
+        help_text='Pix copia e cola.',
     )
 
-    asaas_bank_slip_url = models.URLField(
-        max_length=300,
+    woovi_qrcode_url = models.URLField(
+        max_length=500,
         blank=True,
-        help_text='PDF do boleto, quando a cobrança aceita esse meio.',
+    )
+
+    woovi_link_pagamento = models.URLField(
+        max_length=500,
+        blank=True,
+        help_text='Página de pagamento hospedada pela Woovi.',
+    )
+
+    woovi_expira_em = models.DateTimeField(
+        null=True,
+        blank=True,
     )
 
     criado_em = models.DateTimeField(auto_now_add=True)
@@ -114,6 +127,15 @@ class Mensalidade(models.Model):
     @property
     def esta_atrasada(self):
         return self.status in ("pendente", "vencida") and self.vencimento < date.today()
+
+    @property
+    def pix_vigente(self):
+        """Tem um Pix da Woovi que ainda aceita pagamento."""
+        return bool(
+            self.woovi_correlation_id
+            and self.woovi_expira_em
+            and self.woovi_expira_em > timezone.now()
+        )
 
 
 class LembreteCobranca(models.Model):

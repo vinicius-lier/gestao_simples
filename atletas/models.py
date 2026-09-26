@@ -14,10 +14,6 @@ class Responsavel(models.Model):
     telefone = models.CharField(max_length=20, blank=True)
     whatsapp = models.CharField(max_length=20)
     email = models.EmailField(blank=True)
-    asaas_customer_id = models.CharField(
-        max_length=100,
-        blank=True,
-    )
 
     ativo = models.BooleanField(default=True)
     criado_em = models.DateTimeField(auto_now_add=True)

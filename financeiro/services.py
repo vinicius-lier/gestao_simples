@@ -109,7 +109,7 @@ def gerar_mensalidade_inicial(matricula):
 
 def registrar_pagamento(mensalidade, forma_pagamento="", quando=None):
     """Marca uma mensalidade como paga manualmente (conferência de banco,
-    dinheiro em mãos etc.). O mesmo caminho é usado pelo webhook do Asaas
+    dinheiro em mãos etc.). O mesmo caminho é usado pelo webhook da Woovi
     quando o pagamento é confirmado automaticamente pelo gateway."""
     if mensalidade.status == "cancelada":
         raise ValueError("Uma mensalidade cancelada não pode ser paga.")
@@ -123,17 +123,17 @@ def registrar_pagamento(mensalidade, forma_pagamento="", quando=None):
 
 def encerrar_mensalidade(mensalidade, status):
     """Cancela ou isenta uma mensalidade em aberto (aluno desistiu, bolsa
-    etc.). Se já existe cobrança no Asaas, ela é excluída lá antes — senão
-    a família ainda conseguiria pagar pelo link antigo. A mensalidade sai
+    etc.). Se há um Pix vigente na Woovi, ele é excluído antes — senão a
+    família ainda conseguiria pagar pelo código antigo. A mensalidade sai
     da régua de lembretes, que só olha as em aberto."""
     if status not in ("cancelada", "isenta"):
         raise ValueError("Escolha cancelar ou isentar.")
     if mensalidade.status not in ("pendente", "vencida"):
         raise ValueError("Só mensalidades em aberto podem ser canceladas ou isentadas.")
 
-    from integracoes.asaas.services import remover_cobranca_asaas
+    from integracoes.woovi.services import remover_cobranca_pix
 
-    remover_cobranca_asaas(mensalidade)
+    remover_cobranca_pix(mensalidade)
     mensalidade.status = status
     mensalidade.save(update_fields=["status"])
     return mensalidade

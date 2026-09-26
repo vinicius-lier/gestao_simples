@@ -55,36 +55,27 @@ def _sanitizar_erro(exc, limite=300):
 def preparar_payload_n8n(mensalidade, tipo_lembrete, responsavel=None):
     """Sequência FASE 2 (preparada, ainda não acionada por enviar_lembretes):
 
-        garante cobrança Asaas UNDEFINED
-        -> obtém Pix copia-e-cola
+        garante o Pix da Woovi
         -> gera link público de pagamento
         -> monta o payload para o n8n
 
     Não envia nada. Devolve o dict de payload (ver
     integracoes.n8n.services.montar_payload_cobranca)."""
-    from integracoes.asaas.client import AsaasAPIError
-    from integracoes.asaas.services import garantir_cobranca_asaas, obter_pix_mensalidade
     from integracoes.n8n.services import montar_payload_cobranca
 
     if responsavel is None:
         responsavel = mensalidade.matricula.atleta.responsavel_financeiro
 
-    pix_copia_e_cola = ""
-    try:
-        garantir_cobranca_asaas(mensalidade)
-        pix = obter_pix_mensalidade(mensalidade)
-        pix_copia_e_cola = (pix or {}).get("payload") or ""
-    except (ValueError, AsaasAPIError):
-        # segue sem Pix — a mensagem ainda leva o link público
-        pass
+    # Sem Pix, a mensagem ainda leva o link público de pagamento.
+    _garantir_cobranca_silenciosa(mensalidade)
 
     link = montar_link_pagamento(mensalidade, responsavel)
     return montar_payload_cobranca(
         mensalidade,
         tipo_lembrete,
         link_pagamento=link,
-        pix_copia_e_cola=pix_copia_e_cola,
-        asaas_invoice_url=mensalidade.asaas_invoice_url or "",
+        pix_copia_e_cola=mensalidade.woovi_br_code,
+        link_pagamento_pix=mensalidade.woovi_link_pagamento,
     )
 
 
@@ -114,7 +105,7 @@ def enviar_lembretes(hoje=None, academia=None):
     if academia is not None:
         qs = qs.filter(academia=academia)
 
-    gerar_cobranca = getattr(settings, "LEMBRETES_GERAM_COBRANCA_ASAAS", False)
+    gerar_cobranca = getattr(settings, "LEMBRETES_GERAM_COBRANCA_PIX", False)
     enviados = []
 
     for mensalidade in qs:
@@ -133,13 +124,18 @@ def enviar_lembretes(hoje=None, academia=None):
         if responsavel is None or not responsavel.whatsapp:
             continue
 
+        # O webhook da Woovi pode ter se perdido: confere antes de cobrar
+        # quem talvez já tenha pago.
+        if _pago_na_woovi(mensalidade):
+            continue
+
         if lembrete is None:
             lembrete = LembreteCobranca.objects.create(
                 mensalidade=mensalidade, estagio=estagio
             )
 
-        # FASE 2 (desligada por padrão): garantir a cobrança Asaas UNDEFINED
-        # antes do envio, para o Pix copia-e-cola já existir na mensagem.
+        # FASE 2 (desligada por padrão): garantir o Pix da Woovi antes do
+        # envio, para o Pix copia-e-cola já existir.
         if gerar_cobranca:
             _garantir_cobranca_silenciosa(mensalidade)
 
@@ -180,11 +176,25 @@ def enviar_lembretes(hoje=None, academia=None):
 
 
 def _garantir_cobranca_silenciosa(mensalidade):
-    from integracoes.asaas.client import AsaasAPIError
-    from integracoes.asaas.services import garantir_cobranca_asaas
+    from integracoes.woovi.client import WooviAPIError
+    from integracoes.woovi.services import garantir_cobranca_pix
 
     try:
-        garantir_cobranca_asaas(mensalidade)
-    except (ValueError, AsaasAPIError):
-        # best effort: sem cobrança, o lembrete ainda vai com o link público
+        garantir_cobranca_pix(mensalidade)
+    except (ValueError, WooviAPIError):
+        # best effort: sem Pix, o lembrete ainda vai com o link público
         pass
+
+
+def _pago_na_woovi(mensalidade):
+    """True se a Woovi confirmar que o Pix da mensalidade já foi pago (e a
+    baixa foi feita agora). Falha na consulta não bloqueia o lembrete."""
+    from integracoes.woovi.client import WooviAPIError
+    from integracoes.woovi.services import confirmar_pagamento_pix
+
+    if not mensalidade.woovi_correlation_id:
+        return False
+    try:
+        return confirmar_pagamento_pix(mensalidade.woovi_correlation_id) is not None
+    except (ValueError, WooviAPIError):
+        return False

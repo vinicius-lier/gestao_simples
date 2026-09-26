@@ -153,33 +153,59 @@ class ResponsavelPortalTests(TestCase):
         resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
         self.assertEqual(resposta.status_code, 404)
 
-    @patch("integracoes.asaas.services.AsaasClient")
-    @patch("integracoes.asaas.services.sincronizar_responsavel_asaas")
-    def test_pagar_gera_cobranca_multipla_e_mostra_pix(self, mock_sincronizar, mock_client_class):
-        mock_sincronizar.return_value = "cus_123"
-        mock_client_class.return_value.criar_cobranca.return_value = {
-            "id": "pay_abc", "invoiceUrl": "https://sandbox.asaas.com/i/abc", "bankSlipUrl": "https://sandbox.asaas.com/b/abc",
+    @staticmethod
+    def _cobranca_woovi(**kw):
+        return {
+            "correlationID": kw["correlation_id"],
+            "brCode": "copia-e-cola",
+            "qrCodeImage": "https://api.woovi.com/openpix/charge/brcode/image/abc.png",
+            "paymentLinkUrl": "https://woovi.com/pay/abc",
+            "expiresDate": "2999-01-01T00:00:00.000Z",
         }
-        mock_client_class.return_value.obter_pix_qrcode.return_value = {
-            "payload": "copia-e-cola", "encodedImage": "aW1nZGF0YQ==", "expirationDate": "2027-01-01",
-        }
+
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_pagar_gera_pix_e_mostra_qrcode(self, mock_client_class):
+        mock_client_class.return_value.criar_cobranca.side_effect = self._cobranca_woovi
         self._logar(self.responsavel)
 
         resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
 
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "copia-e-cola")
-        self.assertContains(resposta, "Pagar com cartão")
-        self.assertContains(resposta, "Boleto (PDF)")
+        self.assertContains(resposta, "https://api.woovi.com/openpix/charge/brcode/image/abc.png")
+        self.assertNotContains(resposta, "cartão")
         mock_client_class.return_value.criar_cobranca.assert_called_once()
-        self.assertEqual(mock_client_class.return_value.criar_cobranca.call_args.kwargs["billing_type"], "UNDEFINED")
 
-    def test_pagar_mensalidade_ja_paga_mostra_aviso_sem_chamar_asaas(self):
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_pagar_reaproveita_pix_vigente(self, mock_client_class):
+        mock_client_class.return_value.criar_cobranca.side_effect = self._cobranca_woovi
+        self._logar(self.responsavel)
+        url = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
+
+        self.client.get(url)
+        self.client.get(url)
+
+        mock_client_class.return_value.criar_cobranca.assert_called_once()
+
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_pagar_mensalidade_vencida_tambem_gera_pix(self, mock_client_class):
+        # Regressão: a integração anterior só cobrava mensalidades
+        # "pendente" — justamente as atrasadas ficavam sem como pagar.
+        mock_client_class.return_value.criar_cobranca.side_effect = self._cobranca_woovi
+        self.mensalidade.status = "vencida"
+        self.mensalidade.save(update_fields=["status"])
+        self._logar(self.responsavel)
+
+        resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
+
+        self.assertContains(resposta, "copia-e-cola")
+
+    def test_pagar_mensalidade_ja_paga_mostra_aviso_sem_chamar_a_woovi(self):
         self.mensalidade.status = "paga"
         self.mensalidade.pago_em = timezone.now()
         self.mensalidade.save(update_fields=["status", "pago_em"])
         self._logar(self.responsavel)
-        with patch("integracoes.asaas.services.AsaasClient") as mock_client_class:
+        with patch("integracoes.woovi.services.WooviClient") as mock_client_class:
             resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
         self.assertContains(resposta, "já está paga")
         mock_client_class.assert_not_called()

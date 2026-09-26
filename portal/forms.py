@@ -18,7 +18,7 @@ def cpf_valido(valor):
     verificador — o projeto usa CPFs de teste sem esse cuidado (ex.:
     '12345678900'), e o problema real que motivou este checador foi um
     CPF com 12 dígitos passando sem aviso e só quebrando depois, ao
-    gerar cobrança no Asaas."""
+    gerar a cobrança no gateway de pagamento."""
     numeros = digits(valor)
     return len(numeros) == 11 and numeros != numeros[0] * 11
 

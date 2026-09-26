@@ -1,0 +1,201 @@
+# Publicar no Coolify
+
+Passo a passo para colocar o sistema no ar pelo Coolify: aplicação Django
+(Dockerfile na raiz), PostgreSQL, rotina diária de cobrança, Pix pela Woovi
+e WhatsApp pela Evolution API.
+
+Ordem recomendada: **banco → aplicação → primeiro acesso → rotina diária →
+Woovi (sandbox) → WhatsApp → Woovi (produção)**. Suba **uma** academia primeiro.
+
+---
+
+## 0. Antes de começar
+
+- Um domínio (ou subdomínio) com registro DNS **A** apontando para o IP do
+  servidor do Coolify. Ex.: `gestao.seudominio.com.br`.
+- O repositório conectado ao Coolify pelo **GitHub App** (Sources → GitHub App),
+  para o deploy automático a cada push.
+- No servidor: **Servers → (seu servidor) → General → Timezone =
+  `America/Sao_Paulo`**. As tarefas agendadas usam esse fuso.
+
+## 1. Banco PostgreSQL
+
+1. No projeto (ex.: `gestao-simples`, ambiente `production`): **+ New →
+   Database → PostgreSQL** (versão 17).
+2. Deixe **Make it publicly available desligado**. A aplicação acessa pela
+   rede interna do Coolify.
+3. Anote, na aba **General**, o **Username**, a **Password**, o **Initial
+   Database** e o host da **Postgres URL (internal)**, que é o nome do
+   contêiner, algo como `abc123xyz`. Eles viram as variáveis `POSTGRES_*`.
+4. Aba **Backups**: ative um backup agendado, de preferência para um S3
+   (Settings → S3). Sem backup, um problema no servidor apaga as mensalidades.
+
+## 2. Aplicação
+
+1. **+ New → Application → (repositório pelo GitHub App)**. Branch: `main`.
+2. **Build Pack: `Dockerfile`** (o arquivo está na raiz do repositório).
+3. **Ports Exposes: `8000`**.
+4. **Domains**: `https://gestao.seudominio.com.br`. O Coolify emite o HTTPS
+   (Let's Encrypt) e redireciona HTTP → HTTPS sozinho.
+5. **Health check**: deixe o do Coolify **desligado**. O Dockerfile já tem um
+   `HEALTHCHECK` (abre `/login/`), e o Coolify usa o dele.
+6. Aba **Environment Variables**: cole as variáveis abaixo. Nenhuma precisa
+   ser marcada como *Build Variable*.
+
+```dotenv
+# Django
+DJANGO_DEBUG=false
+# gere com: python -c "import secrets; print(secrets.token_urlsafe(64))"
+DJANGO_SECRET_KEY=
+# 127.0.0.1 e localhost são obrigatórios: o health check chama por eles.
+ALLOWED_HOSTS=gestao.seudominio.com.br,127.0.0.1,localhost
+CSRF_TRUSTED_ORIGINS=https://gestao.seudominio.com.br
+SITE_URL=https://gestao.seudominio.com.br
+SESSION_COOKIE_SECURE=true
+CSRF_COOKIE_SECURE=true
+# O proxy do Coolify já força HTTPS; ligar isto quebra o health check interno.
+SECURE_SSL_REDIRECT=false
+# Suba para 31536000 depois que o HTTPS estiver estável.
+SECURE_HSTS_SECONDS=0
+WEB_CONCURRENCY=2
+
+# Banco (valores do passo 1)
+DB_ENGINE=postgresql
+POSTGRES_DB=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_HOST=
+POSTGRES_PORT=5432
+POSTGRES_SSLMODE=prefer
+DB_CONN_MAX_AGE=60
+
+# Woovi (Pix). Comece no sandbox; troque para produção no passo 7.
+WOOVI_BASE_URL=https://api.woovi-sandbox.com
+WOOVI_APP_ID=
+
+# WhatsApp via Evolution (passo 6). O nome da variável é o que você
+# cadastrar em Configurações > WhatsApp > "Variável de ambiente da API key".
+EVOLUTION_API_KEY_KEIKO=
+EVOLUTION_TIMEOUT=15
+# Opcional: webhook de status da conexão (/webhooks/evolution/<instancia>/).
+EVOLUTION_WEBHOOK_TOKEN=
+```
+
+7. **Deploy**. A cada deploy o contêiner roda `migrate` antes de subir o
+   Gunicorn. Acompanhe em **Deployments → logs**. Se aparecer
+   `ImproperlyConfigured ... DJANGO_SECRET_KEY`, a chave está vazia ou curta.
+
+## 3. Primeiro acesso
+
+Na aplicação: aba **Terminal** → contêiner da app:
+
+```bash
+python manage.py createsuperuser
+```
+
+Depois, em `https://gestao.seudominio.com.br/admin/`: cadastre a **Academia**
+e, em **Acessos às academias**, vincule o seu usuário a ela, marcando
+*administrador da academia*. Entre em `/login/`.
+
+Migrar dados do SQLite local não é automático. Se precisar deles, faça
+`dumpdata` local e `loaddata` no contêiner. Para o piloto, cadastrar do zero
+costuma ser mais seguro.
+
+## 4. Rotina diária de cobrança
+
+Aplicação → **Scheduled Tasks → + Add**:
+
+| Campo | Valor |
+|---|---|
+| Name | `rotina-diaria-cobranca` |
+| Command | `python manage.py enviar_lembretes_cobranca` |
+| Frequency | `0 9 * * *` (09:00 no fuso do servidor) |
+| Timeout | `600` |
+
+O comando gera as mensalidades do mês (e antecipa as do mês seguinte que
+vencem em até 7 dias), marca as vencidas, confere na Woovi quem já pagou e
+envia os lembretes. Sem essa tarefa, **nenhuma mensalidade nova é criada a
+partir do 2º mês**.
+
+> Cuidado com o **Execute Now**: se o WhatsApp já estiver conectado e houver
+> mensalidade na janela de lembrete, saem mensagens reais. Teste antes de
+> conectar o WhatsApp (passo 6), olhando a saída
+> `N mensalidade(s) gerada(s) / N lembrete(s) enviado(s)`.
+
+## 5. Woovi no sandbox
+
+1. Crie a conta em `https://app.woovi-sandbox.com` e gere o **AppID** em
+   **API/Plugins → Nova API**. Coloque-o em `WOOVI_APP_ID` e faça **Redeploy**.
+2. **Webhook**: em API/Plugins → Webhooks → Novo webhook:
+   - URL: `https://gestao.seudominio.com.br/webhooks/woovi/`
+   - Evento: **`OPENPIX:CHARGE_COMPLETED`** (cobrança paga)
+   - Sem autorização extra: o sistema confere cada aviso na API da Woovi com
+     o AppID antes de dar baixa.
+
+   O POST de teste que a Woovi faz no cadastro recebe 200.
+3. Teste de ponta a ponta: cadastre um aluno com mensalidade, clique em
+   **Gerar Pix** em Financeiro → Cobranças e abra **Ver Pix**. No sandbox,
+   crie uma *conta bancária de teste* e leia o QR Code com a câmera do
+   celular: ele é uma URL que simula o pagamento. A mensalidade deve virar
+   **Paga** sozinha em segundos.
+   Guia da Woovi: https://developers.woovi.com/docs/test-environment/test-account/flow-company-bank-test
+
+## 6. WhatsApp (Evolution API)
+
+1. No mesmo projeto: **+ New → Service → Evolution API**. O Coolify gera a
+   `AUTHENTICATION_API_KEY` e um domínio próprio para ela (ex.:
+   `https://evo.seudominio.com.br`).
+2. Antes do primeiro deploy do serviço, nas variáveis dele, **desligue o
+   armazenamento de conversas**. O sistema só envia lembretes, e guardar
+   mensagens de famílias é dado pessoal sem necessidade (LGPD):
+
+   ```dotenv
+   DATABASE_SAVE_DATA_NEW_MESSAGE=false
+   DATABASE_SAVE_MESSAGE_UPDATE=false
+   DATABASE_SAVE_DATA_CONTACTS=false
+   DATABASE_SAVE_DATA_CHATS=false
+   DATABASE_SAVE_DATA_LABELS=false
+   DATABASE_SAVE_DATA_HISTORIC=false
+   ```
+
+3. Copie o valor de `AUTHENTICATION_API_KEY` do serviço para a variável
+   `EVOLUTION_API_KEY_KEIKO` da **aplicação** e faça Redeploy da aplicação.
+4. No sistema: **Configurações → WhatsApp**:
+   - Provedor: **Evolution API**;
+   - Evolution — URL base: o domínio HTTPS do serviço (`https://evo.seudominio.com.br`);
+   - Nome da instância: `keiko` (sem espaços);
+   - Variável de ambiente da API key: `EVOLUTION_API_KEY_KEIKO`;
+   - **Salvar configuração**.
+
+   Depois: **Criar conexão → Gerar QR Code** → no celular do número:
+   WhatsApp → Aparelhos conectados → Conectar → ler o QR. Por fim,
+   **Verificar status** deve mostrar *conectado*.
+5. Teste com o seu próprio número antes de ligar a rotina para todos (roteiro
+   em `deploy/EVOLUTION.md`, seção 5, rodando o `shell` pelo Terminal do Coolify).
+
+> Número dedicado e volume baixo no começo: a Evolution usa o WhatsApp Web,
+> que não é a API oficial, e há risco de bloqueio do número.
+
+## 7. Virar a Woovi para produção
+
+1. Na conta de **produção** (`https://app.woovi.com`): gere um novo AppID e
+   cadastre o mesmo webhook (URL + `OPENPIX:CHARGE_COMPLETED`).
+2. Variáveis da aplicação: `WOOVI_BASE_URL=https://api.woovi.com` e o novo
+   `WOOVI_APP_ID`. Redeploy.
+3. Os Pix gerados no sandbox não valem em produção. Se sobrou algum, use
+   **Gerar Pix** de novo depois que o Pix antigo expirar, ou cancele a
+   mensalidade de teste.
+
+## Conferência rápida
+
+- `https://gestao.seudominio.com.br/login/` abre com o CSS carregado.
+- `https://gestao.seudominio.com.br/webhooks/woovi/` responde `{"status": "ok"}`.
+- Deployments: o contêiner fica **healthy**.
+- Scheduled Tasks → histórico: a execução diária aparece com sucesso.
+
+## O que muda em relação ao deploy na EC2
+
+O Coolify substitui o `deploy/deploy.sh`, os serviços systemd
+(`academia-gunicorn`, `academia-lembretes.timer`), o Nginx e o workflow
+`.github/workflows/deploy.yml`. Se a EC2 não for mais usada, **desative esse
+workflow**: senão, todo push na `main` tenta publicar por SSH na EC2 também.

@@ -65,8 +65,8 @@ DB_CONN_MAX_AGE=60
 SITE_URL=https://<dominio-real>
 ```
 
-Preserve as vari?veis Asaas/Meta existentes. Configure o token de webhook Asaas
-antes de expor o endpoint. Gere a chave Django por um gerenciador de senhas e
+Preserve as variaveis Woovi/Meta existentes (WOOVI_APP_ID, WOOVI_BASE_URL).
+Para publicar pelo Coolify em vez da EC2, siga deploy/COOLIFY.md. Gere a chave Django por um gerenciador de senhas e
 n?o publique o resultado em logs do Actions. N?o use `source .env`: python-dotenv
 carrega o arquivo tanto no Django/Gunicorn quanto nos comandos de manuten??o.
 
