@@ -1,7 +1,8 @@
 """Portal do responsável financeiro: área pública (sem o login de staff)
-onde ele acompanha as mensalidades dos alunos e paga por Pix, boleto ou
-cartão. Acesso por link de uso único (sem senha) — ver TokenAcessoResponsavel.
+onde ele acompanha as mensalidades dos alunos e paga por Pix. Acesso por
+link de uso único (sem senha) — ver TokenAcessoResponsavel.
 """
+import logging
 import re
 from functools import wraps
 
@@ -12,6 +13,8 @@ from django.views.decorators.http import require_http_methods
 from atletas.models import Atleta, Responsavel
 from financeiro.models import Mensalidade
 from .models import TokenAcessoResponsavel
+
+logger = logging.getLogger(__name__)
 
 _PADRAO_DESTINO_PAGAR = re.compile(r'^/responsavel/mensalidade/(\d+)/pagar/$')
 
@@ -106,7 +109,7 @@ def responsavel_painel(request):
 
 @responsavel_required
 def responsavel_pagar(request, pk):
-    from integracoes.woovi.client import WooviAPIError
+    from integracoes.woovi.exceptions import WooviError
     from integracoes.woovi.services import garantir_cobranca_pix
 
     mensalidade = get_object_or_404(
@@ -116,13 +119,18 @@ def responsavel_pagar(request, pk):
         matricula__atleta__responsavel_financeiro=request.responsavel,
     )
 
-    erro = None
+    cobranca, erro = None, None
     if mensalidade.status in ('pendente', 'vencida'):
         try:
-            garantir_cobranca_pix(mensalidade)
-        except (ValueError, WooviAPIError) as error:
-            erro = str(error)
+            cobranca = garantir_cobranca_pix(mensalidade)
+        except (ValueError, WooviError) as error:
+            # A família não vê detalhe técnico nem o nome do provedor.
+            logger.warning('Pix: falha ao gerar o Pix da mensalidade %s: %s', mensalidade.pk, error)
+            erro = (
+                'Não foi possível carregar o Pix agora. Tente novamente em instantes '
+                'ou fale com a secretaria.'
+            )
 
     return render(request, 'portal/responsavel_pagar.html', {
-        'mensalidade': mensalidade, 'erro': erro,
+        'mensalidade': mensalidade, 'cobranca': cobranca, 'erro': erro,
     })

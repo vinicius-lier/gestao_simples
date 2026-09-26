@@ -33,7 +33,6 @@ class MontarPayloadCobrancaTests(TestCase):
         self.mensalidade = Mensalidade.objects.create(
             academia=self.academia, matricula=self.matricula, competencia=date(2026, 9, 1),
             valor=Decimal("150.00"), vencimento=date(2026, 9, 10), status="pendente",
-            woovi_link_pagamento="https://woovi.com/pay/abc",
         )
 
     def test_campos_principais(self):
@@ -62,7 +61,8 @@ class MontarPayloadCobrancaTests(TestCase):
         self.assertEqual(payload["responsavel_nome"], "Ana Paula")
         self.assertEqual(payload["telefone"], "5521999999999")
         self.assertEqual(payload["pix_copia_e_cola"], "00020126BR.GOV.BCB.PIX")
-        self.assertEqual(payload["link_pagamento_pix"], "https://woovi.com/pay/abc")
+        # A família só recebe links do próprio sistema.
+        self.assertNotIn("link_pagamento_pix", payload)
 
     def test_sem_dados_pessoais_ou_segredos(self):
         payload = montar_payload_cobranca(
@@ -131,18 +131,14 @@ class PrepararPayloadN8nTests(TestCase):
     def test_monta_com_pix_e_link(self, mock_garantir):
         from financeiro.lembretes import preparar_payload_n8n
 
-        def gerar_pix(mensalidade):
-            mensalidade.woovi_br_code = "00020126PIX"
-            mensalidade.woovi_link_pagamento = "https://woovi.com/pay/abc"
-            return mensalidade
+        from types import SimpleNamespace
 
-        mock_garantir.side_effect = gerar_pix
+        mock_garantir.return_value = SimpleNamespace(br_code="00020126PIX")
 
         payload = preparar_payload_n8n(self.mensalidade, LembreteCobranca.CINCO_DIAS)
 
         mock_garantir.assert_called_once()
         self.assertEqual(payload["pix_copia_e_cola"], "00020126PIX")
-        self.assertEqual(payload["link_pagamento_pix"], "https://woovi.com/pay/abc")
         self.assertIn("/responsavel/entrar/", payload["link_pagamento"])
         self.assertEqual(
             payload["idempotency_key"], f"{self.mensalidade.pk}:5_dias"
@@ -151,9 +147,9 @@ class PrepararPayloadN8nTests(TestCase):
     @patch("integracoes.woovi.services.garantir_cobranca_pix")
     def test_sem_pix_ainda_monta_com_link(self, mock_garantir):
         from financeiro.lembretes import preparar_payload_n8n
-        from integracoes.woovi.client import WooviAPIError
+        from integracoes.woovi.exceptions import WooviError
 
-        mock_garantir.side_effect = WooviAPIError("timeout")
+        mock_garantir.side_effect = WooviError("timeout")
         payload = preparar_payload_n8n(self.mensalidade, LembreteCobranca.ATRASADA)
 
         self.assertEqual(payload["pix_copia_e_cola"], "")

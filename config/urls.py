@@ -18,12 +18,12 @@ from django.contrib import admin
 from django.urls import include, path
 
 from integracoes.evolution.views import webhook_conexao as webhook_evolution
-from integracoes.woovi.views import webhook_pagamento
+from integracoes.woovi.views import webhook as webhook_woovi
 
 urlpatterns = [
     path('', include('portal.urls')),
     path('admin/', admin.site.urls),
-    path('webhooks/woovi/', webhook_pagamento, name='webhook_woovi'),
+    path('webhooks/woovi/', webhook_woovi, name='webhook_woovi'),
     path('webhooks/evolution/', webhook_evolution, name='webhook_evolution'),
     path(
         'webhooks/evolution/<str:instancia>/',

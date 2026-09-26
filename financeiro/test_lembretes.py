@@ -238,6 +238,17 @@ class LembreteCobrancaCicloVidaTests(TestCase):
             valor_mensalidade=Decimal("120.00"), dia_vencimento=10, data_inicio=date(2020, 1, 1),
         )
 
+    def _pix(self, mensalidade):
+        from financeiro.models import CobrancaPix, ContaRecebimento
+
+        conta = ContaRecebimento.objects.create(
+            academia=self.academia, tipo_chave=ContaRecebimento.EMAIL, pix_key="escola@exemplo.com",
+        )
+        return CobrancaPix.objects.create(
+            mensalidade=mensalidade, conta_recebimento=conta, correlation_id="mensalidade-x",
+            valor=Decimal("120.00"), br_code="000201", expira_em=timezone.now() + timedelta(days=5),
+        )
+
     def _mensalidade(self, vencimento=HOJE, status="pendente"):
         return Mensalidade.objects.create(
             academia=self.academia, matricula=self.matricula, competencia=date(2026, 9, 1),
@@ -329,14 +340,17 @@ class LembreteCobrancaCicloVidaTests(TestCase):
     @patch("financeiro.lembretes._enviar_cobranca_whatsapp")
     @patch("integracoes.woovi.services.WooviClient")
     def test_nao_cobra_quem_ja_pagou_o_pix_mesmo_sem_webhook(self, mock_woovi, mock_envio):
-        # O webhook se perdeu: antes do lembrete, a Woovi confirma o
-        # pagamento, a baixa é feita e nada é enviado.
-        mock_woovi.return_value.obter_cobranca.return_value = {
-            "status": "COMPLETED", "paidAt": "2026-09-05T15:00:00.000Z",
-        }
+        # O aviso de pagamento se perdeu: antes do lembrete, o provedor
+        # confirma o pagamento, a baixa é feita, o repasse é aberto e nada
+        # é enviado.
+        from financeiro.models import Repasse
+        from integracoes.woovi.client import Cobranca
+
         m = self._mensalidade()
-        m.woovi_correlation_id = "mensalidade-x"
-        m.save(update_fields=["woovi_correlation_id"])
+        self._pix(m)
+        mock_woovi.return_value.obter_cobranca.return_value = Cobranca(
+            "mensalidade-x", "COMPLETED", 12000, "", "", None, "tx1", None,
+        )
 
         enviados = enviar_lembretes(hoje=HOJE)
 
@@ -345,16 +359,16 @@ class LembreteCobrancaCicloVidaTests(TestCase):
         m.refresh_from_db()
         self.assertEqual(m.status, "paga")
         self.assertEqual(m.forma_pagamento, "pix")
+        self.assertEqual(Repasse.objects.count(), 1)
 
     @patch("financeiro.lembretes._enviar_cobranca_whatsapp")
     @patch("integracoes.woovi.services.WooviClient")
     def test_falha_ao_consultar_a_woovi_nao_bloqueia_o_lembrete(self, mock_woovi, mock_envio):
-        from integracoes.woovi.client import WooviAPIError
+        from integracoes.woovi.exceptions import WooviError
 
-        mock_woovi.return_value.obter_cobranca.side_effect = WooviAPIError("fora do ar")
+        mock_woovi.return_value.obter_cobranca.side_effect = WooviError("fora do ar")
         mock_envio.return_value = {"provider": "meta", "message_id": ""}
         m = self._mensalidade()
-        m.woovi_correlation_id = "mensalidade-x"
-        m.save(update_fields=["woovi_correlation_id"])
+        self._pix(m)
 
         self.assertEqual(enviar_lembretes(hoje=HOJE), [m.pk])

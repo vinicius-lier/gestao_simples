@@ -2,8 +2,9 @@
 
 `montar_payload_cobranca` é pura: não faz I/O, não gera token, não chama a
 Woovi. Os valores derivados de integrações externas (link público já
-assinado, Pix copia-e-cola, página de pagamento da Woovi) entram por
-parâmetro, calculados por quem tem o contexto (ver financeiro.lembretes).
+assinado, Pix copia-e-cola) entram por parâmetro, calculados por quem tem
+o contexto (ver financeiro.lembretes). A família só recebe links do próprio
+sistema — nunca a página hospedada do provedor de pagamento.
 """
 from datetime import date
 
@@ -15,7 +16,8 @@ CAMPOS_PROIBIDOS = frozenset(
         "cpf",
         "email",
         "endereco",
-        "woovi_correlation_id",
+        "correlation_id",
+        "link_pagamento_pix",
         "token",
         "api_key",
         "credential",
@@ -39,7 +41,6 @@ def montar_payload_cobranca(
     *,
     link_pagamento="",
     pix_copia_e_cola="",
-    link_pagamento_pix=None,
     hoje=None,
 ):
     """Monta o dict que o Django enviará ao n8n para um lembrete de cobrança.
@@ -67,8 +68,6 @@ def montar_payload_cobranca(
     instancia_whatsapp = config.evolution_instance_name if config is not None else ""
     instancia_whatsapp = instancia_whatsapp or ""
 
-    if link_pagamento_pix is None:
-        link_pagamento_pix = mensalidade.woovi_link_pagamento or ""
 
     return {
         "evento": EVENTO_COBRANCA,
@@ -90,5 +89,4 @@ def montar_payload_cobranca(
         "telefone": normalizar_telefone(responsavel.whatsapp),
         "link_pagamento": link_pagamento or "",
         "pix_copia_e_cola": pix_copia_e_cola or "",
-        "link_pagamento_pix": link_pagamento_pix or "",
     }

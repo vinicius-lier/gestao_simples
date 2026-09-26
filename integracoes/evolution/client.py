@@ -113,7 +113,9 @@ class EvolutionClient:
         return self._request("DELETE", f"/instance/delete/{self.instance_name}")
 
     def enviar_texto(self, telefone, texto):
-        corpo = {"number": telefone, "text": texto}
+        # Sem prévia: gerá-la faria a Evolution abrir o link de acesso do
+        # responsável antes da família.
+        corpo = {"number": telefone, "text": texto, "linkPreview": False}
         return self._request(
             "POST", f"/message/sendText/{self.instance_name}", json=corpo
         )

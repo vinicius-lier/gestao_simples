@@ -1,16 +1,20 @@
 # Publicar no Coolify
 
 Passo a passo para colocar o sistema no ar pelo Coolify: aplicação Django
-(Dockerfile na raiz), PostgreSQL, rotina diária de cobrança, Pix pela Woovi
-e WhatsApp pela Evolution API.
+(Dockerfile na raiz), PostgreSQL, rotinas agendadas, Pix pela Woovi com
+repasse automático para a chave Pix da academia e WhatsApp pela Evolution API.
 
-Ordem recomendada: **banco → aplicação → primeiro acesso → rotina diária →
-Woovi (sandbox) → WhatsApp → Woovi (produção)**. Suba **uma** academia primeiro.
+Ordem recomendada: **Woovi (habilitar split) → banco → aplicação → primeiro
+acesso → tarefas agendadas → Woovi no sandbox → WhatsApp → Woovi em
+produção**. Suba **uma** academia primeiro.
 
 ---
 
 ## 0. Antes de começar
 
+- **Woovi: peça ao suporte a habilitação de _Split_ e _Subcontas_** na sua
+  conta (sandbox e produção). Sem isso, a criação da subconta e o Pix com
+  split são recusados — o sistema não consegue receber.
 - Um domínio (ou subdomínio) com registro DNS **A** apontando para o IP do
   servidor do Coolify. Ex.: `gestao.seudominio.com.br`.
 - O repositório conectado ao Coolify pelo **GitHub App** (Sources → GitHub App),
@@ -28,7 +32,8 @@ Woovi (sandbox) → WhatsApp → Woovi (produção)**. Suba **uma** academia pri
    Database** e o host da **Postgres URL (internal)**, que é o nome do
    contêiner, algo como `abc123xyz`. Eles viram as variáveis `POSTGRES_*`.
 4. Aba **Backups**: ative um backup agendado, de preferência para um S3
-   (Settings → S3). Sem backup, um problema no servidor apaga as mensalidades.
+   (Settings → S3). Sem backup, um problema no servidor apaga as mensalidades
+   e o histórico de recebimentos.
 
 ## 2. Aplicação
 
@@ -69,7 +74,8 @@ POSTGRES_PORT=5432
 POSTGRES_SSLMODE=prefer
 DB_CONN_MAX_AGE=60
 
-# Woovi (Pix). Comece no sandbox; troque para produção no passo 7.
+# Woovi (Pix). O padrão do código é produção (https://api.woovi.com).
+# Para a fase de testes (passo 5), use o sandbox:
 WOOVI_BASE_URL=https://api.woovi-sandbox.com
 WOOVI_APP_ID=
 
@@ -85,6 +91,9 @@ EVOLUTION_WEBHOOK_TOKEN=
    Gunicorn. Acompanhe em **Deployments → logs**. Se aparecer
    `ImproperlyConfigured ... DJANGO_SECRET_KEY`, a chave está vazia ou curta.
 
+O `WOOVI_APP_ID` nunca aparece em tela, log ou banco: ele só vai no header
+das chamadas à Woovi.
+
 ## 3. Primeiro acesso
 
 Na aplicação: aba **Terminal** → contêiner da app:
@@ -94,51 +103,58 @@ python manage.py createsuperuser
 ```
 
 Depois, em `https://gestao.seudominio.com.br/admin/`: cadastre a **Academia**
-e, em **Acessos às academias**, vincule o seu usuário a ela, marcando
-*administrador da academia*. Entre em `/login/`.
+e, em **Acessos às academias**, vincule a proprietária a ela, marcando
+*administrador da academia*. O superusuário é da plataforma (você); a
+proprietária usa só o portal.
 
 Migrar dados do SQLite local não é automático. Se precisar deles, faça
 `dumpdata` local e `loaddata` no contêiner. Para o piloto, cadastrar do zero
 costuma ser mais seguro.
 
-## 4. Rotina diária de cobrança
+## 4. Tarefas agendadas
 
-Aplicação → **Scheduled Tasks → + Add**:
+Aplicação → **Scheduled Tasks → + Add**, duas tarefas:
 
-| Campo | Valor |
-|---|---|
-| Name | `rotina-diaria-cobranca` |
-| Command | `python manage.py enviar_lembretes_cobranca` |
-| Frequency | `0 9 * * *` (09:00 no fuso do servidor) |
-| Timeout | `600` |
+| Name | Command | Frequency | Timeout |
+|---|---|---|---|
+| `rotina-diaria-cobranca` | `python manage.py enviar_lembretes_cobranca` | `0 9 * * *` | `600` |
+| `repasses-pix` | `python manage.py processar_repasses` | `* * * * *` | `120` |
 
-O comando gera as mensalidades do mês (e antecipa as do mês seguinte que
-vencem em até 7 dias), marca as vencidas, confere na Woovi quem já pagou e
-envia os lembretes. Sem essa tarefa, **nenhuma mensalidade nova é criada a
-partir do 2º mês**.
+- **Rotina diária**: gera as mensalidades do mês (e antecipa as do mês
+  seguinte que vencem em até 7 dias), marca as vencidas, confere se algum
+  Pix já foi pago antes de cobrar e envia os lembretes. Sem ela, **nenhuma
+  mensalidade nova é criada a partir do 2º mês**.
+- **Repasses**: depois de cada Pix pago, transfere o saldo recebido para a
+  chave Pix da academia (em até ~1 minuto). Falhas são retentadas após 1, 5,
+  15, 60 e 180 minutos; depois disso o repasse fica em **Requer atenção** e
+  aparece um aviso para superusuários no portal e em `/admin/financeiro/repasse/`.
+  Sem esta tarefa, **o dinheiro fica parado na conta da Woovi**.
 
-> Cuidado com o **Execute Now**: se o WhatsApp já estiver conectado e houver
-> mensalidade na janela de lembrete, saem mensagens reais. Teste antes de
-> conectar o WhatsApp (passo 6), olhando a saída
-> `N mensalidade(s) gerada(s) / N lembrete(s) enviado(s)`.
+> Cuidado com o **Execute Now** da rotina diária: se o WhatsApp já estiver
+> conectado e houver mensalidade na janela de lembrete, saem mensagens reais.
 
-## 5. Woovi no sandbox
+## 5. Woovi no sandbox (teste de ponta a ponta)
 
-1. Crie a conta em `https://app.woovi-sandbox.com` e gere o **AppID** em
-   **API/Plugins → Nova API**. Coloque-o em `WOOVI_APP_ID` e faça **Redeploy**.
-2. **Webhook**: em API/Plugins → Webhooks → Novo webhook:
-   - URL: `https://gestao.seudominio.com.br/webhooks/woovi/`
-   - Evento: **`OPENPIX:CHARGE_COMPLETED`** (cobrança paga)
-   - Sem autorização extra: o sistema confere cada aviso na API da Woovi com
-     o AppID antes de dar baixa.
+1. Crie a conta em `https://app.woovi-sandbox.com`, peça a habilitação de
+   split/subcontas e gere o **AppID** em **API/Plugins → Nova API**. Coloque-o
+   em `WOOVI_APP_ID` (com `WOOVI_BASE_URL` do sandbox) e faça **Redeploy**.
+2. **Webhooks** — em API/Plugins → Webhooks, cadastre **três**, todos com a
+   URL `https://gestao.seudominio.com.br/webhooks/woovi/`:
+   - `OPENPIX:CHARGE_COMPLETED` (Pix pago → baixa + repasse);
+   - `OPENPIX:MOVEMENT_CONFIRMED` (transferência para a chave concluída);
+   - `OPENPIX:MOVEMENT_FAILED` (transferência falhou → nova tentativa).
 
-   O POST de teste que a Woovi faz no cadastro recebe 200.
-3. Teste de ponta a ponta: cadastre um aluno com mensalidade, clique em
-   **Gerar Pix** em Financeiro → Cobranças e abra **Ver Pix**. No sandbox,
-   crie uma *conta bancária de teste* e leia o QR Code com a câmera do
-   celular: ele é uma URL que simula o pagamento. A mensalidade deve virar
-   **Paga** sozinha em segundos.
-   Guia da Woovi: https://developers.woovi.com/docs/test-environment/test-account/flow-company-bank-test
+   Não há segredo a configurar: cada aviso é validado pela assinatura
+   `x-webhook-signature` da Woovi. Aviso sem assinatura válida recebe 401.
+3. Com o usuário da proprietária: **Configurações → Recebimento** → cadastre
+   a chave Pix. O sistema cria (ou recupera) a subconta dessa chave.
+4. Cadastre um aluno com mensalidade, clique em **Gerar Pix** em Financeiro →
+   Cobranças e abra **Ver Pix**. No sandbox, crie uma *conta bancária de
+   teste* e leia o QR Code com a câmera do celular: ele simula o pagamento.
+   Guia: https://developers.woovi.com/docs/test-environment/test-account/flow-company-bank-test
+5. Confira: a mensalidade vira **Paga**; em `/admin/financeiro/repasse/`
+   aparece um repasse que, em até um minuto, vai para **Processando** e,
+   com o aviso da Woovi, para **Concluída**.
 
 ## 6. WhatsApp (Evolution API)
 
@@ -178,24 +194,44 @@ partir do 2º mês**.
 
 ## 7. Virar a Woovi para produção
 
-1. Na conta de **produção** (`https://app.woovi.com`): gere um novo AppID e
-   cadastre o mesmo webhook (URL + `OPENPIX:CHARGE_COMPLETED`).
+1. Na conta de **produção** (`https://app.woovi.com`), com split/subcontas
+   habilitados: gere um novo AppID e cadastre os **mesmos três webhooks**.
 2. Variáveis da aplicação: `WOOVI_BASE_URL=https://api.woovi.com` e o novo
    `WOOVI_APP_ID`. Redeploy.
-3. Os Pix gerados no sandbox não valem em produção. Se sobrou algum, use
-   **Gerar Pix** de novo depois que o Pix antigo expirar, ou cancele a
-   mensalidade de teste.
+3. A proprietária cadastra de novo a chave Pix em **Configurações →
+   Recebimento** (a subconta de produção é outra). Os Pix gerados no sandbox
+   não valem em produção: gere de novo ou cancele as mensalidades de teste.
+4. Faça **um pagamento real pequeno** e acompanhe o repasse até **Concluída**
+   antes de liberar para todas as famílias.
+
+### A validar no primeiro pagamento real
+
+A documentação da Woovi não fecha estes pontos; o código foi escrito para
+tolerar qualquer resposta, mas o custo e o resultado precisam ser conferidos:
+
+- **Tarifa por saque**: a FAQ fala em R$ 1,00 por saque abaixo de R$ 1.000,
+  e o extrato da subconta tem o lançamento `WITHDRAWAL_FEE`. Com repasse a
+  cada pagamento, isso pode significar uma tarifa por mensalidade paga.
+- **Taxa da cobrança com split de 100%**: não está documentado se sai da
+  conta principal ou da subconta. O repasse sempre saca o **saldo real** da
+  subconta (nunca assume o valor da mensalidade), então funciona nos dois
+  casos — mas o custo precisa ser conhecido.
+- **Nome do recebedor** que a família vê no app do banco ao pagar.
+- Se os webhooks `MOVEMENT_*` chegam para saques de subconta. Se não
+  chegarem, o sistema conclui o repasse pelo extrato após 30 minutos.
 
 ## Conferência rápida
 
 - `https://gestao.seudominio.com.br/login/` abre com o CSS carregado.
 - `https://gestao.seudominio.com.br/webhooks/woovi/` responde `{"status": "ok"}`.
 - Deployments: o contêiner fica **healthy**.
-- Scheduled Tasks → histórico: a execução diária aparece com sucesso.
+- Scheduled Tasks → histórico: a rotina diária e os repasses aparecem com sucesso.
+- `/admin/financeiro/repasse/`: nenhum repasse em **Requer atenção**.
 
 ## O que muda em relação ao deploy na EC2
 
 O Coolify substitui o `deploy/deploy.sh`, os serviços systemd
-(`academia-gunicorn`, `academia-lembretes.timer`), o Nginx e o workflow
-`.github/workflows/deploy.yml`. Se a EC2 não for mais usada, **desative esse
-workflow**: senão, todo push na `main` tenta publicar por SSH na EC2 também.
+(`academia-gunicorn`, `academia-lembretes.timer`, `academia-repasses.timer`),
+o Nginx e o workflow `.github/workflows/deploy.yml`. Se a EC2 não for mais
+usada, **desative esse workflow**: senão, todo push na `main` tenta publicar
+por SSH na EC2 também.

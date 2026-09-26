@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from academias.models import Academia
 from atletas.models import Atleta, Responsavel
-from financeiro.models import Mensalidade
+from financeiro.models import CobrancaPix, ContaRecebimento, Mensalidade
 from matriculas.models import Matricula
 from modalidades.models import Modalidade
 from portal.models import AcessoAcademia
@@ -103,68 +103,112 @@ class FinanceiroPortalTests(TestCase):
         )
         self.assertRedirects(resposta, "/financeiro/cobrancas/")
 
+    def _conta(self):
+        return ContaRecebimento.objects.create(
+            academia=self.a, tipo_chave=ContaRecebimento.EMAIL, pix_key="escola@exemplo.com",
+        )
+
+    def _pix(self, mensalidade=None, dias=10):
+        return CobrancaPix.objects.create(
+            mensalidade=mensalidade or self.pendente, conta_recebimento=self._conta(),
+            correlation_id="mensalidade-abc", valor=Decimal("120.00"), br_code="00020126...copia-e-cola",
+            link_pagamento="https://woovi.com/pay/x", expira_em=timezone.now() + timedelta(days=dias),
+        )
+
     @patch("integracoes.woovi.services.WooviClient")
-    def test_gerar_pix_na_woovi(self, mock_client_class):
-        mock_client_class.return_value.criar_cobranca.side_effect = lambda **kw: {
-            "correlationID": kw["correlation_id"],
-            "brCode": "00020126...copia-e-cola",
-            "qrCodeImage": "https://api.woovi.com/openpix/charge/brcode/image/x.png",
-            "paymentLinkUrl": "https://woovi.com/pay/x",
-            "expiresDate": "2999-01-01T00:00:00.000Z",
-        }
+    def test_gerar_pix(self, mock_client_class):
+        from tests.woovi_base import cobranca_criada
 
-        resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pix/", {})
+        self._conta()
+        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
 
-        self.assertEqual(resposta.status_code, 302)
-        self.pendente.refresh_from_db()
-        self.assertTrue(self.pendente.woovi_correlation_id.startswith(f"mensalidade-{self.pendente.pk}-"))
-        self.assertEqual(self.pendente.woovi_br_code, "00020126...copia-e-cola")
+        resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pix/", {}, follow=True)
+
+        self.assertContains(resposta, "Pix gerado.")
+        self.assertNotContains(resposta, "Woovi")
         self.assertTrue(self.pendente.pix_vigente)
         kwargs = mock_client_class.return_value.criar_cobranca.call_args.kwargs
         self.assertEqual(kwargs["valor_centavos"], 12000)
         self.assertEqual(kwargs["cliente"]["name"], "Resp")
 
-    @override_settings(WOOVI_APP_ID="")
-    def test_gerar_pix_sem_woovi_configurada_mostra_erro_sem_quebrar(self):
+    def test_gerar_pix_sem_chave_de_recebimento_orienta_o_cadastro(self):
         resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pix/", {}, follow=True)
+        self.assertContains(resposta, "Cadastre a chave Pix de recebimento")
+
+    @override_settings(WOOVI_APP_ID="")
+    def test_gerar_pix_sem_credencial_mostra_erro_sem_termos_tecnicos(self):
+        self._conta()
+        with self.assertLogs("portal.views", level="WARNING"):
+            resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pix/", {}, follow=True)
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "Não foi possível gerar o Pix: WOOVI_APP_ID não configurado.")
+        self.assertContains(resposta, "indisponível no momento")
+        self.assertNotContains(resposta, "WOOVI")
+        self.assertNotContains(resposta, "Woovi")
+
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_falha_do_provedor_vira_mensagem_generica(self, mock_client_class):
+        from integracoes.woovi.exceptions import WooviUnavailableError
+
+        self._conta()
+        mock_client_class.return_value.criar_cobranca.side_effect = WooviUnavailableError(
+            "A Woovi retornou o status HTTP 502."
+        )
+        with self.assertLogs("portal.views", level="WARNING") as logs:
+            resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pix/", {}, follow=True)
+        self.assertContains(resposta, "Não foi possível gerar o Pix agora")
+        self.assertNotContains(resposta, "Woovi")
+        self.assertIn("502", logs.output[0])
 
     def test_lista_cobrancas_mostra_link_do_qrcode_so_com_pix_vigente(self):
         html = self.client.get("/financeiro/cobrancas/").content.decode("utf8")
         self.assertNotIn("Ver Pix", html)
         self.assertIn("Gerar Pix", html)
 
-        self.pendente.woovi_correlation_id = "mensalidade-abc"
-        self.pendente.woovi_expira_em = timezone.now() + timedelta(days=10)
-        self.pendente.save(update_fields=["woovi_correlation_id", "woovi_expira_em"])
+        self._pix()
         html = self.client.get("/financeiro/cobrancas/").content.decode("utf8")
         self.assertIn("Ver Pix", html)
         self.assertIn(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/", html)
 
+    def test_lista_de_cobrancas_nao_consulta_o_pix_linha_a_linha(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        conta = self._conta()
+
+        def consultas():
+            with CaptureQueriesContext(connection) as ctx:
+                self.client.get("/financeiro/cobrancas/")
+            return len(ctx.captured_queries)
+
+        antes = consultas()
+        for mes in range(1, 6):
+            mensalidade = Mensalidade.objects.create(
+                academia=self.a, matricula=self.matricula, competencia=date(2027, mes, 1),
+                valor=Decimal("120.00"), vencimento=date(2999, mes, 10), status="pendente",
+            )
+            CobrancaPix.objects.create(
+                mensalidade=mensalidade, conta_recebimento=conta, correlation_id=f"c{mes}",
+                valor=Decimal("120.00"), br_code="000201", expira_em=timezone.now() + timedelta(days=5),
+            )
+        self.assertEqual(consultas(), antes)
+
     def test_pix_expirado_volta_a_oferecer_gerar_pix(self):
-        self.pendente.woovi_correlation_id = "mensalidade-abc"
-        self.pendente.woovi_expira_em = timezone.now() - timedelta(minutes=1)
-        self.pendente.save(update_fields=["woovi_correlation_id", "woovi_expira_em"])
+        self._pix(dias=-1)
         html = self.client.get("/financeiro/cobrancas/").content.decode("utf8")
         self.assertNotIn(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/", html)
 
     @patch("integracoes.woovi.services.WooviClient")
-    def test_tela_do_pix_mostra_qrcode_e_copia_e_cola_sem_chamar_a_woovi(self, mock_client_class):
-        self.pendente.woovi_correlation_id = "mensalidade-abc"
-        self.pendente.woovi_br_code = "00020126...copia-e-cola"
-        self.pendente.woovi_qrcode_url = "https://api.woovi.com/openpix/charge/brcode/image/x.png"
-        self.pendente.woovi_link_pagamento = "https://woovi.com/pay/x"
-        self.pendente.woovi_expira_em = timezone.now() + timedelta(days=10)
-        self.pendente.save()
+    def test_tela_do_pix_mostra_qrcode_e_copia_e_cola_sem_chamar_o_provedor(self, mock_client_class):
+        self._pix()
 
         resposta = self.client.get(f"/financeiro/cobrancas/{self.pendente.pk}/pix/qrcode/")
 
         self.assertEqual(resposta.status_code, 200)
         self.assertContains(resposta, "00020126...copia-e-cola")
-        self.assertContains(resposta, "https://api.woovi.com/openpix/charge/brcode/image/x.png")
-        self.assertContains(resposta, "https://woovi.com/pay/x")
+        self.assertContains(resposta, '<svg')
         self.assertContains(resposta, "detalhe-conteudo")
+        # Nada que leve a família/equipe ao site do provedor.
+        self.assertNotContains(resposta, "woovi.com")
         mock_client_class.assert_not_called()
 
     def test_tela_do_pix_sem_cobranca_mostra_mensagem_amigavel(self):
@@ -174,30 +218,30 @@ class FinanceiroPortalTests(TestCase):
 
     @patch("integracoes.woovi.services.WooviClient")
     def test_marcar_pago_tira_o_pix_do_ar(self, mock_client_class):
-        self.pendente.woovi_correlation_id = "mensalidade-abc"
-        self.pendente.woovi_expira_em = timezone.now() + timedelta(days=10)
-        self.pendente.save(update_fields=["woovi_correlation_id", "woovi_expira_em"])
+        cobranca = self._pix()
 
         self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pagar/", {"forma_pagamento": "dinheiro"})
 
         mock_client_class.return_value.remover_cobranca.assert_called_once_with("mensalidade-abc")
         self.pendente.refresh_from_db()
         self.assertEqual(self.pendente.status, "paga")
+        cobranca.refresh_from_db()
+        self.assertEqual(cobranca.status, CobrancaPix.CANCELADA)
 
     @patch("integracoes.woovi.services.WooviClient")
     def test_marcar_pago_avisa_se_nao_conseguir_tirar_o_pix_do_ar(self, mock_client_class):
-        from integracoes.woovi.client import WooviAPIError
+        from integracoes.woovi.exceptions import WooviUnavailableError
 
-        mock_client_class.return_value.remover_cobranca.side_effect = WooviAPIError("fora do ar")
-        self.pendente.woovi_correlation_id = "mensalidade-abc"
-        self.pendente.woovi_expira_em = timezone.now() + timedelta(days=10)
-        self.pendente.save(update_fields=["woovi_correlation_id", "woovi_expira_em"])
+        mock_client_class.return_value.remover_cobranca.side_effect = WooviUnavailableError("fora do ar")
+        self._pix()
 
-        resposta = self.client.post(
-            f"/financeiro/cobrancas/{self.pendente.pk}/pagar/", {"forma_pagamento": "dinheiro"}, follow=True
-        )
+        with self.assertLogs("portal.views", level="WARNING"):
+            resposta = self.client.post(
+                f"/financeiro/cobrancas/{self.pendente.pk}/pagar/", {"forma_pagamento": "dinheiro"}, follow=True
+            )
 
         self.assertContains(resposta, "pagamento em dobro")
+        self.assertNotContains(resposta, "Woovi")
         self.pendente.refresh_from_db()
         self.assertEqual(self.pendente.status, "paga")
 
@@ -273,10 +317,18 @@ class EncerrarCobrancaTests(TestCase):
         self.assertEqual(self.mensalidade.status, "isenta")
 
     def criar_com_pix(self, competencia, expira_em):
-        return self.criar(competencia, woovi_correlation_id="mensalidade-123", woovi_expira_em=expira_em)
+        mensalidade = self.criar(competencia)
+        conta = ContaRecebimento.ativa_da(self.a) or ContaRecebimento.objects.create(
+            academia=self.a, tipo_chave=ContaRecebimento.EMAIL, pix_key="escola@exemplo.com",
+        )
+        CobrancaPix.objects.create(
+            mensalidade=mensalidade, conta_recebimento=conta, correlation_id="mensalidade-123",
+            valor=Decimal("120.00"), br_code="000201", expira_em=expira_em,
+        )
+        return mensalidade
 
     @patch("integracoes.woovi.services.WooviClient")
-    def test_exclui_o_pix_na_woovi_antes_de_cancelar(self, mock_client_class):
+    def test_cancela_o_pix_antes_de_cancelar_a_mensalidade(self, mock_client_class):
         mensalidade = self.criar_com_pix(date(2999, 2, 1), timezone.now() + timedelta(days=10))
         self.encerrar(mensalidade, "cancelada")
         mock_client_class.return_value.remover_cobranca.assert_called_once_with("mensalidade-123")
@@ -284,7 +336,7 @@ class EncerrarCobrancaTests(TestCase):
         self.assertEqual(mensalidade.status, "cancelada")
 
     @patch("integracoes.woovi.services.WooviClient")
-    def test_pix_ja_expirado_nao_precisa_ser_excluido(self, mock_client_class):
+    def test_pix_ja_expirado_nao_precisa_ser_cancelado(self, mock_client_class):
         mensalidade = self.criar_com_pix(date(2999, 2, 1), timezone.now() - timedelta(minutes=1))
         self.encerrar(mensalidade, "cancelada")
         mock_client_class.assert_not_called()
@@ -292,15 +344,17 @@ class EncerrarCobrancaTests(TestCase):
         self.assertEqual(mensalidade.status, "cancelada")
 
     @patch("integracoes.woovi.services.WooviClient")
-    def test_falha_na_woovi_nao_cancela_localmente(self, mock_client_class):
-        from integracoes.woovi.client import WooviAPIError
+    def test_falha_ao_cancelar_o_pix_nao_cancela_localmente(self, mock_client_class):
+        from integracoes.woovi.exceptions import WooviRequestError
 
-        mock_client_class.return_value.remover_cobranca.side_effect = WooviAPIError(
-            "A API da Woovi retornou o status HTTP 400."
+        mock_client_class.return_value.remover_cobranca.side_effect = WooviRequestError(
+            "A Woovi retornou o status HTTP 400.", 400
         )
         mensalidade = self.criar_com_pix(date(2999, 2, 1), timezone.now() + timedelta(days=10))
-        resposta = self.encerrar(mensalidade, "cancelada")
+        with self.assertLogs("portal.views", level="WARNING"):
+            resposta = self.encerrar(mensalidade, "cancelada")
         self.assertContains(resposta, "Não foi possível alterar a mensalidade")
+        self.assertNotContains(resposta, "Woovi")
         mensalidade.refresh_from_db()
         self.assertEqual(mensalidade.status, "pendente")
 

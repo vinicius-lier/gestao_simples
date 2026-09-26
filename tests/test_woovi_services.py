@@ -1,168 +1,341 @@
 from datetime import date, timedelta
-from decimal import Decimal
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
-from academias.models import Academia
-from atletas.models import Atleta, Responsavel
-from financeiro.models import Mensalidade
-from integracoes.woovi.client import WooviAPIError
+from financeiro.models import CobrancaPix, ContaRecebimento, Mensalidade, Repasse
+from integracoes.woovi.chave_pix import ChavePixInvalida, normalizar_chave_pix
+from integracoes.woovi.client import Cobranca
+from integracoes.woovi.exceptions import WooviInvalidResponseError, WooviRequestError, WooviUnavailableError
 from integracoes.woovi.services import (
-    confirmar_pagamento_pix,
+    RecebimentoBloqueado,
+    RecebimentoNaoConfigurado,
+    conferir_pagamento_pix,
+    configurar_chave_pix,
     garantir_cobranca_pix,
+    registrar_pagamento_pix,
     remover_cobranca_pix,
-    valor_em_centavos,
+    solicitar_repasse,
 )
-from matriculas.models import Matricula
-from modalidades.models import Modalidade
+from tests.woovi_base import CHAVE, CenarioWoovi, cobranca_criada, subconta
 
 
-def cobranca_criada(**kw):
-    return {
-        "correlationID": kw["correlation_id"],
-        "brCode": "00020126PIX",
-        "qrCodeImage": "https://api.woovi.com/openpix/charge/brcode/image/x.png",
-        "paymentLinkUrl": "https://woovi.com/pay/x",
-        "expiresDate": "2999-01-01T00:00:00.000Z",
-    }
+class ChavePixTests(SimpleTestCase):
+    def test_normaliza_cada_tipo(self):
+        casos = [
+            (ContaRecebimento.CPF, "529.982.247-25", "52998224725"),
+            (ContaRecebimento.CNPJ, "11.222.333/0001-81", "11222333000181"),
+            (ContaRecebimento.EMAIL, " Escola@Keiko.com.BR ", "escola@keiko.com.br"),
+            (ContaRecebimento.TELEFONE, "(21) 99999-8888", "+5521999998888"),
+            (ContaRecebimento.TELEFONE, "+55 21 99999-8888", "+5521999998888"),
+            (ContaRecebimento.ALEATORIA, "9134E286-6F71-427A-BF00-241681624587", "9134e286-6f71-427a-bf00-241681624587"),
+        ]
+        for tipo, entrada, esperado in casos:
+            with self.subTest(tipo=tipo, entrada=entrada):
+                self.assertEqual(normalizar_chave_pix(tipo, entrada), esperado)
+
+    def test_chaves_invalidas(self):
+        casos = [
+            (ContaRecebimento.CPF, "529.982.247-26"),  # dígito errado
+            (ContaRecebimento.CPF, "111.111.111-11"),
+            (ContaRecebimento.CNPJ, "11.222.333/0001-80"),
+            (ContaRecebimento.EMAIL, "não-é-email"),
+            (ContaRecebimento.TELEFONE, "99999-8888"),
+            (ContaRecebimento.ALEATORIA, "abc"),
+            (ContaRecebimento.EMAIL, ""),
+            ("desconhecido", "x"),
+        ]
+        for tipo, entrada in casos:
+            with self.subTest(tipo=tipo, entrada=entrada), self.assertRaises(ChavePixInvalida):
+                normalizar_chave_pix(tipo, entrada)
 
 
 @patch("integracoes.woovi.services.WooviClient")
-class WooviServicesTests(TestCase):
+class ConfigurarChavePixTests(CenarioWoovi, TestCase):
     def setUp(self):
-        academia = Academia.objects.create(nome="Academia", cnpj="WS1")
-        self.responsavel = Responsavel.objects.create(
-            academia=academia, nome="Maria", cpf="123.456.789-00", whatsapp="(21) 99999-8888",
+        self.criar_cenario()
+        self.conta.delete()
+
+    def test_cria_a_subconta_e_a_conta_de_recebimento(self, mock_client):
+        mock_client.return_value.criar_ou_obter_subconta.return_value = subconta()
+
+        conta = configurar_chave_pix(self.academia, ContaRecebimento.EMAIL, "Escola@Keiko.com.br", self.usuario)
+
+        mock_client.return_value.criar_ou_obter_subconta.assert_called_once_with(CHAVE, "Escola de Judô Keiko Fukuda")
+        self.assertEqual(conta.pix_key, CHAVE)
+        self.assertTrue(conta.ativa)
+        self.assertEqual(conta.criada_por, self.usuario)
+
+    def test_mesma_chave_de_novo_nao_chama_o_provedor(self, mock_client):
+        mock_client.return_value.criar_ou_obter_subconta.return_value = subconta()
+        primeira = configurar_chave_pix(self.academia, ContaRecebimento.EMAIL, CHAVE)
+
+        segunda = configurar_chave_pix(self.academia, ContaRecebimento.EMAIL, CHAVE.upper())
+
+        self.assertEqual(primeira, segunda)
+        mock_client.return_value.criar_ou_obter_subconta.assert_called_once()
+
+    def test_subconta_ja_existente_no_provedor_e_reaproveitada(self, mock_client):
+        mock_client.return_value.criar_ou_obter_subconta.return_value = subconta(saldo=5000)
+        conta = configurar_chave_pix(self.academia, ContaRecebimento.EMAIL, CHAVE)
+        self.assertEqual(ContaRecebimento.objects.get(), conta)
+
+    def test_chave_invalida_nao_chama_o_provedor(self, mock_client):
+        with self.assertRaises(ChavePixInvalida):
+            configurar_chave_pix(self.academia, ContaRecebimento.CPF, "123.456.789-00")
+        mock_client.assert_not_called()
+        self.assertFalse(ContaRecebimento.objects.exists())
+
+    def test_provedor_recusando_a_chave_nao_grava_nada(self, mock_client):
+        mock_client.return_value.criar_ou_obter_subconta.side_effect = WooviRequestError("chave inválida", 400)
+        with self.assertRaises(WooviRequestError):
+            configurar_chave_pix(self.academia, ContaRecebimento.EMAIL, CHAVE)
+        self.assertFalse(ContaRecebimento.objects.exists())
+
+    def test_chave_com_saque_bloqueado_gera_alerta(self, mock_client):
+        mock_client.return_value.criar_ou_obter_subconta.return_value = subconta(bloqueada=True)
+        with self.assertLogs("gestao.alertas", level="ERROR"):
+            conta = configurar_chave_pix(self.academia, ContaRecebimento.EMAIL, CHAVE)
+        self.assertTrue(conta.saque_bloqueado)
+
+
+@patch("integracoes.woovi.services.WooviClient")
+class TrocarChavePixTests(CenarioWoovi, TestCase):
+    NOVA = "financeiro@keiko.com.br"
+
+    def setUp(self):
+        self.criar_cenario()
+
+    def trocar(self):
+        return configurar_chave_pix(self.academia, ContaRecebimento.EMAIL, self.NOVA, self.usuario)
+
+    def test_troca_desativa_a_antiga_e_ativa_a_nova(self, mock_client):
+        mock_client.return_value.criar_ou_obter_subconta.return_value = subconta(chave=self.NOVA)
+
+        nova = self.trocar()
+
+        self.conta.refresh_from_db()
+        self.assertFalse(self.conta.ativa)
+        self.assertIsNotNone(self.conta.desativada_em)
+        self.assertEqual(self.conta.desativada_por, self.usuario)
+        self.assertEqual(ContaRecebimento.ativa_da(self.academia), nova)
+        mock_client.return_value.criar_ou_obter_subconta.assert_called_once_with(self.NOVA, "Escola de Judô Keiko Fukuda")
+
+    def test_bloqueada_com_repasse_em_andamento(self, mock_client):
+        for status in Repasse.STATUS_ABERTOS:
+            with self.subTest(status=status):
+                repasse = Repasse.objects.create(
+                    academia=self.academia, conta_recebimento=self.conta, pix_key_destino=CHAVE, status=status,
+                )
+                with self.assertRaises(RecebimentoBloqueado):
+                    self.trocar()
+                mock_client.assert_not_called()
+                self.conta.refresh_from_db()
+                self.assertTrue(self.conta.ativa)
+                repasse.delete()
+
+    def test_cancela_os_pix_nao_pagos_da_chave_antiga_e_preserva_o_historico(self, mock_client):
+        mock_client.return_value.criar_ou_obter_subconta.return_value = subconta(chave=self.NOVA)
+        vigente = self.cobranca(correlation_id="c-vigente")
+        expirada = self.cobranca(mensalidade=self.nova_mensalidade(date(2026, 8, 1)), correlation_id="c-exp", dias=-1)
+        paga = self.cobranca(
+            mensalidade=self.nova_mensalidade(date(2026, 7, 1), status="paga"),
+            correlation_id="c-paga", status=CobrancaPix.PAGA,
         )
-        atleta = Atleta.objects.create(academia=academia, nome="Ana", responsavel_financeiro=self.responsavel)
-        matricula = Matricula.objects.create(
-            academia=academia, atleta=atleta, modalidade=Modalidade.objects.create(academia=academia, nome="Judô"),
-            valor_mensalidade=Decimal("135.50"), dia_vencimento=10, data_inicio=date(2026, 1, 1),
-        )
-        self.mensalidade = Mensalidade.objects.create(
-            academia=academia, matricula=matricula, competencia=date(2026, 9, 1),
-            valor=Decimal("135.50"), vencimento=date(2026, 9, 10), status="pendente",
+        concluido = Repasse.objects.create(
+            academia=self.academia, conta_recebimento=self.conta, pix_key_destino=CHAVE, status=Repasse.CONCLUIDA,
         )
 
-    def test_valor_em_centavos(self, _mock):
-        self.assertEqual(valor_em_centavos(Decimal("135.50")), 13550)
-        self.assertEqual(valor_em_centavos(Decimal("0.01")), 1)
+        self.trocar()
 
-    def test_gera_pix_com_valor_cliente_e_validade(self, mock_client_class):
-        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
+        mock_client.return_value.remover_cobranca.assert_called_once_with("c-vigente")
+        for cobranca, status in ((vigente, CobrancaPix.CANCELADA), (expirada, CobrancaPix.EXPIRADA), (paga, CobrancaPix.PAGA)):
+            cobranca.refresh_from_db()
+            self.assertEqual(cobranca.status, status)
+            self.assertEqual(cobranca.conta_recebimento, self.conta)  # vínculo original preservado
+        concluido.refresh_from_db()
+        self.assertEqual(concluido.conta_recebimento, self.conta)
+        self.assertEqual(ContaRecebimento.objects.filter(academia=self.academia).count(), 2)
 
-        garantir_cobranca_pix(self.mensalidade)
+    def test_falha_ao_cancelar_pix_antigo_nao_troca_nada(self, mock_client):
+        mock_client.return_value.criar_ou_obter_subconta.return_value = subconta(chave=self.NOVA)
+        mock_client.return_value.remover_cobranca.side_effect = WooviUnavailableError("fora")
+        cobranca = self.cobranca()
 
-        kwargs = mock_client_class.return_value.criar_cobranca.call_args.kwargs
-        self.assertEqual(kwargs["valor_centavos"], 13550)
+        with self.assertRaises(WooviUnavailableError):
+            self.trocar()
+
+        self.conta.refresh_from_db()
+        self.assertTrue(self.conta.ativa)
+        self.assertEqual(ContaRecebimento.objects.count(), 1)
+        cobranca.refresh_from_db()
+        self.assertEqual(cobranca.status, CobrancaPix.ATIVA)
+
+    def test_depois_da_troca_o_proximo_pix_usa_a_chave_nova(self, mock_client):
+        mock_client.return_value.criar_ou_obter_subconta.return_value = subconta(chave=self.NOVA)
+        mock_client.return_value.criar_cobranca.side_effect = cobranca_criada
+        self.cobranca()
+        self.trocar()
+
+        cobranca = garantir_cobranca_pix(self.mensalidade)
+
+        split = mock_client.return_value.criar_cobranca.call_args.kwargs["splits"][0]
+        self.assertEqual(split["pixKey"], self.NOVA)
+        self.assertEqual(cobranca.conta_recebimento.pix_key, self.NOVA)
+
+
+@patch("integracoes.woovi.services.WooviClient")
+class GarantirCobrancaPixTests(CenarioWoovi, TestCase):
+    def setUp(self):
+        self.criar_cenario()
+
+    def test_cria_pix_com_split_de_100_por_cento_para_a_subconta(self, mock_client):
+        mock_client.return_value.criar_cobranca.side_effect = cobranca_criada
+
+        cobranca = garantir_cobranca_pix(self.mensalidade)
+
+        kwargs = mock_client.return_value.criar_cobranca.call_args.kwargs
+        self.assertEqual(kwargs["valor_centavos"], 12000)
+        self.assertEqual(kwargs["splits"], [{"value": 12000, "pixKey": CHAVE, "splitType": "SPLIT_SUB_ACCOUNT"}])
+        self.assertTrue(kwargs["correlation_id"].startswith(f"mensalidade-{self.mensalidade.pk}-"))
         self.assertEqual(kwargs["comentario"], "Mensalidade 09/2026 - Ana")
-        self.assertEqual(kwargs["expira_em_segundos"], 30 * 24 * 60 * 60)
-        self.assertEqual(kwargs["cliente"], {"name": "Maria", "taxID": "12345678900", "phone": "5521999998888"})
-        self.mensalidade.refresh_from_db()
-        self.assertEqual(self.mensalidade.woovi_br_code, "00020126PIX")
-        self.assertEqual(self.mensalidade.woovi_link_pagamento, "https://woovi.com/pay/x")
-        self.assertEqual(self.mensalidade.woovi_expira_em.year, 2999)
+        self.assertEqual(kwargs["cliente"], {"name": "Maria", "taxID": "52998224725", "phone": "5521999998888"})
+        self.assertEqual(cobranca.conta_recebimento, self.conta)
+        self.assertEqual(cobranca.br_code, "00020126PIX")
+        self.assertTrue(self.mensalidade.pix_vigente)
 
-    def test_sem_responsavel_gera_pix_sem_cliente(self, mock_client_class):
-        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
-        atleta = self.mensalidade.matricula.atleta
-        atleta.responsavel_financeiro = None
-        atleta.save(update_fields=["responsavel_financeiro"])
+    def test_idempotente_reaproveita_o_pix_vigente(self, mock_client):
+        mock_client.return_value.criar_cobranca.side_effect = cobranca_criada
+        primeira = garantir_cobranca_pix(self.mensalidade)
+        segunda = garantir_cobranca_pix(Mensalidade.objects.get(pk=self.mensalidade.pk))
+        self.assertEqual(primeira, segunda)
+        mock_client.return_value.criar_cobranca.assert_called_once()
 
-        garantir_cobranca_pix(self.mensalidade)
+    def test_pix_perto_de_expirar_e_substituido(self, mock_client):
+        mock_client.return_value.criar_cobranca.side_effect = cobranca_criada
+        antiga = self.cobranca()
+        antiga.expira_em = timezone.now() + timedelta(minutes=10)
+        antiga.save()
 
-        self.assertIsNone(mock_client_class.return_value.criar_cobranca.call_args.kwargs["cliente"])
+        nova = garantir_cobranca_pix(self.mensalidade)
 
-    def test_pix_vigente_nao_chama_a_woovi_de_novo(self, mock_client_class):
-        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
+        self.assertNotEqual(nova, antiga)
+        mock_client.return_value.remover_cobranca.assert_called_once_with(antiga.correlation_id)
+        antiga.refresh_from_db()
+        self.assertEqual(antiga.status, CobrancaPix.CANCELADA)
 
-        garantir_cobranca_pix(self.mensalidade)
-        garantir_cobranca_pix(Mensalidade.objects.get(pk=self.mensalidade.pk))
+    def test_sem_chave_de_recebimento_nao_gera(self, mock_client):
+        self.conta.ativa = False
+        self.conta.save()
+        with self.assertRaises(RecebimentoNaoConfigurado):
+            garantir_cobranca_pix(self.mensalidade)
+        mock_client.assert_not_called()
 
-        mock_client_class.return_value.criar_cobranca.assert_called_once()
-
-    def test_pix_perto_de_expirar_e_trocado_por_outro(self, mock_client_class):
-        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
-        self.mensalidade.woovi_correlation_id = "mensalidade-antigo"
-        self.mensalidade.woovi_expira_em = timezone.now() + timedelta(minutes=10)
+    def test_mensalidade_vencida_gera_e_paga_nao(self, mock_client):
+        mock_client.return_value.criar_cobranca.side_effect = cobranca_criada
+        self.mensalidade.status = "vencida"
         self.mensalidade.save()
-
         garantir_cobranca_pix(self.mensalidade)
 
-        self.mensalidade.refresh_from_db()
-        self.assertNotEqual(self.mensalidade.woovi_correlation_id, "mensalidade-antigo")
-
-    def test_mensalidade_paga_nao_gera_pix(self, mock_client_class):
-        self.mensalidade.status = "paga"
-        self.mensalidade.save(update_fields=["status"])
-
+        paga = self.nova_mensalidade(date(2026, 8, 1), status="paga")
         with self.assertRaisesMessage(ValueError, "não pode ser cobrada"):
+            garantir_cobranca_pix(paga)
+        mock_client.return_value.criar_cobranca.assert_called_once()
+
+    def test_resposta_sem_pix_nao_grava_cobranca(self, mock_client):
+        mock_client.return_value.criar_cobranca.return_value = Cobranca("c1", "ACTIVE", 12000, "", "", None, "", None)
+        with self.assertRaises(WooviInvalidResponseError):
             garantir_cobranca_pix(self.mensalidade)
-        mock_client_class.assert_not_called()
+        self.assertFalse(CobrancaPix.objects.exists())
 
-    def test_resposta_sem_br_code_nao_grava_nada(self, mock_client_class):
-        mock_client_class.return_value.criar_cobranca.return_value = {"correlationID": "c1"}
-
-        with self.assertRaises(WooviAPIError):
-            garantir_cobranca_pix(self.mensalidade)
-
-        self.mensalidade.refresh_from_db()
-        self.assertEqual(self.mensalidade.woovi_correlation_id, "")
-
-    def test_remover_so_chama_a_woovi_com_pix_vigente(self, mock_client_class):
+    def test_remover_tira_o_pix_do_ar(self, mock_client):
+        cobranca = self.cobranca()
         remover_cobranca_pix(self.mensalidade)
-        mock_client_class.assert_not_called()
+        mock_client.return_value.remover_cobranca.assert_called_once_with(cobranca.correlation_id)
+        cobranca.refresh_from_db()
+        self.assertEqual(cobranca.status, CobrancaPix.CANCELADA)
 
-        self.mensalidade.woovi_correlation_id = "c1"
-        self.mensalidade.woovi_expira_em = timezone.now() + timedelta(days=1)
-        remover_cobranca_pix(self.mensalidade)
-        mock_client_class.return_value.remover_cobranca.assert_called_once_with("c1")
 
-    def _com_pix(self, status="pendente"):
-        self.mensalidade.woovi_correlation_id = "c1"
-        self.mensalidade.status = status
-        self.mensalidade.save(update_fields=["woovi_correlation_id", "status"])
+class RegistrarPagamentoPixTests(CenarioWoovi, TestCase):
+    def setUp(self):
+        self.criar_cenario()
 
-    def test_confirmar_da_baixa_quando_a_woovi_diz_completed(self, mock_client_class):
-        mock_client_class.return_value.obter_cobranca.return_value = {
-            "status": "COMPLETED", "paidAt": "2026-09-08T15:07:50.891Z",
-        }
-        self._com_pix()
+    def test_marca_paga_e_abre_repasse_pendente(self):
+        cobranca = self.cobranca()
 
-        self.assertIsNotNone(confirmar_pagamento_pix("c1"))
+        self.assertTrue(registrar_pagamento_pix(cobranca, transaction_id="tx1"))
 
         self.mensalidade.refresh_from_db()
-        self.assertEqual(self.mensalidade.status, "paga")
-        self.assertEqual(self.mensalidade.forma_pagamento, "pix")
-        self.assertEqual(self.mensalidade.pago_em.date(), date(2026, 9, 8))
+        self.assertEqual((self.mensalidade.status, self.mensalidade.forma_pagamento), ("paga", "pix"))
+        cobranca.refresh_from_db()
+        self.assertEqual((cobranca.status, cobranca.transaction_id), (CobrancaPix.PAGA, "tx1"))
+        repasse = Repasse.objects.get()
+        self.assertEqual((repasse.status, repasse.pix_key_destino, repasse.valor), (Repasse.PENDENTE, CHAVE, None))
 
-    def test_confirmar_nao_da_baixa_se_a_woovi_nao_confirmar(self, mock_client_class):
-        mock_client_class.return_value.obter_cobranca.return_value = {"status": "ACTIVE"}
-        self._com_pix()
+    def test_pagamento_repetido_nao_gera_nada_novo(self):
+        cobranca = self.cobranca()
+        registrar_pagamento_pix(cobranca)
+        self.assertFalse(registrar_pagamento_pix(cobranca))
+        self.assertEqual(Repasse.objects.count(), 1)
 
-        self.assertIsNone(confirmar_pagamento_pix("c1"))
+    def test_dois_pagamentos_viram_um_unico_repasse(self):
+        registrar_pagamento_pix(self.cobranca())
+        registrar_pagamento_pix(self.cobranca(mensalidade=self.nova_mensalidade(date(2026, 10, 1)), correlation_id="c2"))
+        self.assertEqual(Repasse.objects.count(), 1)
 
-        self.mensalidade.refresh_from_db()
-        self.assertEqual(self.mensalidade.status, "pendente")
+    def test_pagamento_durante_saque_marca_saldo_novo(self):
+        repasse = Repasse.objects.create(
+            academia=self.academia, conta_recebimento=self.conta, pix_key_destino=CHAVE, status=Repasse.PROCESSANDO,
+        )
+        registrar_pagamento_pix(self.cobranca())
+        repasse.refresh_from_db()
+        self.assertTrue(repasse.saldo_novo_pendente)
+        self.assertEqual(Repasse.objects.count(), 1)
 
-    def test_confirmar_correlation_id_desconhecido_nao_chama_a_woovi(self, mock_client_class):
-        self.assertIsNone(confirmar_pagamento_pix("inexistente"))
-        mock_client_class.assert_not_called()
-
-    def test_confirmar_mensalidade_ja_paga_nao_chama_a_woovi(self, mock_client_class):
-        self._com_pix(status="paga")
-        self.assertIsNone(confirmar_pagamento_pix("c1"))
-        mock_client_class.assert_not_called()
-
-    def test_pix_pago_de_mensalidade_cancelada_registra_aviso_sem_baixa(self, mock_client_class):
-        mock_client_class.return_value.obter_cobranca.return_value = {"status": "COMPLETED"}
-        self._com_pix(status="cancelada")
-
-        with self.assertLogs("integracoes.woovi.services", level="WARNING") as logs:
-            self.assertIsNone(confirmar_pagamento_pix("c1"))
-
-        self.assertIn("c1", logs.output[0])
+    def test_mensalidade_cancelada_nao_muda_mas_o_dinheiro_e_repassado(self):
+        self.mensalidade.status = "cancelada"
+        self.mensalidade.save()
+        with self.assertLogs("gestao.alertas", level="ERROR"):
+            registrar_pagamento_pix(self.cobranca())
         self.mensalidade.refresh_from_db()
         self.assertEqual(self.mensalidade.status, "cancelada")
+        self.assertEqual(Repasse.objects.count(), 1)
+
+    def test_pagamento_em_dobro_gera_alerta_e_repasse(self):
+        self.mensalidade.status = "paga"
+        self.mensalidade.save()
+        with self.assertLogs("gestao.alertas", level="ERROR") as logs:
+            registrar_pagamento_pix(self.cobranca())
+        self.assertIn("dobro", logs.output[0])
+        self.assertEqual(Repasse.objects.count(), 1)
+
+    def test_solicitar_repasse_concorrente_reaproveita_o_aberto(self):
+        primeiro = solicitar_repasse(self.conta)
+        segundo = solicitar_repasse(self.conta)
+        self.assertEqual(primeiro, segundo)
+
+
+@patch("integracoes.woovi.services.WooviClient")
+class ConferirPagamentoPixTests(CenarioWoovi, TestCase):
+    def setUp(self):
+        self.criar_cenario()
+
+    def test_pix_pago_sem_webhook_e_registrado(self, mock_client):
+        cobranca = self.cobranca()
+        mock_client.return_value.obter_cobranca.return_value = Cobranca(
+            cobranca.correlation_id, "COMPLETED", 12000, "", "", None, "tx9", timezone.now(),
+        )
+        self.assertTrue(conferir_pagamento_pix(self.mensalidade))
+        self.mensalidade.refresh_from_db()
+        self.assertEqual(self.mensalidade.status, "paga")
+        self.assertEqual(Repasse.objects.count(), 1)
+
+    def test_pix_expirado_no_provedor_e_marcado(self, mock_client):
+        cobranca = self.cobranca()
+        mock_client.return_value.obter_cobranca.return_value = Cobranca(
+            cobranca.correlation_id, "EXPIRED", 12000, "", "", None, "", None,
+        )
+        self.assertFalse(conferir_pagamento_pix(self.mensalidade))
+        cobranca.refresh_from_db()
+        self.assertEqual(cobranca.status, CobrancaPix.EXPIRADA)

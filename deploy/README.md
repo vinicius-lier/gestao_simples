@@ -108,6 +108,21 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now academia-lembretes.timer
 ```
 
+### Repasse do Pix (timer a cada minuto)
+
+Depois de cada Pix pago, o webhook abre um repasse; este timer transfere o
+saldo recebido para a chave Pix da academia. Sem ele, o dinheiro fica parado
+na conta do provedor:
+
+```bash
+sudo install -o root -g root -m 644 deploy/academia-repasses.service /etc/systemd/system/academia-repasses.service
+sudo install -o root -g root -m 644 deploy/academia-repasses.timer   /etc/systemd/system/academia-repasses.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now academia-repasses.timer
+```
+
+No Coolify, o equivalente sao as tarefas agendadas de `deploy/COOLIFY.md`.
+
 Passo a passo completo do WhatsApp/Evolution (servidor no compose, conexao por
 QR, teste e rollback): `deploy/EVOLUTION.md`.
 

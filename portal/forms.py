@@ -312,3 +312,32 @@ GraduacaoFormSet = forms.inlineformset_factory(
     extra=1,
     can_delete=True,
 )
+
+
+class ChavePixForm(forms.Form):
+    """Chave Pix onde a academia recebe as mensalidades."""
+
+    tipo_chave = forms.ChoiceField(label='Tipo da chave')
+    chave = forms.CharField(label='Chave Pix', max_length=100)
+    confirmacao = forms.BooleanField(
+        label='Confirmo que esta chave Pix é da conta onde a escola deve receber as mensalidades.',
+    )
+
+    def __init__(self, *args, **kwargs):
+        from financeiro.models import ContaRecebimento
+
+        super().__init__(*args, **kwargs)
+        self.fields['tipo_chave'].choices = ContaRecebimento.TIPOS_CHAVE
+        for field in self.fields.values():
+            field.widget.attrs['class'] = 'form-check-input' if isinstance(field.widget, forms.CheckboxInput) else 'form-select' if isinstance(field.widget, forms.Select) else 'form-control'
+
+    def clean(self):
+        from integracoes.woovi.chave_pix import ChavePixInvalida, normalizar_chave_pix
+
+        dados = super().clean()
+        if dados.get('tipo_chave') and dados.get('chave'):
+            try:
+                dados['chave'] = normalizar_chave_pix(dados['tipo_chave'], dados['chave'])
+            except ChavePixInvalida as erro:
+                self.add_error('chave', str(erro))
+        return dados

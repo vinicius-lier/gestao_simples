@@ -1,6 +1,6 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from . import views, views_responsavel, views_whatsapp, views_experimentais, views_matricula
+from . import views, views_responsavel, views_whatsapp, views_experimentais, views_matricula, views_recebimento
 
 app_name = 'portal'
 urlpatterns = [
@@ -38,6 +38,7 @@ urlpatterns = [
     path('financeiro/cobrancas/<int:pk>/pix/', views.financeiro_gerar_pix, name='financeiro_gerar_pix'),
     path('financeiro/cobrancas/<int:pk>/pix/qrcode/', views.financeiro_pix_qrcode, name='financeiro_pix_qrcode'),
     path('financeiro/cobrancas/<int:pk>/enviar/', views.financeiro_enviar_cobranca, name='financeiro_enviar_cobranca'),
+    path('configuracoes/recebimento/', views_recebimento.recebimento, name='recebimento'),
     # Configurações → WhatsApp (Evolution API). Tenant = request.academia.
     path('configuracoes/whatsapp/', views_whatsapp.whatsapp_config, name='whatsapp_config'),
     path('configuracoes/whatsapp/criar/', views_whatsapp.whatsapp_criar, name='whatsapp_criar'),

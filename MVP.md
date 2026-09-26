@@ -17,7 +17,7 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
-Sem o `.env` preenchido, o sistema funciona normalmente — só o botão **Gerar Pix** do financeiro falha com uma mensagem amigável ("WOOVI_APP_ID não configurado"), em vez de gerar o Pix. Isso é esperado, não é bug.
+Sem o `.env` preenchido, o sistema funciona normalmente — só o botão **Gerar Pix** do financeiro mostra "O recebimento por Pix está indisponível no momento" em vez de gerar o Pix. Isso é esperado, não é bug. Para testar localmente, use o sandbox da Woovi (`.env.example.local`); os testes automatizados nunca chamam a Woovi de verdade (`config/test_runner.py`).
 
 No `/admin/`, o superusuário deve cadastrar a academia, as modalidades e as turmas desejadas. Cadastre um usuário comum (sem acesso de equipe) e, em **Acessos às academias**, vincule-o à academia. Cada usuário tem uma academia. Apenas superusuários podem gerenciar esses vínculos.
 
@@ -42,22 +42,45 @@ Os pagamentos são por **Pix via Woovi** (boleto e cartão não fazem parte do M
 ### Painel financeiro (`/financeiro/`)
 
 - **Painel**: previsto, recebido, a receber e em atraso do mês corrente, vencimentos dos próximos 7 dias e lista de inadimplentes. A cada acesso, mensalidades pendentes vencidas são promovidas para `vencida` automaticamente (`Mensalidade.objects.marcar_vencidas()`), sem depender de job externo.
-- **Cobranças** (`/financeiro/cobrancas/`): lista com busca por aluno, filtro por situação e por mês, paginada. Ações por linha: **Marcar como pago** (define `status`, `forma_pagamento` e `pago_em`), **Gerar Pix** / **Ver Pix** (cria na Woovi ou mostra o QR e o copia-e-cola já gerado) e **Enviar cobrança** (ver WhatsApp abaixo). Marcar como pago uma mensalidade com Pix vigente também exclui o Pix na Woovi, para a família não pagar em dobro; se a Woovi não responder, a tela avisa para conferir no painel dela.
+- **Cobranças** (`/financeiro/cobrancas/`): lista com busca por aluno, filtro por situação e por mês, paginada. Ações por linha: **Marcar como pago** (define `status`, `forma_pagamento` e `pago_em`), **Gerar Pix** / **Ver Pix** (cria o Pix ou mostra o QR e o copia-e-cola já gerado) e **Enviar cobrança** (ver WhatsApp abaixo). Marcar como pago uma mensalidade com Pix vigente também cancela o Pix, para a família não pagar em dobro; se não der, a tela avisa. Nenhuma tela cita o provedor de pagamento: erros técnicos vão só para o log.
 - Qualquer usuário vinculado à academia pode registrar pagamentos e gerar cobranças (não é uma ação restrita a administrador da academia).
-- **Cancelar / Isentar** (só administrador da academia): tira uma mensalidade em aberto da cobrança e dos lembretes. Se ela tem Pix vigente, o Pix é excluído na Woovi antes; se a Woovi recusar (por exemplo, porque acabou de ser pago), nada muda localmente.
+- **Cancelar / Isentar** (só administrador da academia): tira uma mensalidade em aberto da cobrança e dos lembretes. Se ela tem Pix vigente, o Pix é cancelado antes; se o provedor recusar (por exemplo, porque acabou de ser pago), nada muda localmente.
 - No detalhe do aluno, cada matrícula mostra as últimas mensalidades e o status.
+
+### Recebimento (Configurações → Recebimento)
+
+A proprietária (administradora da academia) cadastra a **chave Pix** onde a escola recebe. Na Woovi, cada chave Pix identifica uma **subconta**: o sistema cria ou recupera a subconta ao salvar a chave. A tela mostra só a chave, um status simples (ativo / transferência em andamento / precisa de atenção), a última transferência e as chaves anteriores — nunca provedor, subconta, saldo ou saque.
+
+Trocar a chave (`configurar_chave_pix`): bloqueado enquanto houver transferência em andamento; a subconta da chave nova é criada antes de qualquer mudança no banco; os Pix **não pagos** da chave antiga são cancelados (e gerados de novo, já com a chave nova, no próximo acesso); a conta antiga fica inativa como histórico, com as cobranças e transferências ligadas a ela.
 
 ### Pix via Woovi (`integracoes/woovi/`)
 
-- Cada mensalidade em aberto (pendente **ou vencida**) tem no máximo um Pix vigente, gravado na própria mensalidade (`woovi_correlation_id`, copia-e-cola, URL do QR, página de pagamento, validade). O Pix vale **30 dias**; ao expirar (ou faltando menos de 1h), o próximo acesso gera outro com um `correlationID` novo. A criação usa `return_existing=true` e trava a linha da mensalidade, então dois cliques simultâneos não geram dois Pix.
-- O cliente da cobrança vai com nome + CPF/e-mail/telefone do responsável quando existirem; sem nenhum deles, o Pix sai sem cliente (a Woovi não exige).
-- Configuração: `WOOVI_APP_ID` (painel da Woovi > API/Plugins) e `WOOVI_BASE_URL` (`https://api.woovi-sandbox.com` para testes, `https://api.woovi.com` em produção).
+- Cada Pix é uma `CobrancaPix` (histórico preservado; no máximo uma ativa por mensalidade, garantido no banco), criada com **split de 100% para a subconta** da chave ativa (`SPLIT_SUB_ACCOUNT`). Vale **30 dias**; expirado (ou faltando menos de 1h), o próximo acesso gera outro. A criação usa `return_existing=true` e trava a linha da mensalidade.
+- Mensalidades pendentes **e vencidas** podem gerar Pix. Sem chave de recebimento cadastrada, não há Pix.
+- O QR Code é gerado no próprio servidor (SVG); a família nunca carrega nada do domínio do provedor nem recebe a página hospedada dele.
+- Configuração: `WOOVI_APP_ID` e `WOOVI_BASE_URL` (padrão: produção, `https://api.woovi.com`; sandbox para testes). O AppID só vai no header das chamadas — nunca em tela, log ou banco.
 
 ### Webhook da Woovi (`/webhooks/woovi/`)
 
-Endpoint público (`POST`, isento de CSRF). Cadastre-o no painel da Woovi para o evento **`OPENPIX:CHARGE_COMPLETED`**. O corpo do webhook **não é tomado como verdade**: ele só informa o `correlationID`, e o sistema consulta a cobrança na API da Woovi com o `WOOVI_APP_ID` antes de dar baixa (`confirmar_pagamento_pix`). Um POST forjado, no máximo, provoca uma consulta que não muda nada — por isso não há token de webhook para configurar. O POST de teste que a Woovi faz ao cadastrar a URL recebe 200. Se a Woovi estiver fora do ar na conferência, o endpoint responde 503 para ela reenviar. Pix pago de mensalidade **cancelada** não altera nada e gera um aviso no log (`integracoes.woovi.services`) para devolver/regularizar à mão.
+Cadastre a URL no painel da Woovi para três eventos: `OPENPIX:CHARGE_COMPLETED`, `OPENPIX:MOVEMENT_CONFIRMED` e `OPENPIX:MOVEMENT_FAILED`.
 
-Rede de segurança: antes de mandar cada lembrete, a rotina diária pergunta à Woovi se o Pix daquela mensalidade já foi pago — um webhook perdido não vira cobrança de quem já pagou.
+- **Segurança**: todo evento que muda algo exige `x-webhook-signature` válido (RSA-SHA256 sobre o corpo bruto, chaves públicas da Woovi em cache com rotação — `integracoes/woovi/assinatura.py`). Sem assinatura válida: 401.
+- **Idempotência**: cada evento é gravado em `EventoWebhook` com chave única (tipo + correlationID + endToEndId) antes de processar; repetição responde 200 sem efeito. O payload é guardado sem nome/CPF de quem pagou.
+- `CHARGE_COMPLETED` só registra o pagamento (mensalidade paga, forma Pix) e abre um **Repasse PENDENTE** — o saque nunca acontece dentro do webhook. `MOVEMENT_*` concluem ou reprovam o repasse.
+- Regras de negócio conhecidas (cobrança inexistente, já paga, mensalidade cancelada, pagamento em dobro) respondem 200 e ficam registradas no evento; cancelada e em dobro geram alerta para a plataforma (o dinheiro é repassado mesmo assim).
+- Rede de segurança: antes de cada lembrete, a rotina diária pergunta ao provedor se o Pix ativo da mensalidade já foi pago — um webhook perdido não vira cobrança de quem já pagou (e o repasse é aberto nessa hora).
+
+### Repasse automático (`integracoes/woovi/repasses.py`, comando `processar_repasses`)
+
+Tarefa agendada **a cada minuto**. Para cada repasse devido: reivindica atomicamente (dois processos nunca pegam o mesmo), consulta o **saldo real** da subconta e saca **todo o saldo disponível** — nunca assume que é o valor da mensalidade, então tarifas e pagamentos acumulados são tolerados. O banco garante **um único repasse aberto por conta**: dois pagamentos quase simultâneos viram um único saque, e pagamento que chega durante um saque abre outro repasse quando este terminar.
+
+- Saldo zerado logo após o pagamento: espera o crédito cair (até 3 tentativas) antes de concluir sem saque; saldo abaixo do mínimo (`WOOVI_SAQUE_MINIMO_CENTAVOS`, padrão R$ 1,01) fica para o próximo repasse.
+- Falha: novas tentativas após **1, 5, 15, 60 e 180 minutos** (6 tentativas, ~4h20); depois, **Requer atenção** + alerta (`financeiro/alertas.py`, logger `gestao.alertas` — ponto único para ligar Zabbix/Discord). Chave recusada pelo provedor vai direto para Requer atenção.
+- Timeout no saque (o endpoint não é idempotente): antes de qualquer nova tentativa, o **extrato** da subconta é conferido; se o saque saiu, não é pedido de novo.
+- Sem confirmação em 30 minutos, o extrato decide (saque → concluído; estorno ou nada → nova tentativa).
+- Superusuários veem um aviso no portal quando há repasse em Requer atenção; no `/admin/financeiro/repasse/` há a ação "Tentar o repasse de novo".
+
+Custos a validar em produção (tarifa por saque, taxa da cobrança com split): ver `deploy/COOLIFY.md`.
 
 ### Portal do responsável (`/responsavel/`)
 
@@ -67,7 +90,7 @@ Rede de segurança: antes de mandar cada lembrete, a rotina diária pergunta à 
 - Abrir o link mostra uma tela com o botão **Entrar**; o token só é gasto nesse clique (POST). Assim, prévia de link do WhatsApp e antivírus — que abrem o link por GET — não queimam o acesso antes da família. Links de pagamento (lembretes e "Enviar cobrança") valem 7 dias; o acesso avulso ao portal, 24h. Reabrir um link já usado no mesmo navegador segue direto, sem "link expirado".
 - Ao clicar em Entrar, o navegador ganha uma sessão comum (`request.session['responsavel_id']`) que dura o padrão de sessão do Django — não precisa do link de novo até expirar os cookies.
 - **Painel**: lista os alunos vinculados àquele responsável e as mensalidades de cada um, com botão **Pagar** nas pendentes/atrasadas.
-- **Pagar**: gera (ou reaproveita) o Pix da Woovi (`garantir_cobranca_pix`) e mostra o QR Code e o copia-e-cola na hora — inclusive para mensalidades já vencidas.
+- **Pagar**: gera (ou reaproveita) o Pix (`garantir_cobranca_pix`) e mostra o QR Code e o copia-e-cola na hora — inclusive para mensalidades já vencidas. Se não der, mostra uma mensagem genérica (o detalhe vai para o log).
 - Isolamento: toda consulta filtra por `matricula__atleta__responsavel_financeiro=request.responsavel` — um responsável nunca alcança mensalidade de outra família, mesmo advinhando o ID na URL.
 
 ### WhatsApp Cloud API (`integracoes/whatsapp/`)
@@ -101,7 +124,7 @@ python manage.py test
 python manage.py makemigrations --check --dry-run
 ```
 
-Os testes do portal cobrem autenticação, academia ausente/inativa, isolamento, formulários, reutilização de responsável, edição, rollback, CSRF, busca e paginação. Os testes financeiros e da Woovi cobrem geração de mensalidades, régua de lembretes, criação/renovação/exclusão do Pix e o webhook.
+Os testes do portal cobrem autenticação, academia ausente/inativa, isolamento, formulários, reutilização de responsável, edição, rollback, CSRF, busca e paginação. Os testes financeiros e da Woovi cobrem geração de mensalidades, régua de lembretes, chave Pix/subconta, split, webhook assinado e idempotente, repasse (saldo real, retry, limite, timeout, concorrência) e a ausência de termos do provedor nas telas.
 
 
 ## Polos, professores e turmas
@@ -114,4 +137,4 @@ A **modalidade** guarda só o nome e a descrição — nada de valores ou horár
 
 Superusuários ou usuários com a opção “administrador da academia” no acesso podem gerenciar esses cadastros. Um administrador pode abrir o detalhe do aluno e criar outra matrícula; transferir uma matrícula de polo também exige administrador. Os filtros de acesso atuais continuam sendo por Academia; permissões de visualização individuais por polo ainda não estão implementadas.
 
-No cadastro do aluno, marque “O próprio aluno é o responsável financeiro” e informe CPF e WhatsApp. O sistema cria/reutiliza um Responsavel com esses dados, usados também no Pix da Woovi. Não dispara cobranças ao cadastrar.
+No cadastro do aluno, marque “O próprio aluno é o responsável financeiro” e informe CPF e WhatsApp. O sistema cria/reutiliza um Responsavel com esses dados, usados também como cliente do Pix. Não dispara cobranças ao cadastrar.

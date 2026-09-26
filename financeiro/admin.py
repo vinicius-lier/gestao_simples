@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import LembreteCobranca, Mensalidade
+from .models import CobrancaPix, ContaRecebimento, EventoWebhook, LembreteCobranca, Mensalidade, Repasse
 
 
 @admin.register(Mensalidade)
@@ -16,7 +16,7 @@ class MensalidadeAdmin(admin.ModelAdmin):
 
     search_fields = (
         "matricula__atleta__nome",
-        "woovi_correlation_id",
+        "cobrancas_pix__correlation_id",
     )
 
     list_filter = (
@@ -42,3 +42,63 @@ class LembreteCobrancaAdmin(admin.ModelAdmin):
     search_fields = ("mensalidade__matricula__atleta__nome",)
     date_hierarchy = "enviado_em"
     readonly_fields = ("atualizado_em",)
+
+@admin.register(ContaRecebimento)
+class ContaRecebimentoAdmin(admin.ModelAdmin):
+    list_display = ("academia", "pix_key", "tipo_chave", "ativa", "saque_bloqueado", "criada_em", "desativada_em")
+    list_filter = ("ativa", "saque_bloqueado", "academia")
+    search_fields = ("pix_key", "academia__nome")
+    readonly_fields = ("criada_em", "criada_por", "desativada_em", "desativada_por")
+
+    def has_delete_permission(self, request, obj=None):
+        return False  # histórico financeiro
+
+
+@admin.register(CobrancaPix)
+class CobrancaPixAdmin(admin.ModelAdmin):
+    list_display = ("mensalidade", "status", "valor", "conta_recebimento", "expira_em", "pago_em")
+    list_filter = ("status",)
+    search_fields = ("correlation_id", "transaction_id", "mensalidade__matricula__atleta__nome")
+    readonly_fields = ("criada_em", "atualizada_em")
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EventoWebhook)
+class EventoWebhookAdmin(admin.ModelAdmin):
+    list_display = ("tipo", "correlation_id", "status", "erro", "recebido_em", "processado_em")
+    list_filter = ("tipo", "status")
+    search_fields = ("correlation_id", "chave")
+    readonly_fields = ("chave", "tipo", "correlation_id", "payload", "status", "erro", "recebido_em", "processado_em")
+
+
+@admin.register(Repasse)
+class RepasseAdmin(admin.ModelAdmin):
+    list_display = ("academia", "status", "valor", "pix_key_destino", "tentativas", "proxima_tentativa_em", "erro", "criado_em")
+    list_filter = ("status", "academia")
+    search_fields = ("correlation_id", "end_to_end_id", "pix_key_destino")
+    readonly_fields = ("criado_em", "processado_em", "concluido_em", "atualizado_em")
+    actions = ["tentar_de_novo"]
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description="Tentar o repasse de novo agora (após corrigir a causa)")
+    def tentar_de_novo(self, request, queryset):
+        from django.db import IntegrityError, transaction
+        from django.utils import timezone
+
+        reabertos = 0
+        for repasse in queryset.filter(status=Repasse.REQUER_ATENCAO):
+            try:
+                with transaction.atomic():
+                    Repasse.objects.filter(pk=repasse.pk).update(
+                        status=Repasse.PENDENTE, tentativas=0, proxima_tentativa_em=timezone.now(),
+                    )
+                reabertos += 1
+            except IntegrityError:
+                self.message_user(
+                    request, f"Repasse {repasse.pk}: já existe outro repasse aberto para esta conta.", level="warning",
+                )
+        self.message_user(request, f"{reabertos} repasse(s) reaberto(s).")

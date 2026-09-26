@@ -1,3 +1,4 @@
+import logging
 from datetime import date, timedelta
 from functools import wraps
 from django.contrib import messages
@@ -12,6 +13,25 @@ from atletas.models import Atleta
 from matriculas.models import Matricula
 from .forms import AlunoForm, MatriculaForm
 from .models import AcessoAcademia, TokenAcessoResponsavel
+
+
+logger = logging.getLogger(__name__)
+
+
+def mensagem_erro_pix(error, acao):
+    """Texto de erro de Pix para a equipe da academia: nunca cita o provedor
+    de pagamento nem detalhes técnicos (esses vão para o log)."""
+    from integracoes.woovi.exceptions import WooviConfigError, WooviError
+    from integracoes.woovi.services import RecebimentoNaoConfigurado
+
+    if isinstance(error, RecebimentoNaoConfigurado):
+        return 'Cadastre a chave Pix de recebimento em Configurações → Recebimento.'
+    if isinstance(error, WooviError):
+        logger.warning('Pix: falha ao %s: %s', acao, error)
+        if isinstance(error, WooviConfigError):
+            return 'O recebimento por Pix está indisponível no momento. Fale com o suporte.'
+        return f'Não foi possível {acao} agora. Tente novamente em alguns minutos.'
+    return str(error)
 
 
 def redirecionamento_seguro(request, padrao):
@@ -209,7 +229,13 @@ def financeiro_cobrancas(request):
     if status not in dict(Mensalidade.STATUS):
         status = ''
     mes = request.GET.get('mes', '')
-    cobrancas = Mensalidade.objects.filter(academia=request.academia).select_related('matricula__atleta').order_by('-vencimento', '-pk')
+    from financeiro.models import CobrancaPix
+    cobrancas = (
+        Mensalidade.objects.filter(academia=request.academia)
+        .select_related('matricula__atleta')
+        .prefetch_related(CobrancaPix.prefetch_ativas())
+        .order_by('-vencimento', '-pk')
+    )
     if query:
         cobrancas = cobrancas.filter(matricula__atleta__nome__icontains=query)
     if status:
@@ -278,15 +304,16 @@ def financeiro_marcar_pago(request, pk):
 
     # Pago por fora (dinheiro, transferência...): tira o Pix do ar para a
     # família não pagar de novo pelo código que recebeu no lembrete.
-    from integracoes.woovi.client import WooviAPIError
+    from integracoes.woovi.exceptions import WooviError
     from integracoes.woovi.services import remover_cobranca_pix
     try:
         remover_cobranca_pix(mensalidade)
-    except (ValueError, WooviAPIError) as error:
+    except WooviError as error:
+        logger.warning('Pix: falha ao cancelar o Pix da mensalidade %s: %s', mensalidade.pk, error)
         messages.warning(
             request,
-            f'Não foi possível cancelar o Pix na Woovi ({error}). Confira no painel da Woovi '
-            'para evitar pagamento em dobro.',
+            'Não foi possível cancelar o Pix desta mensalidade agora. Se a família pagar por ele, '
+            'fale com o suporte para evitar pagamento em dobro.',
         )
     return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
@@ -301,15 +328,17 @@ def financeiro_encerrar_cobranca(request, pk):
 
     from financeiro.models import Mensalidade
     from financeiro.services import encerrar_mensalidade
-    from integracoes.woovi.client import WooviAPIError
+    from integracoes.woovi.exceptions import WooviError
 
     mensalidade = get_object_or_404(
         Mensalidade.objects.select_related('matricula__atleta'), pk=pk, academia=request.academia
     )
     try:
         encerrar_mensalidade(mensalidade, request.POST.get('status', ''))
-    except (ValueError, WooviAPIError) as error:
-        messages.error(request, f'Não foi possível alterar a mensalidade: {error}')
+    except (ValueError, WooviError) as error:
+        messages.error(
+            request, f'Não foi possível alterar a mensalidade: {mensagem_erro_pix(error, "cancelar o Pix")}'
+        )
     else:
         messages.success(
             request,
@@ -323,15 +352,15 @@ def financeiro_encerrar_cobranca(request, pk):
 @require_http_methods(['POST'])
 def financeiro_gerar_pix(request, pk):
     from financeiro.models import Mensalidade
-    from integracoes.woovi.client import WooviAPIError
+    from integracoes.woovi.exceptions import WooviError
     from integracoes.woovi.services import garantir_cobranca_pix
     mensalidade = get_object_or_404(Mensalidade, pk=pk, academia=request.academia)
     try:
         garantir_cobranca_pix(mensalidade)
-    except (ValueError, WooviAPIError) as error:
-        messages.error(request, f'Não foi possível gerar o Pix: {error}')
+    except (ValueError, WooviError) as error:
+        messages.error(request, mensagem_erro_pix(error, 'gerar o Pix'))
     else:
-        messages.success(request, 'Pix gerado na Woovi.')
+        messages.success(request, 'Pix gerado.')
     return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
 
@@ -339,17 +368,18 @@ def financeiro_gerar_pix(request, pk):
 def financeiro_pix_qrcode(request, pk):
     """Tela com o QR code e o Pix copia-e-cola já gerado. Abre como página
     normal (funciona sem JS) e também é usada como conteúdo do modal de
-    detalhe (mesmo mecanismo de [data-detalhe]). Não chama a Woovi: os
-    dados do Pix ficam gravados na mensalidade."""
+    detalhe (mesmo mecanismo de [data-detalhe]). Não chama o provedor: os
+    dados do Pix ficam gravados na cobrança."""
     from financeiro.models import Mensalidade
     mensalidade = get_object_or_404(
         Mensalidade.objects.select_related('matricula__atleta', 'matricula__modalidade', 'matricula__unidade'),
         pk=pk, academia=request.academia,
     )
+    cobranca = mensalidade.cobranca_pix_vigente
     erro = None
-    if not mensalidade.pix_vigente:
+    if cobranca is None:
         erro = 'Esta mensalidade não tem um Pix vigente. Gere um novo pela lista de cobranças.'
-    return render(request, 'portal/financeiro_pix.html', {'mensalidade': mensalidade, 'erro': erro})
+    return render(request, 'portal/financeiro_pix.html', {'mensalidade': mensalidade, 'cobranca': cobranca, 'erro': erro})
 
 
 @academia_required

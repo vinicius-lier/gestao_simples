@@ -153,32 +153,36 @@ class ResponsavelPortalTests(TestCase):
         resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
         self.assertEqual(resposta.status_code, 404)
 
-    @staticmethod
-    def _cobranca_woovi(**kw):
-        return {
-            "correlationID": kw["correlation_id"],
-            "brCode": "copia-e-cola",
-            "qrCodeImage": "https://api.woovi.com/openpix/charge/brcode/image/abc.png",
-            "paymentLinkUrl": "https://woovi.com/pay/abc",
-            "expiresDate": "2999-01-01T00:00:00.000Z",
-        }
+    def _com_chave(self):
+        from financeiro.models import ContaRecebimento
+
+        ContaRecebimento.objects.create(
+            academia=self.a, tipo_chave=ContaRecebimento.EMAIL, pix_key="escola@exemplo.com",
+        )
 
     @patch("integracoes.woovi.services.WooviClient")
-    def test_pagar_gera_pix_e_mostra_qrcode(self, mock_client_class):
-        mock_client_class.return_value.criar_cobranca.side_effect = self._cobranca_woovi
+    def test_pagar_gera_pix_e_mostra_qrcode_sem_nada_do_provedor(self, mock_client_class):
+        from tests.woovi_base import cobranca_criada
+
+        self._com_chave()
+        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
         self._logar(self.responsavel)
 
         resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
 
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "copia-e-cola")
-        self.assertContains(resposta, "https://api.woovi.com/openpix/charge/brcode/image/abc.png")
-        self.assertNotContains(resposta, "cartão")
+        self.assertContains(resposta, "00020126PIX")
+        self.assertContains(resposta, "<svg")
+        for termo in ("woovi", "Woovi", "openpix", "OpenPix", "subconta"):
+            self.assertNotContains(resposta, termo)
         mock_client_class.return_value.criar_cobranca.assert_called_once()
 
     @patch("integracoes.woovi.services.WooviClient")
     def test_pagar_reaproveita_pix_vigente(self, mock_client_class):
-        mock_client_class.return_value.criar_cobranca.side_effect = self._cobranca_woovi
+        from tests.woovi_base import cobranca_criada
+
+        self._com_chave()
+        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
         self._logar(self.responsavel)
         url = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
 
@@ -191,16 +195,36 @@ class ResponsavelPortalTests(TestCase):
     def test_pagar_mensalidade_vencida_tambem_gera_pix(self, mock_client_class):
         # Regressão: a integração anterior só cobrava mensalidades
         # "pendente" — justamente as atrasadas ficavam sem como pagar.
-        mock_client_class.return_value.criar_cobranca.side_effect = self._cobranca_woovi
+        from tests.woovi_base import cobranca_criada
+
+        self._com_chave()
+        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
         self.mensalidade.status = "vencida"
         self.mensalidade.save(update_fields=["status"])
         self._logar(self.responsavel)
 
         resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
 
-        self.assertContains(resposta, "copia-e-cola")
+        self.assertContains(resposta, "00020126PIX")
 
-    def test_pagar_mensalidade_ja_paga_mostra_aviso_sem_chamar_a_woovi(self):
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_falha_ao_gerar_pix_mostra_mensagem_generica(self, mock_client_class):
+        from integracoes.woovi.exceptions import WooviUnavailableError
+
+        self._com_chave()
+        mock_client_class.return_value.criar_cobranca.side_effect = WooviUnavailableError(
+            "A Woovi retornou o status HTTP 503."
+        )
+        self._logar(self.responsavel)
+
+        with self.assertLogs("portal.views_responsavel", level="WARNING"):
+            resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
+
+        self.assertContains(resposta, "Não foi possível carregar o Pix agora")
+        self.assertNotContains(resposta, "Woovi")
+        self.assertNotContains(resposta, "503")
+
+    def test_pagar_mensalidade_ja_paga_mostra_aviso_sem_chamar_o_provedor(self):
         self.mensalidade.status = "paga"
         self.mensalidade.pago_em = timezone.now()
         self.mensalidade.save(update_fields=["status", "pago_em"])

@@ -116,6 +116,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "portal.context_processors.alertas_plataforma",
             ],
         },
     },
@@ -271,6 +272,9 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Bloqueia chamadas reais à Woovi durante os testes (ver config/test_runner.py).
+TEST_RUNNER = "config.test_runner.ProjetoTestRunner"
+
 
 # =============================================================================
 # AUTH
@@ -311,20 +315,27 @@ MAILERS = {
 # =============================================================================
 # WOOVI (Pix)
 #
-# AppID: painel da Woovi > API/Plugins > Nova API. Testes em
-# https://api.woovi-sandbox.com; produção em https://api.woovi.com.
-# O webhook (/webhooks/woovi/) não precisa de segredo próprio: cada aviso é
-# conferido na API com este AppID antes da baixa.
+# AppID: painel da Woovi > API/Plugins > Nova API. Produção em
+# https://api.woovi.com (padrão); testes em https://api.woovi-sandbox.com.
+# O webhook (/webhooks/woovi/) valida o header x-webhook-signature com as
+# chaves públicas da Woovi — não há segredo de webhook para configurar.
 # =============================================================================
 
 WOOVI_APP_ID = os.getenv("WOOVI_APP_ID", "")
 
 WOOVI_BASE_URL = os.getenv(
     "WOOVI_BASE_URL",
-    "https://api.woovi-sandbox.com",
+    "https://api.woovi.com",
 )
 
 WOOVI_TIMEOUT = int(os.getenv("WOOVI_TIMEOUT", "30"))
+
+# Menor saque aceito pela Woovi (R$ 1,01 na documentação). Saldo abaixo
+# disso fica na subconta e sai junto com o próximo repasse.
+WOOVI_SAQUE_MINIMO_CENTAVOS = int(os.getenv("WOOVI_SAQUE_MINIMO_CENTAVOS", "101"))
+
+# Por quanto tempo as chaves públicas que assinam os webhooks ficam em cache.
+WOOVI_WEBHOOK_CHAVES_TTL = int(os.getenv("WOOVI_WEBHOOK_CHAVES_TTL", str(6 * 60 * 60)))
 
 
 # =============================================================================

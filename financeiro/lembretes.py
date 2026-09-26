@@ -55,7 +55,7 @@ def _sanitizar_erro(exc, limite=300):
 def preparar_payload_n8n(mensalidade, tipo_lembrete, responsavel=None):
     """Sequência FASE 2 (preparada, ainda não acionada por enviar_lembretes):
 
-        garante o Pix da Woovi
+        garante o Pix da mensalidade
         -> gera link público de pagamento
         -> monta o payload para o n8n
 
@@ -67,15 +67,14 @@ def preparar_payload_n8n(mensalidade, tipo_lembrete, responsavel=None):
         responsavel = mensalidade.matricula.atleta.responsavel_financeiro
 
     # Sem Pix, a mensagem ainda leva o link público de pagamento.
-    _garantir_cobranca_silenciosa(mensalidade)
+    cobranca = _garantir_cobranca_silenciosa(mensalidade)
 
     link = montar_link_pagamento(mensalidade, responsavel)
     return montar_payload_cobranca(
         mensalidade,
         tipo_lembrete,
         link_pagamento=link,
-        pix_copia_e_cola=mensalidade.woovi_br_code,
-        link_pagamento_pix=mensalidade.woovi_link_pagamento,
+        pix_copia_e_cola=cobranca.br_code if cobranca else "",
     )
 
 
@@ -124,9 +123,9 @@ def enviar_lembretes(hoje=None, academia=None):
         if responsavel is None or not responsavel.whatsapp:
             continue
 
-        # O webhook da Woovi pode ter se perdido: confere antes de cobrar
+        # O aviso de pagamento pode ter se perdido: confere antes de cobrar
         # quem talvez já tenha pago.
-        if _pago_na_woovi(mensalidade):
+        if _ja_pago(mensalidade):
             continue
 
         if lembrete is None:
@@ -176,25 +175,28 @@ def enviar_lembretes(hoje=None, academia=None):
 
 
 def _garantir_cobranca_silenciosa(mensalidade):
-    from integracoes.woovi.client import WooviAPIError
+    """O Pix da mensalidade, ou None se não der para gerar agora."""
+    from integracoes.woovi.exceptions import WooviError
     from integracoes.woovi.services import garantir_cobranca_pix
 
     try:
-        garantir_cobranca_pix(mensalidade)
-    except (ValueError, WooviAPIError):
+        return garantir_cobranca_pix(mensalidade)
+    except (ValueError, WooviError):
         # best effort: sem Pix, o lembrete ainda vai com o link público
-        pass
+        return None
 
 
-def _pago_na_woovi(mensalidade):
-    """True se a Woovi confirmar que o Pix da mensalidade já foi pago (e a
-    baixa foi feita agora). Falha na consulta não bloqueia o lembrete."""
-    from integracoes.woovi.client import WooviAPIError
-    from integracoes.woovi.services import confirmar_pagamento_pix
+def _ja_pago(mensalidade):
+    """True se o provedor confirmar que um Pix ativo da mensalidade já foi
+    pago (e a baixa foi feita agora). Falha na consulta não bloqueia o
+    lembrete."""
+    from financeiro.models import CobrancaPix
+    from integracoes.woovi.exceptions import WooviError
+    from integracoes.woovi.services import conferir_pagamento_pix
 
-    if not mensalidade.woovi_correlation_id:
+    if not CobrancaPix.objects.filter(mensalidade=mensalidade, status=CobrancaPix.ATIVA).exists():
         return False
     try:
-        return confirmar_pagamento_pix(mensalidade.woovi_correlation_id) is not None
-    except (ValueError, WooviAPIError):
+        return conferir_pagamento_pix(mensalidade)
+    except WooviError:
         return False

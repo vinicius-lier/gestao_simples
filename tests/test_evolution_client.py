@@ -123,7 +123,8 @@ class EvolutionClientRequestTests(SimpleTestCase):
         metodo, url = mock_req.call_args.args
         self.assertEqual((metodo, url), ("POST", f"{BASE}/message/sendText/keiko"))
         self.assertEqual(
-            mock_req.call_args.kwargs["json"], {"number": "5521999998888", "text": "Olá!"}
+            mock_req.call_args.kwargs["json"],
+            {"number": "5521999998888", "text": "Olá!", "linkPreview": False},
         )
         self.assertEqual(resp["key"]["id"], "3EB0")
 
