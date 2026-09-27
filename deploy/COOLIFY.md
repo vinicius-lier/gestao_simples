@@ -77,6 +77,8 @@ DB_ENGINE=postgresql
 POSTGRES_DB=
 POSTGRES_USER=
 POSTGRES_PASSWORD=
+# Só o host (nome do contêiner), nunca a URL inteira — senão o deploy cai
+# com "UnicodeError: label too long".
 POSTGRES_HOST=
 POSTGRES_PORT=5432
 POSTGRES_SSLMODE=prefer
@@ -129,6 +131,9 @@ Aplicação → **Scheduled Tasks → + Add**, duas tarefas:
 | `rotina-diaria-cobranca` | `python manage.py enviar_lembretes_cobranca` | `0 9 * * *` | `600` |
 | `repasses-pix` | `python manage.py processar_repasses` | `* * * * *` | `120` |
 
+> O horário segue o **fuso do servidor**. Com o servidor em UTC (o padrão, e a API do
+> Coolify não altera o fuso), use `0 12 * * *` para rodar às 9h de Brasília.
+
 - **Rotina diária**: gera as mensalidades do mês (e antecipa as do mês
   seguinte que vencem em até 7 dias), marca as vencidas, confere se algum
   Pix já foi pago antes de cobrar e envia os lembretes. Sem ela, **nenhuma
@@ -141,6 +146,33 @@ Aplicação → **Scheduled Tasks → + Add**, duas tarefas:
 
 > Cuidado com o **Execute Now** da rotina diária: se o WhatsApp já estiver
 > conectado e houver mensalidade na janela de lembrete, saem mensagens reais.
+
+## 4.1 Monitoramento (Discord)
+
+Os alertas vão para um canal do Discord, nunca para o WhatsApp da academia.
+
+- **Sistema** (erros 500 e alertas da plataforma, como repasse travado ou Pix
+  pago em dobro): variável `ALERTAS_DISCORD_WEBHOOK_URL` da aplicação. O mesmo
+  erro é avisado no máximo uma vez por hora; as repetições são contadas.
+- **RAM e disco da VPS**: tarefa agendada `python manage.py verificar_servidor`
+  a cada 5 minutos (`*/5 * * * *`, timeout `60`). Limites em
+  `MONITORAMENTO_LIMITE_RAM` (90) e `MONITORAMENTO_LIMITE_DISCO` (85).
+  Gráficos: Servers → (servidor) → Metrics (Sentinel com métricas ligadas).
+- **Coolify** (deploy, backup ou tarefa com falha, servidor inacessível,
+  disco): Notifications → Discord, com o mesmo webhook.
+- **Uptime Kuma** (site, DNS, Evolution, WhatsApp da escola conectado):
+  serviço do modelo "Uptime Kuma", com notificação Discord.
+
+## 4.2 Assinatura do sistema (Minha assinatura)
+
+A academia paga a mensalidade do sistema por Pix, direto na chave da
+plataforma (sem Woovi): variáveis `PLATAFORMA_PIX_CHAVE`, `PLATAFORMA_PIX_NOME`
+e `PLATAFORMA_PIX_CIDADE`. No `/admin/` → **Assinaturas** → cadastre o plano da
+academia (valor, dia de vencimento, início) e use a ação **Gerar agora a fatura
+do mês**. Depois, a rotina diária gera as faturas sozinha e avisa no Discord as
+vencidas. A academia vê em Configurações → Minha assinatura, paga pelo QR Code
+e clica **Já paguei**; você recebe o aviso no Discord e confirma em
+Faturas da assinatura → ação **Confirmar pagamento**.
 
 ## 5. Woovi no sandbox (teste de ponta a ponta)
 
