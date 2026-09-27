@@ -1,10 +1,20 @@
 import logging
 
 from django.db import DatabaseError, connection
-from django.http import JsonResponse
+from django.http import HttpResponsePermanentRedirect, JsonResponse
+from django.templatetags.static import static
 from django.views.decorators.http import require_http_methods
 
 logger = logging.getLogger(__name__)
+
+
+@require_http_methods(["GET", "HEAD"])
+def favicon(request):
+    """Ícone da aba: o logo da Escola de Judô Keiko Fukuda. Os layouts do
+    portal já apontam para ele; esta rota cobre o pedido automático do
+    navegador a /favicon.ico nas páginas sem <link rel="icon"> (admin,
+    páginas de erro, /health/)."""
+    return HttpResponsePermanentRedirect(static("portal/logo-fukuda.png"))
 
 
 @require_http_methods(["GET", "HEAD"])

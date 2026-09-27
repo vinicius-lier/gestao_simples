@@ -17,11 +17,12 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
-from config.views import health
+from config.views import favicon, health
 from integracoes.evolution.views import webhook_conexao as webhook_evolution
 from integracoes.woovi.views import webhook as webhook_woovi
 
 urlpatterns = [
+    path('favicon.ico', favicon, name='favicon'),
     path('health/', health, name='health'),
     path('', include('portal.urls')),
     path('admin/', admin.site.urls),

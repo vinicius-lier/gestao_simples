@@ -74,3 +74,10 @@
 .side-submenu{margin:2px 0 10px 23px;padding-left:10px;border-left:1px solid var(--line)}
 .side-submenu .side-link{font-size:12px;padding:9px 10px;line-height:1.5}
 @media(prefers-reduced-motion:reduce){.side-group-toggle>.side-chevron{transition:none}}
+
+/* Rodapé no fim da tela quando a página tem pouco conteúdo; nas páginas
+   longas ele continua logo depois do conteúdo. */
+.app-main,.auth-layout{min-height:100vh;display:flex;flex-direction:column}
+.app-main>#main,.auth-layout>#main{flex:1 0 auto;display:flex;flex-direction:column}
+.auth-layout>.auth-header{width:100%}
+.page-content{flex:1 0 auto}
