@@ -43,13 +43,34 @@
 .status-cancelada{background:#f1f1f3;color:#888892}
 .status-isenta{background:#f3ecfb;color:#7a4fc9}
 .stat-card form{margin-top:14px}
-.cobranca-actions{display:flex;flex-wrap:nowrap;gap:10px;align-items:center;justify-content:flex-end;white-space:nowrap}
+.cobranca-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end;white-space:nowrap;min-width:290px;max-width:440px;margin-left:auto}
 .cobranca-actions>*{flex-shrink:0}
 .cobranca-actions form{display:inline-flex;gap:6px;align-items:center}
-.cobranca-actions select{font-size:11px;padding:4px 6px;border-radius:6px;border:1px solid var(--line)}
+.cobranca-actions .btn{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:7px 12px;font-size:12px;white-space:nowrap}
+.cobranca-actions .form-select{width:auto;min-width:112px;min-height:36px;font-size:12px;padding:7px 30px 7px 10px;border-radius:9px;background-color:#fff}
+.cobrancas-directory .filter-bar{flex-wrap:wrap}
+.cobrancas-directory .search-input{flex:1 1 220px;min-width:180px}
+.cobrancas-directory .filter-bar input[type=month]{flex:0 1 180px;width:auto}
+.cobrancas-directory .person-cell{min-width:150px}
+.cobrancas-directory td:nth-child(4){white-space:nowrap}
 
 /* Pix: QR code + copia e cola */
 .pix-card{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
 .pix-qrcode{width:220px;height:220px;border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;flex-shrink:0}
 .pix-copia{flex:1;min-width:220px;display:flex;flex-direction:column;gap:10px}
 .pix-copia textarea{font-size:12px;font-family:monospace;resize:vertical}
+
+/* Compact navigation with keyboard-accessible native submenus. */
+.sidebar{overflow-y:auto;overscroll-behavior:contain}
+.sidebar>.brand,.sidebar>.workspace,.sidebar>.menu-label,.sidebar-bottom{flex-shrink:0}
+.sidebar-nav{padding-bottom:20px}
+.side-group-toggle{cursor:pointer;list-style:none;user-select:none}
+.side-group-toggle::-webkit-details-marker{display:none}
+.side-group-toggle::marker{content:""}
+.side-group-toggle.is-current-group{color:var(--green)}
+.side-link>.nav-icon{width:20px;height:20px;flex-shrink:0}
+.side-group-toggle>.side-chevron{margin-left:auto;width:12px;height:16px;flex-shrink:0;transition:transform .2s}
+.side-group[open]>.side-group-toggle>.side-chevron{transform:rotate(90deg)}
+.side-submenu{margin:2px 0 10px 23px;padding-left:10px;border-left:1px solid var(--line)}
+.side-submenu .side-link{font-size:12px;padding:9px 10px;line-height:1.5}
+@media(prefers-reduced-motion:reduce){.side-group-toggle>.side-chevron{transition:none}}
