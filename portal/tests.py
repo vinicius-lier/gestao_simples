@@ -203,3 +203,19 @@ class PaginaPublicaTests(TestCase):
         self.assertContains(response, 'Foto aprovada')
         self.assertNotContains(response, 'Foto privada')
         self.assertNotContains(response, '<script>alert(1)</script>')
+
+
+class CreditoNoRodapeTests(TestCase):
+    """Crédito do desenvolvedor no rodapé de cada layout."""
+
+    LINK = '<a href="https://viniciusoliveira-six.vercel.app/" target="_blank" rel="noopener noreferrer">Vinicius Oliveira</a>'
+
+    def test_rodape_de_todos_os_layouts(self):
+        paginas = {
+            'portal (login)': reverse('portal:login'),
+            'página pública': reverse('portal:publica'),
+            'layout público': reverse('portal:experimentais_publico'),
+        }
+        for nome, url in paginas.items():
+            with self.subTest(nome):
+                self.assertContains(self.client.get(url), f'Desenvolvido por {self.LINK}', html=False)

@@ -1229,6 +1229,16 @@ strong {
   font-size: 0.8rem;
 }
 
+.site-footer__bottom a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.site-footer__bottom a:hover {
+  color: var(--color-primary);
+}
+
 /* ============================================================
    WhatsApp flutuante
    ============================================================ */
