@@ -38,6 +38,8 @@ class ProjetoTestRunner(DiscoverRunner):
     def setup_test_environment(self, **kwargs):
         super().setup_test_environment(**kwargs)
         settings.WOOVI_BASE_URL = "https://woovi.invalid"
+        # Nenhum teste posta no Discord de verdade, mesmo com webhook no .env.
+        settings.ALERTAS_DISCORD_WEBHOOK_URL = ""
         settings.WOOVI_APP_ID = "app-id-somente-para-testes"
         self._bloqueio_woovi = mock.patch("integracoes.woovi.client.requests", _RequestsSemRede())
         self._bloqueio_woovi.start()

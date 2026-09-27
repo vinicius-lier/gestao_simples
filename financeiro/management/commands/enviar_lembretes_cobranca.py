@@ -21,3 +21,10 @@ class Command(BaseCommand):
         Mensalidade.objects.marcar_vencidas()
         enviados = enviar_lembretes()
         self.stdout.write(self.style.SUCCESS(f"{len(enviados)} lembrete(s) enviado(s)."))
+
+        # Assinatura do sistema: fatura do mês de cada academia e aviso das
+        # vencidas para a plataforma (Discord).
+        from assinaturas.services import avisar_faturas_vencidas, gerar_faturas
+
+        self.stdout.write(f"{gerar_faturas()} fatura(s) da assinatura do sistema gerada(s).")
+        avisar_faturas_vencidas()

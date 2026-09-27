@@ -28,7 +28,7 @@
 <summary class="side-link side-group-toggle {% if '/configuracoes/' in request.path %}is-current-group{% endif %}"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2" fill="white"/><circle cx="15" cy="17" r="2" fill="white"/></svg>Configura&#231;&#245;es<svg class="side-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 5 7 7-7 7"/></svg></summary>
 <div class="side-submenu">
 <a class="side-link {% if '/configuracoes/whatsapp/' in request.path %}is-active{% endif %}" {% if '/configuracoes/whatsapp/' in request.path %}aria-current="page"{% endif %} href="{% url 'portal:whatsapp_config' %}">WhatsApp</a>
-{% if request.administrador_academia %}<a class="side-link {% if '/configuracoes/recebimento/' in request.path %}is-active{% endif %}" {% if '/configuracoes/recebimento/' in request.path %}aria-current="page"{% endif %} href="{% url 'portal:recebimento' %}">Recebimento</a>{% endif %}
+{% if request.administrador_academia %}<a class="side-link {% if '/configuracoes/recebimento/' in request.path %}is-active{% endif %}" {% if '/configuracoes/recebimento/' in request.path %}aria-current="page"{% endif %} href="{% url 'portal:recebimento' %}">Recebimento</a><a class="side-link {% if '/configuracoes/assinatura/' in request.path %}is-active{% endif %}" {% if '/configuracoes/assinatura/' in request.path %}aria-current="page"{% endif %} href="{% url 'portal:minha_assinatura' %}">Minha assinatura</a>{% endif %}
 </div>
 </details>
 </nav>

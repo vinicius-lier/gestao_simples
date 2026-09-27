@@ -1,12 +1,10 @@
 """Alertas para quem opera a plataforma (não para a academia).
 
-Hoje o alerta vai para o log, no logger ``gestao.alertas`` com nível ERROR
-(no Coolify, aparece nos logs do contêiner). A situação também fica
+O alerta vai para o logger ``gestao.alertas`` com nível ERROR: aparece nos
+logs do contêiner (Coolify) e, com ALERTAS_DISCORD_WEBHOOK_URL configurado,
+no canal do Discord (ver monitoramento/log.py). A situação também fica
 registrada no banco: repasses em "Requer atenção" aparecem no /admin/ e num
 aviso do portal para superusuários.
-
-Ponto de integração: para Zabbix, Discord, e-mail etc., acrescente o envio
-dentro de ``alertar_plataforma`` — é o único lugar que dispara alertas.
 """
 import logging
 

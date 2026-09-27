@@ -1,0 +1,66 @@
+{% extends 'portal/base.html' %}{% load portal_extras %}{% block title %}Minha assinatura • Configurações{% endblock %}{% block content %}
+<div class="hero-dashboard mt-3">
+  <div>
+    <p class="eyebrow">Configurações</p>
+    <h1>Minha assinatura<span class="title-dot">.</span></h1>
+    <p class="text-secondary mb-0">A mensalidade que a escola paga pelo uso do sistema.</p>
+  </div>
+</div>
+
+{% if not assinatura %}
+<div class="card p-4 mt-3"><p class="mb-0 text-secondary">Ainda não há uma assinatura cadastrada para a escola. Fale com o suporte do sistema.</p></div>
+{% else %}
+<div class="card p-4 mt-3">
+  <p class="mb-1"><strong>Plano:</strong> {{ assinatura.plano }}</p>
+  <p class="mb-1"><strong>Valor:</strong> R$ {{ assinatura.valor_mensal }} por mês, com vencimento todo dia {{ assinatura.dia_vencimento }}</p>
+  <p class="mb-0"><strong>Situação:</strong>
+    {% if a_pagar and a_pagar.vencida and not a_pagar.pagamento_informado_em %}<span class="badge bg-danger">Fatura vencida</span>
+    {% elif a_pagar %}<span class="badge bg-warning text-dark">Fatura em aberto</span>
+    {% else %}<span class="badge bg-success">Em dia</span>{% endif %}
+  </p>
+</div>
+
+{% if a_pagar %}
+<div class="card p-4 mt-3 pix-card">
+  <h2 class="h5">Fatura de {{ a_pagar.competencia|date:"m/Y" }} — R$ {{ a_pagar.valor }}</h2>
+  <p class="text-secondary">Vencimento: {{ a_pagar.vencimento|date:"d/m/Y" }}{% if a_pagar.vencida %} (vencida){% endif %}</p>
+  {% if a_pagar.pagamento_informado_em %}
+  <p class="mb-0">Você informou o pagamento em {{ a_pagar.pagamento_informado_em|date:"d/m/Y H:i" }}. Assim que a equipe do sistema conferir, esta fatura aparece como paga.</p>
+  {% elif br_code %}
+  {% pix_qrcode br_code %}
+  <ol class="small text-secondary mt-2">
+    <li>No aplicativo do banco, escolha <strong>Pix → Pagar com QR Code</strong> e aponte a câmera, ou use <strong>Pix copia e cola</strong> com o código abaixo.</li>
+    <li>Confira o valor (R$ {{ a_pagar.valor }}){% if recebedor %} e o recebedor ({{ recebedor }}){% endif %} e confirme.</li>
+    <li>Depois de pagar, clique em <strong>Já paguei</strong>.</li>
+  </ol>
+  <div class="pix-copia">
+    <label for="pix-assinatura" class="visually-hidden">Pix copia e cola</label>
+    <textarea id="pix-assinatura" class="form-control" readonly rows="3">{{ br_code }}</textarea>
+    <button type="button" class="btn btn-outline-primary" data-copy="{{ br_code }}">Copiar código</button>
+  </div>
+  <form method="post" action="{% url 'portal:assinatura_informar_pagamento' a_pagar.pk %}" class="mt-3">{% csrf_token %}
+    <button class="btn btn-primary">Já paguei</button>
+  </form>
+  {% else %}
+  <p class="mb-0 text-secondary">O pagamento por Pix ainda não está disponível. Fale com o suporte do sistema.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<section class="card directory mt-3">
+  <div class="directory-heading"><h2 class="h6 mb-0">Faturas</h2></div>
+  <div class="table-responsive">
+    <table class="table mb-0">
+      <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Situação</th></tr></thead>
+      <tbody>
+        {% for fatura in faturas %}
+        <tr><td>{{ fatura.competencia|date:"m/Y" }}</td><td>{{ fatura.vencimento|date:"d/m/Y" }}</td><td>R$ {{ fatura.valor }}</td><td>{{ fatura.situacao }}</td></tr>
+        {% empty %}
+        <tr><td colspan="4"><div class="empty-state"><p class="mb-0">A primeira fatura aparece aqui no mês do primeiro vencimento.</p></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

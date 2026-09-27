@@ -71,6 +71,8 @@ INSTALLED_APPS = [
     "modalidades",
     "matriculas",
     "financeiro",
+    "monitoramento",
+    "assinaturas",
 ]
 
 
@@ -117,6 +119,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "portal.context_processors.alertas_plataforma",
+                "portal.context_processors.assinatura_vencida",
             ],
         },
     },
@@ -432,6 +435,52 @@ LEMBRETES_ENVIAM_N8N = os.getenv(
     "LEMBRETES_ENVIAM_N8N",
     "false",
 ).lower() == "true"
+
+
+# =============================================================================
+# MONITORAMENTO
+#
+# Alertas para quem opera a plataforma num canal do Discord: erros 500,
+# alertas da plataforma (financeiro/alertas.py) e RAM/disco da VPS (comando
+# verificar_servidor). Webhook: canal > Integrações > Webhooks. Sem ele, os
+# erros continuam no log do contêiner.
+# =============================================================================
+
+ALERTAS_DISCORD_WEBHOOK_URL = os.getenv("ALERTAS_DISCORD_WEBHOOK_URL", "")
+MONITORAMENTO_LIMITE_RAM = int(os.getenv("MONITORAMENTO_LIMITE_RAM", "90"))
+MONITORAMENTO_LIMITE_DISCO = int(os.getenv("MONITORAMENTO_LIMITE_DISCO", "85"))
+
+# Sem isto, com DEBUG=false o Django não mostra os erros 500 em lugar nenhum
+# (só mandaria por e-mail, que não está configurado).
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "simples": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "simples", "level": "WARNING"},
+        "discord": {"class": "monitoramento.log.AlertaDiscordHandler", "level": "ERROR"},
+    },
+    "loggers": {
+        "django.request": {"handlers": ["console", "discord"], "level": "ERROR", "propagate": False},
+        "gestao.alertas": {"handlers": ["console", "discord"], "level": "ERROR", "propagate": False},
+    },
+}
+
+
+# =============================================================================
+# ASSINATURA DO SISTEMA
+#
+# Chave Pix da plataforma, onde as academias pagam a mensalidade do sistema
+# (Configurações > Minha assinatura). Nome até 25 e cidade até 15 caracteres,
+# sem acento (vão no Pix). Formato da chave: CPF/CNPJ só números, e-mail,
+# celular +55DDDNUMERO ou chave aleatória.
+# =============================================================================
+
+PLATAFORMA_PIX_CHAVE = os.getenv("PLATAFORMA_PIX_CHAVE", "")
+PLATAFORMA_PIX_NOME = os.getenv("PLATAFORMA_PIX_NOME", "")
+PLATAFORMA_PIX_CIDADE = os.getenv("PLATAFORMA_PIX_CIDADE", "")
 
 
 # =============================================================================
