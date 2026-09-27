@@ -238,8 +238,9 @@ tolerar qualquer resposta, mas o custo e o resultado precisam ser conferidos:
 
 ## O que muda em relação ao deploy na EC2
 
-O Coolify substitui o `deploy/deploy.sh`, os serviços systemd
-(`academia-gunicorn`, `academia-lembretes.timer`, `academia-repasses.timer`),
-o Nginx e o workflow `.github/workflows/deploy.yml`. Se a EC2 não for mais
-usada, **desative esse workflow**: senão, todo push na `main` tenta publicar
-por SSH na EC2 também.
+A EC2 não é mais usada. O Coolify publica a branch `main` e substitui o
+`deploy/deploy.sh`, os serviços systemd (`academia-gunicorn`,
+`academia-lembretes.timer`, `academia-repasses.timer`) e o Nginx. O antigo
+workflow `.github/workflows/deploy.yml`, que publicava por SSH na EC2 a cada
+push na `main`, foi removido. Os arquivos de `deploy/` da EC2 ficam só como
+referência.
