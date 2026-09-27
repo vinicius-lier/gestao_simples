@@ -33,10 +33,15 @@ class ResolverCredencialTests(SimpleTestCase):
     def test_credencial_valida(self):
         self.assertEqual(resolver_credencial(_config()), KEY)
 
+    @override_settings(EVOLUTION_API_KEY="")
     @patch.dict("os.environ", {}, clear=True)
     def test_sem_credencial_ref(self):
-        with self.assertRaisesMessage(EvolutionConfigError, "credencial_ref"):
+        with self.assertRaisesMessage(EvolutionConfigError, "EVOLUTION_API_KEY"):
             resolver_credencial(_config(credencial_ref=""))
+
+    @override_settings(EVOLUTION_API_KEY=KEY)
+    def test_sem_credencial_ref_usa_a_chave_da_plataforma(self):
+        self.assertEqual(resolver_credencial(_config(credencial_ref="")), KEY)
 
     @patch.dict("os.environ", {}, clear=True)
     def test_variavel_de_ambiente_inexistente(self):
@@ -159,6 +164,7 @@ class EvolutionClientRequestTests(SimpleTestCase):
             self.client.logout()
         self.assertIn("HTTP 500", str(ctx.exception))
         self.assertNotIn(KEY, str(ctx.exception))
+        self.assertEqual(ctx.exception.status_code, 500)
 
     def test_sanitizar_remove_apikey_e_base_url(self):
         sujo = f"boom em {BASE}/instance/connect/keiko com {KEY}"
@@ -185,3 +191,8 @@ class ClientParaConfigTests(SimpleTestCase):
         self.assertIsInstance(client, EvolutionClient)
         self.assertEqual(client.instance_name, "keiko")
         self.assertEqual(client._api_key, KEY)
+
+    @override_settings(EVOLUTION_BASE_URL=BASE, EVOLUTION_API_KEY=KEY)
+    def test_sem_url_nem_credencial_usa_o_servidor_da_plataforma(self):
+        client = client_para_config(_config(evolution_base_url="", credencial_ref="", evolution_instance_name="academia-1"))
+        self.assertEqual((client.base_url, client._api_key, client.instance_name), (BASE, KEY, "academia-1"))

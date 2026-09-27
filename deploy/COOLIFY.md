@@ -87,9 +87,10 @@ DB_CONN_MAX_AGE=60
 WOOVI_BASE_URL=https://api.woovi-sandbox.com
 WOOVI_APP_ID=
 
-# WhatsApp via Evolution (passo 6). O nome da variável é o que você
-# cadastrar em Configurações > WhatsApp > "Variável de ambiente da API key".
-EVOLUTION_API_KEY_KEIKO=
+# WhatsApp via Evolution (passo 6): URL do serviço Evolution e a
+# AUTHENTICATION_API_KEY dele. A academia só informa o número e lê o QR Code.
+EVOLUTION_BASE_URL=
+EVOLUTION_API_KEY=
 EVOLUTION_TIMEOUT=15
 # Opcional: webhook de status da conexão (/webhooks/evolution/<instancia>/).
 EVOLUTION_WEBHOOK_TOKEN=
@@ -182,18 +183,15 @@ Aplicação → **Scheduled Tasks → + Add**, duas tarefas:
    DATABASE_SAVE_DATA_HISTORIC=false
    ```
 
-3. Copie o valor de `AUTHENTICATION_API_KEY` do serviço para a variável
-   `EVOLUTION_API_KEY_KEIKO` da **aplicação** e faça Redeploy da aplicação.
-4. No sistema: **Configurações → WhatsApp**:
-   - Provedor: **Evolution API**;
-   - Evolution — URL base: o domínio HTTPS do serviço (`https://evo.seudominio.com.br`);
-   - Nome da instância: `keiko` (sem espaços);
-   - Variável de ambiente da API key: `EVOLUTION_API_KEY_KEIKO`;
-   - **Salvar configuração**.
-
-   Depois: **Criar conexão → Gerar QR Code** → no celular do número:
-   WhatsApp → Aparelhos conectados → Conectar → ler o QR. Por fim,
-   **Verificar status** deve mostrar *conectado*.
+3. Nas variáveis da **aplicação**: `EVOLUTION_BASE_URL` = o domínio HTTPS do
+   serviço (`https://evo.seudominio.com.br`) e `EVOLUTION_API_KEY` = o valor
+   de `AUTHENTICATION_API_KEY` do serviço. Redeploy da aplicação. É uma vez só,
+   para todas as academias.
+4. No sistema, cada academia: **Configurações → WhatsApp** → número com DDD →
+   **Gerar QR Code** (na primeira vez a conexão é criada sozinha) → no celular
+   do número: WhatsApp → Aparelhos conectados → Conectar um aparelho → ler o
+   QR → **Já li o QR Code**: a situação vai para *Conectado*. No mesmo lugar,
+   cadastre o **WhatsApp para avisos da escola** (aviso de matrícula nova).
 5. Teste com o seu próprio número antes de ligar a rotina para todos (roteiro
    em `deploy/EVOLUTION.md`, seção 5, rodando o `shell` pelo Terminal do Coolify).
 

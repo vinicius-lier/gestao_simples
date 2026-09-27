@@ -30,73 +30,52 @@ def _exige_admin(request):
         )
 
 
+def _tela(request, config, **extra):
+    return render(request, "portal/whatsapp_config.html", {"config": config, **extra})
+
+
 @academia_required
 @require_http_methods(["GET", "POST"])
 def whatsapp_config(request):
+    """A academia só vê o número, a conexão e o WhatsApp de avisos. URL,
+    chave e instância da Evolution são da plataforma (settings/admin) — o
+    POST daqui não os altera."""
     config = _config_da_academia(request.academia)
 
     if request.method == "POST":
         _exige_admin(request)
-        provider = request.POST.get("provider", config.provider)
-        if provider in dict(IntegracaoWhatsApp.PROVIDERS):
-            config.provider = provider
-        config.evolution_base_url = request.POST.get("evolution_base_url", "").strip()
-        config.evolution_instance_name = request.POST.get(
-            "evolution_instance_name", ""
-        ).strip()
-        config.credencial_ref = request.POST.get("credencial_ref", "").strip()
-        config.n8n_webhook_url = request.POST.get("n8n_webhook_url", "").strip()
         numero_avisos = "".join(c for c in request.POST.get("numero_avisos", "") if c.isdigit())
         if numero_avisos and not 10 <= len(numero_avisos) <= 13:
             messages.error(request, "Informe o WhatsApp para avisos com DDD.")
             return redirect("portal:whatsapp_config")
         config.numero_avisos = numero_avisos
-        config.save()
-        messages.success(request, "Configuração de WhatsApp salva.")
+        config.save(update_fields=["numero_avisos", "atualizado_em"])
+        messages.success(request, "WhatsApp para avisos salvo.")
         return redirect("portal:whatsapp_config")
 
-    return render(
-        request,
-        "portal/whatsapp_config.html",
-        {"config": config, "providers": IntegracaoWhatsApp.PROVIDERS},
-    )
-
-
-@academia_required
-@require_http_methods(["POST"])
-def whatsapp_criar(request):
-    _exige_admin(request)
-    try:
-        evolution.criar_instancia(request.academia)
-    except _ERROS_EVOLUTION as exc:
-        messages.error(request, f"Não foi possível criar a conexão: {exc}")
-    else:
-        messages.success(
-            request, "Conexão criada. Gere o QR Code para parear o número."
-        )
-    return redirect("portal:whatsapp_config")
+    return _tela(request, config)
 
 
 @academia_required
 @require_http_methods(["POST"])
 def whatsapp_qrcode(request):
+    """Número → QR Code: cria a conexão na primeira vez, troca o número se
+    ele mudou e devolve o QR para ler com o celular."""
     _exige_admin(request)
-    qrcode = None
+    config = _config_da_academia(request.academia)
+    numero = request.POST.get("numero", "") or config.numero_whatsapp
     try:
-        qrcode = evolution.gerar_qrcode(request.academia)
+        resultado = evolution.conectar(request.academia, numero)
     except _ERROS_EVOLUTION as exc:
         messages.error(request, f"Não foi possível gerar o QR Code: {exc}")
+        return redirect("portal:whatsapp_config")
 
-    config = _config_da_academia(request.academia)
-    return render(
-        request,
-        "portal/whatsapp_config.html",
-        {
-            "config": config,
-            "providers": IntegracaoWhatsApp.PROVIDERS,
-            "qrcode": qrcode,  # só nesta resposta — nunca gravado no banco
-        },
-    )
+    if resultado.get("conectado"):
+        messages.success(request, "Este WhatsApp já está conectado.")
+        return redirect("portal:whatsapp_config")
+    config.refresh_from_db()
+    # O QR vai só nesta resposta — nunca é gravado no banco.
+    return _tela(request, config, qrcode=resultado)
 
 
 @academia_required
@@ -106,12 +85,16 @@ def whatsapp_status(request):
     try:
         resultado = evolution.consultar_status(request.academia)
     except _ERROS_EVOLUTION as exc:
-        messages.error(request, f"Não foi possível verificar o status: {exc}")
+        messages.error(request, f"Não foi possível verificar a conexão: {exc}")
     else:
-        messages.info(
-            request,
-            f"Status da conexão: {resultado['status'].replace('_', ' ')}.",
-        )
+        if resultado["status"] == IntegracaoWhatsApp.STATUS_CONECTADO:
+            messages.success(request, "WhatsApp conectado. Os lembretes já saem por este número.")
+        else:
+            situacao = dict(IntegracaoWhatsApp.STATUS_CONEXAO)[resultado["status"]].lower()
+            messages.info(
+                request,
+                f"O WhatsApp ainda não está conectado ({situacao}). Gere o QR Code e leia com o celular.",
+            )
     return redirect("portal:whatsapp_config")
 
 
@@ -125,21 +108,4 @@ def whatsapp_desconectar(request):
         messages.error(request, f"Não foi possível desconectar: {exc}")
     else:
         messages.success(request, "Conexão encerrada.")
-    return redirect("portal:whatsapp_config")
-
-
-@academia_required
-@require_http_methods(["POST"])
-def whatsapp_numero(request):
-    _exige_admin(request)
-    novo_numero = request.POST.get("numero_whatsapp", "")
-    try:
-        evolution.trocar_numero(request.academia, novo_numero)
-    except _ERROS_EVOLUTION as exc:
-        messages.error(request, f"Não foi possível trocar o número: {exc}")
-    else:
-        messages.success(
-            request,
-            "Número atualizado. Gere um novo QR Code para parear este número.",
-        )
     return redirect("portal:whatsapp_config")

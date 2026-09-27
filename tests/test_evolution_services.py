@@ -200,3 +200,72 @@ class ConfigGuardTests(_Base):
         self.config.save(update_fields=["provider"])
         with self.assertRaises(EvolutionConfigError):
             evo.consultar_status(self.academia)
+
+
+@patch("integracoes.evolution.services.client_para_config")
+class ConectarTests(TestCase):
+    """Número -> QR Code: o único passo da tela de WhatsApp da academia."""
+
+    def setUp(self):
+        self.academia = Academia.objects.create(nome="Nova", cnpj="EVS9")
+
+    def cliente(self, estado=None, **retornos):
+        cliente = Mock()
+        if estado == 404:
+            cliente.buscar_estado_conexao.side_effect = EvolutionAPIError("HTTP 404", 404)
+        else:
+            cliente.buscar_estado_conexao.return_value = {"instance": {"state": estado or "close"}}
+        for metodo, valor in retornos.items():
+            getattr(cliente, metodo).return_value = valor
+        return cliente
+
+    def test_primeira_vez_cria_a_instancia_e_devolve_o_qr(self, factory):
+        factory.return_value = cliente = self.cliente(404, criar_instancia={"qrcode": {"base64": "QQ"}})
+
+        qr = evo.conectar(self.academia, "(21) 99999-8888")
+
+        cliente.criar_instancia.assert_called_once_with(numero="5521999998888")
+        self.assertEqual(qr["base64"], "data:image/png;base64,QQ")
+        config = IntegracaoWhatsApp.objects.get(academia=self.academia)
+        self.assertEqual(config.provider, IntegracaoWhatsApp.PROVIDER_EVOLUTION)
+        self.assertEqual(config.evolution_instance_name, f"academia-{self.academia.pk}")
+        self.assertEqual(config.numero_whatsapp, "5521999998888")
+        self.assertEqual(config.status_conexao, IntegracaoWhatsApp.STATUS_AGUARDANDO_QRCODE)
+
+    def test_instancia_existente_desconectada_gera_qr(self, factory):
+        factory.return_value = cliente = self.cliente("close", obter_qrcode={"base64": "ZZ"})
+        qr = evo.conectar(self.academia, "21999998888")
+        cliente.criar_instancia.assert_not_called()
+        self.assertEqual(qr["base64"], "data:image/png;base64,ZZ")
+
+    def test_ja_conectado_com_o_mesmo_numero_nao_gera_qr(self, factory):
+        IntegracaoWhatsApp.objects.create(academia=self.academia, numero_whatsapp="5521999998888")
+        factory.return_value = cliente = self.cliente("open")
+        self.assertTrue(evo.conectar(self.academia, "21999998888")["conectado"])
+        cliente.obter_qrcode.assert_not_called()
+        cliente.logout.assert_not_called()
+
+    def test_numero_novo_derruba_a_sessao_antiga(self, factory):
+        IntegracaoWhatsApp.objects.create(
+            academia=self.academia, numero_whatsapp="5521911112222", evolution_instance_name="keiko",
+        )
+        factory.return_value = cliente = self.cliente("open", obter_qrcode={"base64": "NN"})
+        evo.conectar(self.academia, "21999998888")
+        cliente.logout.assert_called_once()
+        config = IntegracaoWhatsApp.objects.get(academia=self.academia)
+        # Instância já existente é mantida; só o número muda.
+        self.assertEqual((config.evolution_instance_name, config.numero_whatsapp), ("keiko", "5521999998888"))
+
+    def test_numero_sem_ddd_e_recusado(self, factory):
+        with self.assertRaisesMessage(EvolutionConfigError, "com DDD"):
+            evo.conectar(self.academia, "99998888")
+        factory.assert_not_called()
+
+    def test_falha_da_evolution_marca_erro(self, factory):
+        cliente = self.cliente()
+        cliente.buscar_estado_conexao.side_effect = EvolutionAPIError("HTTP 500", 500)
+        factory.return_value = cliente
+        with self.assertRaises(EvolutionAPIError):
+            evo.conectar(self.academia, "21999998888")
+        config = IntegracaoWhatsApp.objects.get(academia=self.academia)
+        self.assertEqual(config.status_conexao, IntegracaoWhatsApp.STATUS_ERRO)

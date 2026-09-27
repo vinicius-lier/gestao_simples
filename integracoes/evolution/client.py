@@ -1,10 +1,11 @@
 """Camada HTTP da Evolution API.
 
 Toda chamada à Evolution passa por aqui — as views/serviços nunca falam
-`requests` diretamente. A API key:
-  * é resolvida a partir de ``IntegracaoWhatsApp.credencial_ref`` (nome de uma
-    variável de ambiente), nunca lida do banco;
-  * nunca aparece em log, exceção ou valor de retorno (ver ``_sanitizar``).
+`requests` diretamente. URL e API key vêm do servidor Evolution da plataforma
+(``EVOLUTION_BASE_URL`` / ``EVOLUTION_API_KEY``); uma academia pode usar
+outros pelo admin (``evolution_base_url`` / ``credencial_ref``, o *nome* de
+uma variável de ambiente). A API key nunca é lida do banco nem aparece em
+log, exceção ou valor de retorno (ver ``_sanitizar``).
 """
 import os
 
@@ -13,7 +14,12 @@ from django.conf import settings
 
 
 class EvolutionAPIError(RuntimeError):
-    """Falha previsível e sanitizada ao comunicar com a Evolution API."""
+    """Falha previsível e sanitizada ao comunicar com a Evolution API.
+    ``status_code`` vem preenchido quando a Evolution respondeu com erro HTTP."""
+
+    def __init__(self, mensagem, status_code=None):
+        super().__init__(mensagem)
+        self.status_code = status_code
 
 
 class EvolutionConfigError(RuntimeError):
@@ -23,15 +29,20 @@ class EvolutionConfigError(RuntimeError):
 def resolver_credencial(config):
     """Devolve a API key da Evolution para esta academia.
 
-    ``config.credencial_ref`` guarda o *nome* de uma variável de ambiente
-    (ex.: ``EVOLUTION_API_KEY_KEIKO``); o valor vem de ``os.getenv`` e nunca
-    é persistido. Erros são de configuração, previsíveis."""
+    Padrão: a chave do servidor Evolution da plataforma (``EVOLUTION_API_KEY``).
+    Se ``config.credencial_ref`` estiver preenchido (admin), ele guarda o
+    *nome* de outra variável de ambiente (ex.: ``EVOLUTION_API_KEY_KEIKO``);
+    o valor vem de ``os.getenv`` e nunca é persistido. Erros são de
+    configuração, previsíveis."""
     ref = (getattr(config, "credencial_ref", "") or "").strip()
     if not ref:
-        raise EvolutionConfigError(
-            "Defina 'credencial_ref' na integração de WhatsApp da academia "
-            "(nome da variável de ambiente que guarda a API key da Evolution)."
-        )
+        valor = getattr(settings, "EVOLUTION_API_KEY", "")
+        if not valor:
+            raise EvolutionConfigError(
+                "WhatsApp indisponível: defina EVOLUTION_API_KEY no servidor "
+                "(ou 'credencial_ref' na integração de WhatsApp da academia)."
+            )
+        return valor
     valor = os.getenv(ref)
     if not valor:
         raise EvolutionConfigError(
@@ -79,7 +90,8 @@ class EvolutionClient:
 
         if resposta.status_code >= 400:
             raise EvolutionAPIError(
-                f"A Evolution API retornou o status HTTP {resposta.status_code}."
+                f"A Evolution API retornou o status HTTP {resposta.status_code}.",
+                resposta.status_code,
             )
 
         try:
@@ -140,7 +152,7 @@ def client_para_config(config, timeout=None):
         )
     api_key = resolver_credencial(config)
     return EvolutionClient(
-        base_url=config.evolution_base_url,
+        base_url=config.evolution_base_url or getattr(settings, "EVOLUTION_BASE_URL", ""),
         instance_name=config.evolution_instance_name,
         api_key=api_key,
         timeout=timeout,

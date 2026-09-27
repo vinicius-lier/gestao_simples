@@ -105,6 +105,10 @@ Cliente da API oficial da Meta. Usado para enviar automaticamente o acesso ao po
 
 No painel financeiro, o botão único **"Enviar cobrança"** substitui o antigo par "Cobrar" (wa.me manual) + "Enviar cobrança": ele tenta mandar pela API automaticamente e só cai para o link manual se o WhatsApp não estiver configurado ou a chamada falhar.
 
+### WhatsApp pela Evolution API (Configurações → WhatsApp)
+
+A academia só informa o **número** e clica **Gerar QR Code**: na primeira vez a conexão é criada sozinha (instância `academia-<id>` no servidor Evolution da plataforma), e a leitura do QR no celular conecta o número (como o WhatsApp Web). Trocar o número é digitar o novo e gerar outro QR. URL e chave do servidor vêm de `EVOLUTION_BASE_URL` e `EVOLUTION_API_KEY`; a tela da academia não os altera. O superusuário pode apontar uma academia para outro servidor/chave pelo admin (`evolution_base_url`, `credencial_ref`).
+
 ### Lembretes automáticos de cobrança (`financeiro/lembretes.py`)
 
 Comando `enviar_lembretes_cobranca` — a rotina diária de cobrança (na EC2 roda pelo timer `deploy/academia-lembretes.timer`; no Windows, agende pelo Agendador de Tarefas). Primeiro gera as mensalidades pendentes de criação (ver "Financeiro e limites"), depois avisa o responsável pelo WhatsApp em 4 estágios, cada um disparado **no máximo uma vez por mensalidade**:
@@ -145,4 +149,4 @@ A **modalidade** guarda só o nome e a descrição — nada de valores ou horár
 
 Superusuários ou usuários com a opção “administrador da academia” no acesso podem gerenciar esses cadastros. Um administrador pode abrir o detalhe do aluno e criar outra matrícula; transferir uma matrícula de polo também exige administrador. Os filtros de acesso atuais continuam sendo por Academia; permissões de visualização individuais por polo ainda não estão implementadas.
 
-No cadastro do aluno, marque “O próprio aluno é o responsável financeiro” e informe CPF e WhatsApp. O sistema cria/reutiliza um Responsavel com esses dados, usados também como cliente do Pix. Não dispara cobranças ao cadastrar.
+No cadastro do aluno há o campo **Telefone / WhatsApp**. Marque “O próprio aluno é o responsável financeiro” e informe CPF e esse telefone (obrigatórios nesse caso): o sistema cria/reutiliza um Responsavel com esses dados — o telefone do aluno passa a ser o WhatsApp que recebe as cobranças e o cliente do Pix. Com outro responsável, o telefone do aluno é só contato e as cobranças vão para o responsável. Não dispara cobranças ao cadastrar.

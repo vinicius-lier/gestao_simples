@@ -41,11 +41,9 @@ urlpatterns = [
     path('configuracoes/recebimento/', views_recebimento.recebimento, name='recebimento'),
     # Configurações → WhatsApp (Evolution API). Tenant = request.academia.
     path('configuracoes/whatsapp/', views_whatsapp.whatsapp_config, name='whatsapp_config'),
-    path('configuracoes/whatsapp/criar/', views_whatsapp.whatsapp_criar, name='whatsapp_criar'),
     path('configuracoes/whatsapp/qrcode/', views_whatsapp.whatsapp_qrcode, name='whatsapp_qrcode'),
     path('configuracoes/whatsapp/status/', views_whatsapp.whatsapp_status, name='whatsapp_status'),
     path('configuracoes/whatsapp/desconectar/', views_whatsapp.whatsapp_desconectar, name='whatsapp_desconectar'),
-    path('configuracoes/whatsapp/numero/', views_whatsapp.whatsapp_numero, name='whatsapp_numero'),
     # Portal do responsável — área pública, sem o login de staff.
     path('responsavel/entrar/<str:token>/', views_responsavel.responsavel_entrar, name='responsavel_entrar'),
     path('responsavel/link-expirado/', views_responsavel.responsavel_link_expirado, name='responsavel_link_expirado'),

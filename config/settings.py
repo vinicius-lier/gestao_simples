@@ -386,11 +386,15 @@ N8N_TIMEOUT = int(os.getenv("N8N_TIMEOUT", "10"))
 # =============================================================================
 # EVOLUTION API
 #
-# A API key de cada academia NÃO fica aqui nem no banco: fica numa variável
-# de ambiente cujo NOME é guardado em IntegracaoWhatsApp.credencial_ref
-# (ex.: EVOLUTION_API_KEY_KEIKO). Não crie uma EVOLUTION_API_KEY global.
+# Servidor Evolution da plataforma (serviço no Coolify). A academia só informa
+# o número e lê o QR Code em Configurações > WhatsApp; a URL e a chave vêm
+# daqui. EVOLUTION_API_KEY é a AUTHENTICATION_API_KEY do servidor Evolution.
+# Uma academia pode usar outro servidor/chave pelo admin (evolution_base_url
+# e credencial_ref, o NOME de uma variável de ambiente — nunca o valor).
 # =============================================================================
 
+EVOLUTION_BASE_URL = os.getenv("EVOLUTION_BASE_URL", "").rstrip("/")
+EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY", "")
 EVOLUTION_TIMEOUT = int(os.getenv("EVOLUTION_TIMEOUT", "15"))
 
 # Botão "Pagar mensalidade"/"Abrir portal" nas mensagens. DESLIGADO por

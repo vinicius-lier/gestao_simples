@@ -157,6 +157,12 @@ def gerar_qrcode(academia):
         persistir_status(config, IntegracaoWhatsApp.STATUS_ERRO, bruto=str(exc))
         raise
 
+    return _registrar_qrcode(config, resp)
+
+
+def _registrar_qrcode(config, resp):
+    """Reflete a resposta do /instance/connect no status e devolve o QR.
+    O QR code NÃO é persistido — vive só nesta resposta."""
     estado = extrair_estado(resp)
     if estado and mapear_status(estado) == IntegracaoWhatsApp.STATUS_CONECTADO:
         persistir_status(
@@ -169,9 +175,61 @@ def gerar_qrcode(academia):
         persistir_status(
             config, IntegracaoWhatsApp.STATUS_AGUARDANDO_QRCODE, bruto="qrcode gerado"
         )
-
-    # O QR code NÃO é persistido — vive só nesta resposta.
     return normalizar_qrcode(resp)
+
+
+def nome_da_instancia(academia):
+    """Nome da instância na Evolution da plataforma: único por academia."""
+    return f"academia-{academia.pk}"
+
+
+def conectar(academia, numero):
+    """O fluxo da tela Configurações → WhatsApp: a academia informa o número
+    e recebe o QR Code para ler com o celular. Liga a Evolution para a
+    academia, cria a instância na primeira vez e, se o número mudou, derruba
+    a sessão do número antigo. Já conectado com o mesmo número: devolve
+    ``{"conectado": True}`` sem QR."""
+    from integracoes.whatsapp import normalizar_telefone
+
+    numero = normalizar_telefone(numero)
+    if not 12 <= len(numero) <= 13:
+        raise EvolutionConfigError("Informe o número do WhatsApp com DDD.")
+
+    config, _ = IntegracaoWhatsApp.objects.get_or_create(academia=academia)
+    trocou = bool(config.numero_whatsapp) and config.numero_whatsapp != numero
+    config.provider = IntegracaoWhatsApp.PROVIDER_EVOLUTION
+    config.evolution_instance_name = config.evolution_instance_name or nome_da_instancia(academia)
+    config.numero_whatsapp = numero
+    config.save(update_fields=["provider", "evolution_instance_name", "numero_whatsapp", "atualizado_em"])
+
+    client = client_para_config(config)
+    try:
+        if trocou:
+            try:
+                client.logout()
+            except EvolutionAPIError:
+                pass  # a sessão antiga pode já estar desconectada
+        try:
+            estado = extrair_estado(client.buscar_estado_conexao())
+        except EvolutionAPIError as exc:
+            if exc.status_code != 404:
+                raise
+            # Primeira vez: a instância ainda não existe na Evolution.
+            criada = normalizar_qrcode(client.criar_instancia(numero=numero))
+            if criada["base64"] or criada["code"]:
+                persistir_status(
+                    config, IntegracaoWhatsApp.STATUS_AGUARDANDO_QRCODE, bruto="instância criada"
+                )
+                return criada
+        else:
+            if not trocou and mapear_status(estado) == IntegracaoWhatsApp.STATUS_CONECTADO:
+                persistir_status(config, IntegracaoWhatsApp.STATUS_CONECTADO, bruto=estado)
+                return {"base64": None, "code": None, "conectado": True}
+        resp = client.obter_qrcode()
+    except EvolutionAPIError as exc:
+        persistir_status(config, IntegracaoWhatsApp.STATUS_ERRO, bruto=str(exc))
+        raise
+    return _registrar_qrcode(config, resp)
 
 
 def desconectar(academia):

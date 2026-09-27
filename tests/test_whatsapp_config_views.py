@@ -2,17 +2,16 @@
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from academias.models import Academia, IntegracaoWhatsApp
+from integracoes.evolution.client import EvolutionAPIError
 from portal.models import AcessoAcademia
 
 ACOES = [
-    "/configuracoes/whatsapp/criar/",
     "/configuracoes/whatsapp/qrcode/",
     "/configuracoes/whatsapp/status/",
     "/configuracoes/whatsapp/desconectar/",
-    "/configuracoes/whatsapp/numero/",
 ]
 
 
@@ -68,23 +67,32 @@ class WhatsAppConfigViewsTests(TestCase):
         self.client.post("/configuracoes/whatsapp/", {"provider": "evolution", "numero_avisos": "97777"})
         self.assertEqual(IntegracaoWhatsApp.objects.get(academia=self.a).numero_avisos, "")
 
-    def test_admin_salva_config(self):
+    def test_academia_nao_altera_a_configuracao_tecnica(self):
+        # URL, chave e instância da Evolution são da plataforma (settings/admin):
+        # o formulário da academia não pode apontá-los para outro lugar.
         self.client.force_login(self.admin_a)
         resp = self.client.post(
             "/configuracoes/whatsapp/",
             {
-                "provider": "evolution",
-                "evolution_base_url": "https://evo.example.com",
-                "evolution_instance_name": "academia-a",
-                "credencial_ref": "EVOLUTION_API_KEY_A",
-                "n8n_webhook_url": "",
+                "provider": "meta",
+                "evolution_base_url": "https://evo.malicioso.example.com",
+                "evolution_instance_name": "outra",
+                "credencial_ref": "DJANGO_SECRET_KEY",
             },
         )
         self.assertEqual(resp.status_code, 302)
         cfg = IntegracaoWhatsApp.objects.get(academia=self.a)
-        self.assertEqual(cfg.provider, "evolution")
-        self.assertEqual(cfg.evolution_instance_name, "academia-a")
-        self.assertEqual(cfg.credencial_ref, "EVOLUTION_API_KEY_A")
+        self.assertEqual(
+            (cfg.evolution_base_url, cfg.evolution_instance_name, cfg.credencial_ref), ("", "", ""),
+        )
+
+    def test_tela_mostra_so_numero_e_qr_code(self):
+        self.client.force_login(self.admin_a)
+        resp = self.client.get("/configuracoes/whatsapp/")
+        self.assertContains(resp, 'name="numero"')
+        self.assertContains(resp, "Gerar QR Code")
+        for tecnico in ('name="provider"', 'name="evolution_base_url"', 'name="credencial_ref"', "Instância"):
+            self.assertNotContains(resp, tecnico)
 
     def test_acoes_exigem_post(self):
         self.client.force_login(self.admin_a)
@@ -133,9 +141,10 @@ class WhatsAppConfigViewsTests(TestCase):
         self.client.force_login(self.admin_a)
         with patch("integracoes.evolution.services.client_para_config") as factory:
             factory.return_value = Mock(**{
-                "obter_qrcode.return_value": {"base64": "ZM9v", "code": "1@pair"}
+                "buscar_estado_conexao.return_value": {"instance": {"state": "close"}},
+                "obter_qrcode.return_value": {"base64": "ZM9v", "code": "1@pair"},
             })
-            resp = self.client.post("/configuracoes/whatsapp/qrcode/")
+            resp = self.client.post("/configuracoes/whatsapp/qrcode/", {"numero": "21999998888"})
 
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, "data:image/png;base64,ZM9v")
@@ -181,20 +190,32 @@ class WhatsAppConfigViewsTests(TestCase):
         cfg = IntegracaoWhatsApp.objects.get(academia=self.a)
         self.assertEqual(cfg.status_conexao, IntegracaoWhatsApp.STATUS_DESCONECTADO)
 
-    def test_trocar_numero(self):
-        IntegracaoWhatsApp.objects.create(
-            academia=self.a,
-            provider=IntegracaoWhatsApp.PROVIDER_EVOLUTION,
-            evolution_instance_name="academia-a",
-            credencial_ref="EVOLUTION_API_KEY_A",
-        )
+    def test_primeira_conexao_so_com_o_numero(self):
         self.client.force_login(self.admin_a)
         with patch("integracoes.evolution.services.client_para_config") as factory:
-            factory.return_value = Mock(**{"logout.return_value": {}})
-            self.client.post(
-                "/configuracoes/whatsapp/numero/", {"numero_whatsapp": "21 98888-7777"}
-            )
+            cliente = Mock()
+            cliente.buscar_estado_conexao.side_effect = EvolutionAPIError("HTTP 404", 404)
+            cliente.criar_instancia.return_value = {"qrcode": {"base64": "QRNOVO"}}
+            factory.return_value = cliente
+            resp = self.client.post("/configuracoes/whatsapp/qrcode/", {"numero": "(21) 97777-6666"})
 
+        self.assertContains(resp, "data:image/png;base64,QRNOVO")
+        self.assertContains(resp, "Aparelhos conectados")
         cfg = IntegracaoWhatsApp.objects.get(academia=self.a)
-        self.assertEqual(cfg.numero_whatsapp, "5521988887777")
-        self.assertEqual(cfg.status_conexao, IntegracaoWhatsApp.STATUS_DESCONECTADO)
+        self.assertEqual(cfg.provider, IntegracaoWhatsApp.PROVIDER_EVOLUTION)
+        self.assertEqual(cfg.numero_whatsapp, "5521977776666")
+        self.assertEqual(cfg.evolution_instance_name, f"academia-{self.a.pk}")
+
+    def test_ja_conectado_avisa_sem_qr(self):
+        IntegracaoWhatsApp.objects.create(academia=self.a, numero_whatsapp="5521977776666")
+        self.client.force_login(self.admin_a)
+        with patch("integracoes.evolution.services.client_para_config") as factory:
+            factory.return_value = Mock(**{"buscar_estado_conexao.return_value": {"instance": {"state": "open"}}})
+            resp = self.client.post("/configuracoes/whatsapp/qrcode/", {"numero": "21977776666"}, follow=True)
+        self.assertContains(resp, "já está conectado")
+
+    @override_settings(EVOLUTION_BASE_URL="", EVOLUTION_API_KEY="")
+    def test_servidor_sem_evolution_configurada_mostra_o_motivo(self):
+        self.client.force_login(self.admin_a)
+        resp = self.client.post("/configuracoes/whatsapp/qrcode/", {"numero": "21977776666"}, follow=True)
+        self.assertContains(resp, "EVOLUTION_API_KEY")

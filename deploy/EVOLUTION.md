@@ -41,6 +41,11 @@ curl -s http://127.0.0.1:8080 | head -c 200      # responde JSON de boas-vindas
 A porta e publicada so em `127.0.0.1` — nao exponha 8080 na internet. Nginx
 nao precisa de location para a Evolution: o Django fala com ela pelo loopback.
 
+> **Coolify:** este roteiro é da EC2 (legado). No Coolify, a aplicação usa
+> `EVOLUTION_BASE_URL` e `EVOLUTION_API_KEY` (uma vez, para todas as
+> academias) e a academia só informa o número e lê o QR Code — ver
+> `deploy/COOLIFY.md`, seção 6.
+
 ## 2. Env vars da aplicacao
 
 Uma variavel por academia. O **nome** dela vai no banco (`credencial_ref`); o
