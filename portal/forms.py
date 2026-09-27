@@ -25,7 +25,6 @@ def cpf_valido(valor):
 
 class AlunoForm(forms.ModelForm):
     proprio_responsavel = forms.BooleanField(required=False, label='O próprio aluno é o responsável financeiro')
-    aluno_whatsapp = forms.CharField(max_length=20, required=False, label='WhatsApp do aluno')
     aluno_email = forms.EmailField(required=False, label='E-mail do aluno')
     responsavel = forms.ModelChoiceField(queryset=Responsavel.objects.none(), required=False, label='Responsável existente')
     responsavel_nome = forms.CharField(max_length=150, required=False, label='Nome do novo responsável')
@@ -35,7 +34,8 @@ class AlunoForm(forms.ModelForm):
 
     class Meta:
         model = Atleta
-        fields = ('nome', 'data_nascimento', 'cpf', 'faixa', 'status', 'observacoes', 'proprio_responsavel')
+        fields = ('nome', 'data_nascimento', 'cpf', 'telefone', 'faixa', 'status', 'observacoes', 'proprio_responsavel')
+        help_texts = {'telefone': 'Com DDD. Se o aluno for o próprio responsável financeiro, as cobranças vão para este WhatsApp.'}
         widgets = {'data_nascimento': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'})}
 
     def __init__(self, *args, academia, **kwargs):
@@ -48,7 +48,9 @@ class AlunoForm(forms.ModelForm):
                 self.initial['proprio_responsavel'] = True
                 r = self.instance.responsavel_financeiro
                 if r and r.academia_id == academia.pk:
-                    self.initial['aluno_whatsapp'] = r.whatsapp
+                    if not self.instance.telefone:
+                        # Cadastro antigo: o WhatsApp estava só no responsável.
+                        self.initial['telefone'] = r.whatsapp
                     self.initial['aluno_email'] = r.email
             else:
                 self.initial['responsavel'] = self.instance.responsavel_financeiro_id
@@ -65,6 +67,12 @@ class AlunoForm(forms.ModelForm):
         value = self.cleaned_data.get('cpf', '')
         if value and not cpf_valido(value):
             raise ValidationError('CPF inválido. Confira os números digitados.')
+        return value
+
+    def clean_telefone(self):
+        value = digits(self.cleaned_data.get('telefone', ''))
+        if value and not 10 <= len(value) <= 13:
+            raise ValidationError('Informe um telefone válido com DDD.')
         return value
 
     def clean_responsavel_cpf(self):
@@ -84,8 +92,8 @@ class AlunoForm(forms.ModelForm):
         if data.get('proprio_responsavel'):
             if not self.errors.get('cpf') and not digits(data.get('cpf', '')):
                 self.add_error('cpf', 'Informe o CPF do aluno responsável financeiro.')
-            if not digits(data.get('aluno_whatsapp', '')):
-                self.add_error('aluno_whatsapp', 'Informe o WhatsApp do aluno.')
+            if not self.errors.get('telefone') and not data.get('telefone'):
+                self.add_error('telefone', 'Informe o WhatsApp do aluno: ele recebe as cobranças.')
             return data
         if data.get('responsavel'):
             if any(data.get(k) for k in ('responsavel_nome', 'responsavel_cpf', 'responsavel_whatsapp', 'responsavel_email')):
@@ -106,7 +114,7 @@ class AlunoForm(forms.ModelForm):
                 self.cleaned_data['responsavel'] = None
                 self.cleaned_data['responsavel_nome'] = self.cleaned_data['nome']
                 self.cleaned_data['responsavel_cpf'] = self.cleaned_data['cpf']
-                self.cleaned_data['responsavel_whatsapp'] = self.cleaned_data['aluno_whatsapp']
+                self.cleaned_data['responsavel_whatsapp'] = self.cleaned_data['telefone']
                 self.cleaned_data['responsavel_email'] = self.cleaned_data['aluno_email']
             responsavel = self.cleaned_data.get('responsavel')
             atual = self.instance.responsavel_financeiro if self.instance.pk else None

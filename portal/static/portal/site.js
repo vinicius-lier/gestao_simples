@@ -127,11 +127,12 @@
       selfFields.hidden = !isSelf;
       selfFields.querySelectorAll('input').forEach(input => {
         input.disabled = !isSelf;
-        input.required = isSelf && input.id === 'id_aluno_whatsapp';
       });
     }
     const cpf = document.getElementById('id_cpf');
     if (cpf) cpf.required = isSelf;
+    const telefone = document.getElementById('id_telefone');
+    if (telefone) telefone.required = isSelf;
     fresh.hidden = existing || isSelf;
     fresh.querySelectorAll('input').forEach(input => {
       input.disabled = existing || isSelf;

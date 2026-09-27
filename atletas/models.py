@@ -48,6 +48,9 @@ class Atleta(models.Model):
     nome = models.CharField(max_length=150)
     data_nascimento = models.DateField(null=True,blank=True)
     cpf = models.CharField(max_length=14, blank=True)
+    # Quando o aluno é o próprio responsável financeiro, este é também o
+    # WhatsApp do responsável — o número que recebe as cobranças.
+    telefone = models.CharField('telefone / WhatsApp', max_length=20, blank=True)
     faixa = models.CharField(max_length=50, blank=True)
 
     status = models.CharField(

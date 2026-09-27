@@ -112,6 +112,8 @@ class FormularioPublico(BaseConvite):
         self.assertTrue(atleta.proprio_responsavel)
         self.assertEqual(atleta.responsavel_financeiro.nome, 'Adulto Solo')
         self.assertEqual(atleta.responsavel_financeiro.cpf, '12345678909')
+        # É o próprio responsável: o WhatsApp informado também é o telefone dele.
+        self.assertEqual(atleta.telefone, '21988887777')
 
     def test_menor_sem_responsavel_e_recusado(self):
         c = self.convite()

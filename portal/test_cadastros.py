@@ -88,7 +88,7 @@ class NovosCadastrosTests(TestCase):
         self.assertEqual(self.client.get(f'/professores/{p.pk}/editar/').status_code, 404)
 
     def payload(self):
-        return {'nome':'Aluno adulto','cpf':'12345678900','status':'ativo','proprio_responsavel':'on','aluno_whatsapp':'21999999999','aluno_email':'aluno@example.com','matricula-unidade':self.unit.pk,'matricula-modalidade':self.s.pk,'matricula-valor_mensalidade':'150','matricula-dia_vencimento':'10','matricula-data_inicio':'2026-09-06','matricula-ativo':'on'}
+        return {'nome':'Aluno adulto','cpf':'12345678900','status':'ativo','proprio_responsavel':'on','telefone':'21999999999','aluno_email':'aluno@example.com','matricula-unidade':self.unit.pk,'matricula-modalidade':self.s.pk,'matricula-valor_mensalidade':'150','matricula-dia_vencimento':'10','matricula-data_inicio':'2026-09-06','matricula-ativo':'on'}
 
     def test_aluno_responsavel_financeiro_reutiliza_cadastro(self):
         r = Responsavel.objects.create(academia=self.a,nome='Aluno adulto',cpf='123.456.789-00',whatsapp='21999999999')
@@ -105,7 +105,7 @@ class NovosCadastrosTests(TestCase):
         aluno = Atleta.objects.get()
         responsavel_id = aluno.responsavel_financeiro_id
         dados = {k: v for k, v in self.payload().items() if not k.startswith('matricula-')}
-        dados.update({'aluno_whatsapp': '(24) 98888-7777', 'aluno_email': 'novo@example.com'})
+        dados.update({'telefone': '(24) 98888-7777', 'aluno_email': 'novo@example.com'})
 
         self.assertEqual(self.client.post(f'/alunos/{aluno.pk}/editar/', dados).status_code, 302)
 
@@ -123,10 +123,48 @@ class NovosCadastrosTests(TestCase):
         self.assertEqual(r.whatsapp, '21911112222')
 
     def test_proprio_responsavel_exige_contato_e_cpf(self):
-        data=self.payload();data['cpf']='';data['aluno_whatsapp']=''
+        data=self.payload();data['cpf']='';data['telefone']=''
         self.assertEqual(self.client.post('/alunos/novo/',data).status_code,200)
         self.assertFalse(Atleta.objects.exists())
         self.assertFalse(Responsavel.objects.exists())
+
+    def test_proprio_responsavel_recebe_as_cobrancas_no_telefone_do_aluno(self):
+        from datetime import date, timedelta
+        from unittest.mock import patch
+        from financeiro.lembretes import enviar_lembretes
+        from financeiro.models import Mensalidade
+
+        self.assertEqual(self.client.post('/alunos/novo/', self.payload()).status_code, 302)
+        aluno = Atleta.objects.get()
+        self.assertEqual(aluno.telefone, '21999999999')
+        self.assertEqual(aluno.responsavel_financeiro.whatsapp, '21999999999')
+
+        hoje = date(2026, 10, 5)
+        Mensalidade.objects.filter(matricula__atleta=aluno).update(vencimento=hoje + timedelta(days=5))
+        with patch('financeiro.lembretes._enviar_cobranca_whatsapp', return_value={}) as envio:
+            enviar_lembretes(hoje=hoje)
+        self.assertEqual(envio.call_args.args[1].whatsapp, '21999999999')
+
+    def test_telefone_do_aluno_e_opcional_quando_ha_outro_responsavel(self):
+        dados = {k: v for k, v in self.payload().items() if k not in ('proprio_responsavel', 'telefone', 'aluno_email')}
+        dados.update({'responsavel_nome': 'Mãe', 'responsavel_whatsapp': '21911112222', 'cpf': ''})
+        self.assertEqual(self.client.post('/alunos/novo/', dados).status_code, 302)
+        dados.update({'nome': 'Outro aluno', 'telefone': '(21) 97777-6666'})
+        self.assertEqual(self.client.post('/alunos/novo/', dados).status_code, 302)
+        outro = Atleta.objects.get(nome='Outro aluno')
+        # O telefone fica no aluno; as cobranças continuam indo para a mãe.
+        self.assertEqual((outro.telefone, outro.responsavel_financeiro.whatsapp), ('21977776666', '21911112222'))
+        self.assertContains(self.client.get(f'/alunos/{outro.pk}/'), '21977776666')
+
+    def test_telefone_invalido_e_recusado(self):
+        data = self.payload(); data['telefone'] = '9999'
+        self.assertContains(self.client.post('/alunos/novo/', data), 'Informe um telefone válido com DDD.')
+        self.assertFalse(Atleta.objects.exists())
+
+    def test_cadastro_antigo_mostra_o_whatsapp_do_responsavel_como_telefone(self):
+        r = Responsavel.objects.create(academia=self.a, nome='Adulto', cpf='12345678900', whatsapp='21955554444')
+        aluno = Atleta.objects.create(academia=self.a, nome='Adulto', cpf='12345678900', proprio_responsavel=True, responsavel_financeiro=r)
+        self.assertContains(self.client.get(f'/alunos/{aluno.pk}/editar/'), '21955554444')
 
     def test_cpf_com_quantidade_errada_de_digitos_e_rejeitado(self):
         # Regressao: um CPF com 12 digitos era aceito no cadastro e so

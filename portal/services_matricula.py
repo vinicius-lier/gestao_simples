@@ -59,6 +59,7 @@ def efetivar_convite(convite, dados):
         nome=dados['nome'],
         data_nascimento=dados.get('data_nascimento'),
         cpf=digits(dados.get('cpf', '')),
+        telefone=digits(dados['responsavel_whatsapp']) if proprio else '',
         faixa=dados.get('faixa', ''),
         observacoes=dados.get('observacoes', ''),
         status='ativo',
