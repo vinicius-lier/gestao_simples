@@ -70,6 +70,13 @@ class IntegracaoWhatsApp(models.Model):
     )
 
     numero_whatsapp = models.CharField(max_length=20, blank=True, default='')
+    numero_avisos = models.CharField(
+        'WhatsApp para avisos da escola',
+        max_length=20,
+        blank=True,
+        default='',
+        help_text='Recebe os avisos internos, como matrícula nova para conferir e ativar.',
+    )
     evolution_base_url = models.URLField(max_length=300, blank=True, default='')
     evolution_instance_name = models.CharField(max_length=100, blank=True, default='')
     n8n_webhook_url = models.URLField(max_length=300, blank=True, default='')

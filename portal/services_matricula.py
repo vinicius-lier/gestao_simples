@@ -1,11 +1,11 @@
 """Efetivação e revisão dos convites de matrícula.
 
-O envio público cria Atleta + Responsável + Matrícula **inativa**; a
-ativação (no painel) apenas liga ``Matricula.ativo``. Mensalidades só
-são geradas para matrículas ativas, então nenhuma cobrança Pix é criada
-antes da ativação.
+O envio público cria Atleta + Responsável + Matrícula **inativa** e avisa a
+escola pelo WhatsApp. Na ativação (no painel, só administrador) quem ativa
+confere o dia de vencimento e define o 1º vencimento. Mensalidades só são
+geradas para matrículas ativas, então nenhuma cobrança Pix é criada antes
+da ativação.
 """
-from datetime import date
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -78,7 +78,7 @@ def efetivar_convite(convite, dados):
         turma=convite.turma,
         valor_mensalidade=valor,
         dia_vencimento=convite.vencimento_efetivo(),
-        data_inicio=date.today(),
+        data_inicio=timezone.localdate(),
         ativo=False,
     )
     matricula.save()  # Matricula.save() roda full_clean()
@@ -92,16 +92,29 @@ def efetivar_convite(convite, dados):
 
 
 @transaction.atomic
-def ativar_convite(convite):
+def ativar_matricula(matricula, *, dia_vencimento=None, primeiro_vencimento=None):
+    """Liga a matrícula e começa a cobrança no 1º vencimento definido por
+    quem ativou (sem ele, o próximo dia de vencimento a partir de hoje)."""
+    from financeiro.services import iniciar_cobranca
+
+    if dia_vencimento:
+        matricula.dia_vencimento = dia_vencimento
+    matricula.ativo = True
+    matricula.save()
+    iniciar_cobranca(matricula, primeiro_vencimento)
+    return matricula
+
+
+@transaction.atomic
+def ativar_convite(convite, *, dia_vencimento=None, primeiro_vencimento=None):
     convite = ConviteMatricula.objects.select_for_update().select_related('matricula').get(pk=convite.pk)
     if convite.status != ConviteMatricula.PREENCHIDO or convite.matricula_id is None:
         raise ValidationError('Só é possível ativar um convite já preenchido pela família.')
-    from financeiro.services import gerar_mensalidade_inicial
 
-    matricula = convite.matricula
-    matricula.ativo = True
-    matricula.save()
-    gerar_mensalidade_inicial(matricula)
+    # A cobrança começa na ativação, não no preenchimento pela família.
+    ativar_matricula(
+        convite.matricula, dia_vencimento=dia_vencimento, primeiro_vencimento=primeiro_vencimento,
+    )
     convite.status = ConviteMatricula.ATIVADO
     convite.ativado_em = timezone.now()
     convite.save(update_fields=['status', 'ativado_em'])

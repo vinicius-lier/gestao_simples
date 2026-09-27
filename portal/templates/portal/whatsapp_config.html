@@ -89,6 +89,11 @@
       <small class="text-secondary">Só o nome. O valor da chave nunca é guardado no banco.</small>
     </div>
     <div>
+      <label for="numero_avisos" class="form-label">WhatsApp para avisos da escola</label>
+      <input id="numero_avisos" name="numero_avisos" class="form-control" inputmode="tel" value="{{ config.numero_avisos }}" placeholder="21999998888">
+      <small class="text-secondary">Recebe o aviso de matrícula nova para conferir, definir o vencimento e ativar.</small>
+    </div>
+    <div>
       <label for="n8n_webhook_url" class="form-label">n8n — webhook (opcional, fase futura)</label>
       <input id="n8n_webhook_url" name="n8n_webhook_url" class="form-control" value="{{ config.n8n_webhook_url }}">
     </div>

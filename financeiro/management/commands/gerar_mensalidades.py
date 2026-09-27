@@ -1,6 +1,5 @@
-from datetime import date
-
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 from financeiro.services import gerar_mensalidades
 
@@ -20,7 +19,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        hoje = date.today()
+        hoje = timezone.localdate()
 
         ano = options["ano"] or hoje.year
         mes = options["mes"] or hoje.month

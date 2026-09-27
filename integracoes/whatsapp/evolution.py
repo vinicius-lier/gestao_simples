@@ -166,3 +166,6 @@ class EvolutionWhatsAppProvider(WhatsAppProvider):
             f"{complemento}: {link}"
         )
         return self._enviar_texto(telefone, texto)
+
+    def enviar_aviso(self, telefone, texto):
+        return self._enviar_texto(telefone, texto)

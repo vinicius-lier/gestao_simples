@@ -305,7 +305,7 @@ def registrar_pagamento_pix(cobranca, *, pago_em=None, transaction_id="", taxa_c
 
     O dinheiro caiu na subconta em qualquer caso, então o repasse é aberto
     mesmo quando a mensalidade já estava paga (pagamento em dobro) ou foi
-    cancelada — esses casos também geram alerta para a plataforma
+    cancelada/isentada — esses casos também geram alerta para a plataforma
     resolver com a família. Devolve True se registrou agora."""
     from financeiro.services import registrar_pagamento
 
@@ -335,9 +335,9 @@ def registrar_pagamento_pix(cobranca, *, pago_em=None, transaction_id="", taxa_c
                 "Mensalidade paga em dobro (Pix pago depois de outra baixa)",
                 mensalidade=mensalidade.pk, cobranca=cobranca.correlation_id,
             )
-        elif mensalidade.status == "cancelada":
+        elif mensalidade.status in ("cancelada", "isenta"):
             alertar_plataforma(
-                "Pix pago de mensalidade cancelada — conferir e devolver/regularizar",
+                f"Pix pago de mensalidade {mensalidade.status} — conferir e devolver/regularizar",
                 mensalidade=mensalidade.pk, cobranca=cobranca.correlation_id,
             )
         else:

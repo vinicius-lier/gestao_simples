@@ -8,6 +8,7 @@ from django.core.paginator import Paginator
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from atletas.models import Atleta
 from matriculas.models import Matricula
@@ -89,8 +90,11 @@ def detalhe(request, pk):
     matriculas = aluno.matriculas.filter(academia=request.academia, modalidade__academia=request.academia)
     # Do not expose legacy cross-tenant relationships.
     matriculas = [m for m in matriculas if not m.turma_id or m.turma.academia_id == request.academia.pk]
+    from .forms_matricula import AtivacaoMatriculaForm
     for matricula in matriculas:
         matricula.mensalidades_recentes = matricula.mensalidades.filter(academia=request.academia).order_by('-competencia')[:6]
+        if not matricula.ativo and request.administrador_academia:
+            matricula.ativacao_form = AtivacaoMatriculaForm(matricula=matricula, prefix=f'ativar-{matricula.pk}')
     return render(request, 'portal/detalhe.html', {'aluno': aluno, 'responsavel': responsavel, 'matriculas': matriculas})
 
 
@@ -102,6 +106,10 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
     aluno = get_object_or_404(Atleta, pk=pk, academia=request.academia) if pk else None
     matricula = get_object_or_404(Matricula, pk=matricula_pk, academia=request.academia, atleta=aluno) if matricula_pk else None
     unidade_anterior = matricula.unidade_id if matricula else None
+    # Situação antes da edição (os forms alteram as instâncias ao validar):
+    # decide se a cobrança começa agora.
+    matricula_ativa_antes = matricula.ativo if matricula else False
+    aluno_ativo_antes = aluno.status == 'ativo' if aluno else False
     data = request.POST if request.method == 'POST' else None
     form = AlunoForm(data, instance=aluno, academia=request.academia)
     incluir_matricula = not pk or matricula_pk is not None or nova_matricula
@@ -111,9 +119,11 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
         if matricula_form is not None:
             valid = matricula_form.is_valid() and valid
         if valid:
+            from financeiro.services import iniciar_cobranca
             try:
                 with transaction.atomic():
                     aluno = form.save()
+                    comecam = {}  # matrícula -> 1º vencimento escolhido (None: o próximo)
                     if matricula_form is not None:
                         inscricao = matricula_form.save(commit=False)
                         inscricao.atleta = aluno
@@ -124,9 +134,14 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
                             if outras.exists():
                                 raise ValidationError('Somente o administrador pode autorizar matrícula em outro polo.')
                         inscricao.save()
-                        if inscricao.ativo:
-                            from financeiro.services import gerar_mensalidade_inicial
-                            gerar_mensalidade_inicial(inscricao)
+                        if inscricao.ativo and not matricula_ativa_antes:
+                            comecam[inscricao] = matricula_form.cleaned_data.get('primeiro_vencimento')
+                    if pk and aluno.status == 'ativo' and not aluno_ativo_antes:
+                        # Voltou de trancado/inativo: cobra a partir do próximo vencimento.
+                        for ativa in aluno.matriculas.filter(ativo=True):
+                            comecam.setdefault(ativa, None)
+                    for inscricao_ativa, primeiro_vencimento in comecam.items():
+                        iniciar_cobranca(inscricao_ativa, primeiro_vencimento)
             except ValidationError as error:
                 form.add_error(None, ValidationError(error.messages))
             else:
@@ -208,7 +223,7 @@ def cadastros(request, tipo, pk=None, novo=False, excluir=False, detalhe=False):
 def financeiro_dashboard(request):
     from financeiro.models import Mensalidade
     from financeiro.services import resumo_financeiro
-    hoje = date.today()
+    hoje = timezone.localdate()
     competencia = date(hoje.year, hoje.month, 1)
     Mensalidade.objects.filter(academia=request.academia).marcar_vencidas()
     base = Mensalidade.objects.filter(academia=request.academia).select_related('matricula__atleta')
@@ -255,15 +270,17 @@ def financeiro_cobrancas(request):
 @academia_required
 @require_http_methods(['POST'])
 def matricula_ativar(request, pk, matricula_pk):
-    """Ativa a matrícula direto do cadastro do aluno — um clique, sem
-    passar pelo formulário de edição. Se ela veio de um convite de
-    matrícula ainda 'preenchido', ativa pelo mesmo caminho do convite
-    (mantém o status do convite em sincronia); senão, liga só o campo."""
+    """Ativa a matrícula direto do cadastro do aluno, sem passar pelo
+    formulário de edição: o administrador confere o dia de vencimento e
+    define o 1º vencimento. Se ela veio de um convite de matrícula ainda
+    'preenchido', ativa pelo mesmo caminho do convite (mantém o status do
+    convite em sincronia)."""
     if not request.administrador_academia:
         raise PermissionDenied('Somente o administrador da academia ativa matrículas.')
 
+    from .forms_matricula import AtivacaoMatriculaForm
     from .models import ConviteMatricula
-    from .services_matricula import ativar_convite
+    from .services_matricula import ativar_convite, ativar_matricula
 
     matricula = get_object_or_404(
         Matricula, pk=matricula_pk, atleta__pk=pk, academia=request.academia,
@@ -272,16 +289,19 @@ def matricula_ativar(request, pk, matricula_pk):
         messages.info(request, 'Esta matrícula já está ativa.')
         return redirect('portal:detalhe', pk=pk)
 
+    form = AtivacaoMatriculaForm(request.POST, matricula=matricula, prefix=f'ativar-{matricula.pk}')
+    if not form.is_valid():
+        erros = ' '.join(erro for lista in form.errors.values() for erro in lista)
+        messages.error(request, f'Matrícula não ativada: {erros}')
+        return redirect('portal:detalhe', pk=pk)
+
     convite = ConviteMatricula.objects.filter(
         matricula=matricula, status=ConviteMatricula.PREENCHIDO,
     ).first()
     if convite is not None:
-        ativar_convite(convite)
+        ativar_convite(convite, **form.cleaned_data)
     else:
-        from financeiro.services import gerar_mensalidade_inicial
-        matricula.ativo = True
-        matricula.save(update_fields=['ativo'])
-        gerar_mensalidade_inicial(matricula)
+        ativar_matricula(matricula, **form.cleaned_data)
     messages.success(request, 'Matrícula ativada.')
     return redirect('portal:detalhe', pk=pk)
 

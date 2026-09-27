@@ -6,7 +6,7 @@ assinado, Pix copia-e-cola) entram por parâmetro, calculados por quem tem
 o contexto (ver financeiro.lembretes). A família só recebe links do próprio
 sistema — nunca a página hospedada do provedor de pagamento.
 """
-from datetime import date
+from django.utils import timezone
 
 EVENTO_COBRANCA = "cobranca_lembrete"
 
@@ -48,7 +48,7 @@ def montar_payload_cobranca(
     `tipo_lembrete` é um dos valores de ``LembreteCobranca.ESTAGIOS``
     (``5_dias``, ``1_dia``, ``vencimento``, ``atrasada``).
     """
-    hoje = hoje or date.today()
+    hoje = hoje or timezone.localdate()
 
     matricula = mensalidade.matricula
     aluno = matricula.atleta

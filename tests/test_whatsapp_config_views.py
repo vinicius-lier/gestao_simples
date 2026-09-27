@@ -55,6 +55,19 @@ class WhatsAppConfigViewsTests(TestCase):
         )
         self.assertEqual(resp.status_code, 403)
 
+    def test_admin_salva_o_whatsapp_de_avisos_so_com_numeros(self):
+        self.client.force_login(self.admin_a)
+        resp = self.client.post(
+            "/configuracoes/whatsapp/", {"provider": "evolution", "numero_avisos": "(21) 97777-6666"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(IntegracaoWhatsApp.objects.get(academia=self.a).numero_avisos, "21977776666")
+
+    def test_whatsapp_de_avisos_sem_ddd_e_recusado(self):
+        self.client.force_login(self.admin_a)
+        self.client.post("/configuracoes/whatsapp/", {"provider": "evolution", "numero_avisos": "97777"})
+        self.assertEqual(IntegracaoWhatsApp.objects.get(academia=self.a).numero_avisos, "")
+
     def test_admin_salva_config(self):
         self.client.force_login(self.admin_a)
         resp = self.client.post(

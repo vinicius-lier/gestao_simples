@@ -53,3 +53,12 @@ class WhatsAppProvider(ABC):
         raise WhatsAppProviderError(
             "Este provedor de WhatsApp não suporta o envio direto do convite de matrícula."
         )
+
+    def enviar_aviso(self, telefone, texto):
+        """Envia um aviso interno (texto livre) para a equipe da escola — hoje,
+        a matrícula nova que precisa ser conferida e ativada. Mesmo contrato
+        de retorno/erro de ``enviar_cobranca``. Como no convite, só o
+        Evolution (texto livre) implementa; os demais recusam."""
+        raise WhatsAppProviderError(
+            "Este provedor de WhatsApp não suporta o envio de avisos para a escola."
+        )

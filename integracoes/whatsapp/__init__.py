@@ -12,6 +12,7 @@ __all__ = [
     "enviar_cobranca",
     "enviar_acesso",
     "enviar_convite_matricula",
+    "enviar_aviso_escola",
     "normalizar_telefone",
     "WhatsAppProvider",
     "WhatsAppProviderError",
@@ -59,6 +60,19 @@ def enviar_cobranca(academia, responsavel, mensalidade, link, estagio=None):
 def enviar_acesso(academia, responsavel, link):
     """Ponto único de envio do link de acesso ao portal do responsável."""
     return get_provider(academia).enviar_acesso(responsavel, link)
+
+
+def enviar_aviso_escola(academia, texto):
+    """Aviso para a equipe da escola (hoje: matrícula nova para conferir e
+    ativar), no WhatsApp de avisos cadastrado em Configurações → WhatsApp.
+    Levanta ``ValueError`` se o número não estiver cadastrado e
+    ``WhatsAppProviderError`` se o provedor não enviar."""
+    from academias.models import IntegracaoWhatsApp
+
+    config = IntegracaoWhatsApp.objects.filter(academia=academia).first()
+    if config is None or not config.numero_avisos:
+        raise ValueError("O WhatsApp de avisos da escola não está cadastrado.")
+    return get_provider(academia).enviar_aviso(config.numero_avisos, texto)
 
 
 def enviar_convite_matricula(academia, nome, telefone, link, contexto=""):

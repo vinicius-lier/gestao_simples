@@ -46,6 +46,11 @@ def whatsapp_config(request):
         ).strip()
         config.credencial_ref = request.POST.get("credencial_ref", "").strip()
         config.n8n_webhook_url = request.POST.get("n8n_webhook_url", "").strip()
+        numero_avisos = "".join(c for c in request.POST.get("numero_avisos", "") if c.isdigit())
+        if numero_avisos and not 10 <= len(numero_avisos) <= 13:
+            messages.error(request, "Informe o WhatsApp para avisos com DDD.")
+            return redirect("portal:whatsapp_config")
+        config.numero_avisos = numero_avisos
         config.save()
         messages.success(request, "Configuração de WhatsApp salva.")
         return redirect("portal:whatsapp_config")

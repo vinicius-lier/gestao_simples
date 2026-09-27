@@ -1,5 +1,3 @@
-from datetime import date
-
 from django.conf import settings
 from django.db import models
 from django.db.models import Prefetch, Q
@@ -14,7 +12,7 @@ class MensalidadeQuerySet(models.QuerySet):
         return self.filter(status__in=("pendente", "vencida"))
 
     def atrasadas(self, hoje=None):
-        hoje = hoje or date.today()
+        hoje = hoje or timezone.localdate()
         return self.filter(status__in=("pendente", "vencida"), vencimento__lt=hoje)
 
     def marcar_vencidas(self, hoje=None):
@@ -23,7 +21,7 @@ class MensalidadeQuerySet(models.QuerySet):
         Não mexe em pagas/canceladas/isentas. Idempotente e segura para
         chamar a cada carregamento de tela (sem depender de um job externo).
         """
-        hoje = hoje or date.today()
+        hoje = hoje or timezone.localdate()
         return self.filter(status="pendente", vencimento__lt=hoje).update(status="vencida")
 
 
@@ -99,7 +97,7 @@ class Mensalidade(models.Model):
 
     @property
     def esta_atrasada(self):
-        return self.status in ("pendente", "vencida") and self.vencimento < date.today()
+        return self.status in ("pendente", "vencida") and self.vencimento < timezone.localdate()
 
     @property
     def cobranca_pix_vigente(self):

@@ -11,6 +11,7 @@ class MatriculaAdmin(admin.ModelAdmin):
         "turma",
         "valor_mensalidade",
         "dia_vencimento",
+        "primeiro_vencimento",
         "ativo",
     )
 

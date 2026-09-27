@@ -95,6 +95,35 @@ class ConviteMatriculaForm(forms.ModelForm):
         )
 
 
+class AtivacaoMatriculaForm(forms.Form):
+    """O administrador confere a matrícula e define o vencimento ao ativar.
+    Vem preenchido com o dia de vencimento da matrícula e a sugestão de 1º
+    vencimento (o próximo a partir de hoje)."""
+
+    dia_vencimento = forms.IntegerField(label='Dia de vencimento', min_value=1, max_value=31)
+    primeiro_vencimento = forms.DateField(
+        label='Primeiro vencimento',
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
+    )
+
+    def __init__(self, *args, matricula, **kwargs):
+        from financeiro.services import proximo_vencimento
+
+        super().__init__(*args, **kwargs)
+        escolhido = matricula.primeiro_vencimento
+        if escolhido is None or escolhido < timezone.localdate():
+            escolhido = proximo_vencimento(matricula)
+        self.fields['dia_vencimento'].initial = matricula.dia_vencimento
+        self.fields['primeiro_vencimento'].initial = escolhido
+        _estilo_painel(self)
+
+    def clean_primeiro_vencimento(self):
+        valor = self.cleaned_data['primeiro_vencimento']
+        if valor < timezone.localdate():
+            raise ValidationError('O primeiro vencimento não pode ser anterior a hoje.')
+        return valor
+
+
 class MatriculaPublicaForm(forms.Form):
     nome = forms.CharField(label='Nome completo do aluno', max_length=150)
     data_nascimento = forms.DateField(

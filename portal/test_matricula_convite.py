@@ -1,12 +1,15 @@
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
 
-from academias.models import Academia, Unidade
+from academias.models import Academia, IntegracaoWhatsApp, Unidade
 from atletas.models import Atleta, Responsavel
+from financeiro.models import Mensalidade
+from integracoes.whatsapp.base import WhatsAppProviderError
 from matriculas.models import Matricula
 from modalidades.models import Modalidade, Turma
 from portal.models import AcessoAcademia, ConviteMatricula
@@ -19,6 +22,8 @@ class BaseConvite(TestCase):
         self.b = Academia.objects.create(nome='B', cnpj='B')
         self.prof = User.objects.create_user('prof', password='x')
         AcessoAcademia.objects.create(usuario=self.prof, academia=self.a, administrador=False)
+        self.admin = User.objects.create_user('dona', password='x')
+        AcessoAcademia.objects.create(usuario=self.admin, academia=self.a, administrador=True)
         self.outro = User.objects.create_user('outro', password='x')
         AcessoAcademia.objects.create(usuario=self.outro, academia=self.b, administrador=True)
         self.unit = Unidade.objects.create(academia=self.a, nome='Matriz')
@@ -145,19 +150,51 @@ class RevisaoNoPainel(BaseConvite):
         c.refresh_from_db()
         return c
 
-    def test_ativar_matricula(self):
+    def ativar(self, c, **campos):
+        dados = {'acao': 'ativar', 'dia_vencimento': 10,
+                 'primeiro_vencimento': (timezone.localdate() + timedelta(days=5)).isoformat()}
+        dados.update(campos)
+        return self.client.post(f'/matriculas/convites/{c.pk}/acao/', dados)
+
+    def test_administrador_define_o_vencimento_e_ativa(self):
         c = self._preenchido()
-        self.client.force_login(self.prof)
-        resp = self.client.post(f'/matriculas/convites/{c.pk}/acao/', {'acao': 'ativar'})
+        self.client.force_login(self.admin)
+        escolhido = timezone.localdate() + timedelta(days=5)
+        resp = self.ativar(c, dia_vencimento=15, primeiro_vencimento=escolhido.isoformat())
         self.assertEqual(resp.status_code, 302)
         c.refresh_from_db()
         self.assertEqual(c.status, ConviteMatricula.ATIVADO)
         self.assertTrue(c.matricula.ativo)
+        self.assertEqual((c.matricula.dia_vencimento, c.matricula.primeiro_vencimento), (15, escolhido))
+        self.assertEqual(Mensalidade.objects.get().vencimento, escolhido)
+
+    def test_tela_do_convite_sugere_o_vencimento_ao_administrador(self):
+        c = self._preenchido()
+        self.client.force_login(self.admin)
+        resp = self.client.get(f'/matriculas/convites/{c.pk}/')
+        self.assertContains(resp, 'Definir vencimento e ativar')
+        self.assertContains(resp, 'name="primeiro_vencimento"')
+
+    def test_professor_nao_ativa(self):
+        c = self._preenchido()
+        self.client.force_login(self.prof)
+        self.assertEqual(self.ativar(c).status_code, 403)
+        self.assertNotContains(self.client.get(f'/matriculas/convites/{c.pk}/'), 'name="primeiro_vencimento"')
+        c.refresh_from_db()
+        self.assertEqual(c.status, ConviteMatricula.PREENCHIDO)
+
+    def test_vencimento_no_passado_nao_ativa(self):
+        c = self._preenchido()
+        self.client.force_login(self.admin)
+        self.ativar(c, primeiro_vencimento=(timezone.localdate() - timedelta(days=1)).isoformat())
+        c.refresh_from_db()
+        self.assertEqual(c.status, ConviteMatricula.PREENCHIDO)
+        self.assertFalse(Mensalidade.objects.exists())
 
     def test_nao_ativa_convite_pendente(self):
         c = self.convite()
-        self.client.force_login(self.prof)
-        self.client.post(f'/matriculas/convites/{c.pk}/acao/', {'acao': 'ativar'})
+        self.client.force_login(self.admin)
+        self.ativar(c)
         c.refresh_from_db()
         self.assertEqual(c.status, ConviteMatricula.PENDENTE)
 
@@ -167,3 +204,43 @@ class RevisaoNoPainel(BaseConvite):
         self.client.post(f'/matriculas/convites/{c.pk}/acao/', {'acao': 'cancelar'})
         c.refresh_from_db()
         self.assertEqual(c.status, ConviteMatricula.CANCELADO)
+
+
+class AvisoParaAEscola(BaseConvite):
+    """Depois que a família envia a ficha, a escola é avisada pelo WhatsApp
+    para conferir, definir o vencimento e ativar."""
+
+    def configurar_whatsapp(self, numero_avisos='21977776666'):
+        IntegracaoWhatsApp.objects.create(
+            academia=self.a, provider=IntegracaoWhatsApp.PROVIDER_EVOLUTION, numero_avisos=numero_avisos,
+        )
+
+    def enviar_ficha(self, **patch_kwargs):
+        c = self.convite()
+        with patch('integracoes.whatsapp.evolution.EvolutionWhatsAppProvider.enviar_aviso', **patch_kwargs) as aviso:
+            resp = self.client.post(f'/matricula/{c.token}/', self.dados_familia())
+        return c, resp, aviso
+
+    def test_avisa_o_whatsapp_da_escola_com_o_link_do_convite(self):
+        self.configurar_whatsapp()
+        c, resp, aviso = self.enviar_ficha()
+        self.assertEqual(resp.status_code, 302)
+        telefone, texto = aviso.call_args.args
+        self.assertEqual(telefone, '21977776666')
+        self.assertIn('Aluno Teste', texto)
+        self.assertIn(f'/matriculas/convites/{c.pk}/', texto)
+
+    def test_sem_numero_de_avisos_a_familia_conclui_normalmente(self):
+        self.configurar_whatsapp(numero_avisos='')
+        c, resp, aviso = self.enviar_ficha()
+        self.assertEqual(resp.status_code, 302)
+        aviso.assert_not_called()
+        c.refresh_from_db()
+        self.assertEqual(c.status, ConviteMatricula.PREENCHIDO)
+
+    def test_whatsapp_fora_do_ar_nao_atrapalha_a_familia(self):
+        self.configurar_whatsapp()
+        c, resp, _aviso = self.enviar_ficha(side_effect=WhatsAppProviderError('fora'))
+        self.assertEqual(resp.status_code, 302)
+        c.refresh_from_db()
+        self.assertEqual(c.status, ConviteMatricula.PREENCHIDO)

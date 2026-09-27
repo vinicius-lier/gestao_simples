@@ -48,6 +48,18 @@ class Matricula(models.Model):
     )
 
     ativo = models.BooleanField(default=True)
+
+    # Definido por quem cria ou ativa a matrícula (em branco: o próximo dia
+    # de vencimento a partir de hoje). A 1ª mensalidade vence nesta data e
+    # nenhuma vence antes dela — quem já treinava antes de entrar no sistema
+    # não recebe cobrança retroativa. Vazio (matrículas antigas): vale a
+    # data de início.
+    primeiro_vencimento = models.DateField(
+        "primeiro vencimento",
+        null=True,
+        blank=True,
+    )
+
     criado_em = models.DateTimeField(auto_now_add=True)
 
     def clean(self):

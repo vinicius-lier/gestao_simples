@@ -1,7 +1,7 @@
 import re
-from datetime import date
 
 from django.conf import settings
+from django.db.models import F
 from django.urls import reverse
 from django.utils import timezone
 
@@ -16,7 +16,7 @@ _URL_RE = re.compile(r"https?://\S+")
 def calcular_estagio(mensalidade, hoje=None):
     """Em qual estágio do lembrete a mensalidade está hoje, ou None se
     nenhum se aplica (faltam mais de 5 dias, ou está entre 2 e 4 dias)."""
-    hoje = hoje or date.today()
+    hoje = hoje or timezone.localdate()
     dias = (mensalidade.vencimento - hoje).days
 
     if dias == 5:
@@ -89,14 +89,23 @@ def enviar_lembretes(hoje=None, academia=None):
       * falha    -> status=erro (retentado na próxima execução);
       * sem responsável / sem WhatsApp -> nada é registrado, tenta depois.
 
-    Mensalidades pagas/canceladas nem entram na fila (em_aberto()).
+    Mensalidades pagas/canceladas nem entram na fila (em_aberto()). A régua
+    automática só fala com quem ainda é aluno: matrícula ativa, aluno ativo,
+    academia ativa e competência dentro da data de fim da matrícula. Dívida
+    de quem saiu continua no painel e pode ser cobrada pelo botão manual.
 
     Retorna a lista de pks das mensalidades para as quais um lembrete foi
     efetivamente enviado nesta chamada.
     """
-    hoje = hoje or date.today()
+    hoje = hoje or timezone.localdate()
 
-    qs = Mensalidade.objects.em_aberto().select_related(
+    qs = Mensalidade.objects.em_aberto().filter(
+        academia__ativo=True,
+        matricula__ativo=True,
+        matricula__atleta__status="ativo",
+    ).exclude(
+        matricula__data_fim__lt=F("competencia"),
+    ).select_related(
         "academia",
         "matricula__modalidade",
         "matricula__atleta__responsavel_financeiro",

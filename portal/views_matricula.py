@@ -1,12 +1,17 @@
+import logging
+
 from django.contrib import messages
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
 
-from .forms_matricula import ConviteMatriculaForm, MatriculaPublicaForm
+from .forms_matricula import AtivacaoMatriculaForm, ConviteMatriculaForm, MatriculaPublicaForm
 from .models import ConviteMatricula
 from .services_matricula import ativar_convite, cancelar_convite, efetivar_convite
 from .views import academia_required
+
+logger = logging.getLogger(__name__)
 
 
 @academia_required
@@ -33,7 +38,12 @@ def convite_detalhe(request, pk):
         pk=pk, academia=request.academia,
     )
     link = request.build_absolute_uri(convite.url())
-    return render(request, 'portal/matricula_convite_detalhe.html', {'convite': convite, 'link': link})
+    ativacao_form = None
+    if convite.status == ConviteMatricula.PREENCHIDO and convite.matricula_id and request.administrador_academia:
+        ativacao_form = AtivacaoMatriculaForm(matricula=convite.matricula)
+    return render(request, 'portal/matricula_convite_detalhe.html', {
+        'convite': convite, 'link': link, 'ativacao_form': ativacao_form,
+    })
 
 
 @academia_required
@@ -66,11 +76,20 @@ def convite_enviar(request, pk):
 @academia_required
 @require_POST
 def convite_acao(request, pk):
-    convite = get_object_or_404(ConviteMatricula, pk=pk, academia=request.academia)
+    convite = get_object_or_404(
+        ConviteMatricula.objects.select_related('matricula'), pk=pk, academia=request.academia,
+    )
     acao = request.POST.get('acao')
     try:
         if acao == 'ativar':
-            ativar_convite(convite)
+            if not request.administrador_academia:
+                raise PermissionDenied('Somente o administrador da academia ativa matrículas.')
+            if convite.matricula_id is None:
+                raise ValidationError('Só é possível ativar um convite já preenchido pela família.')
+            form = AtivacaoMatriculaForm(request.POST, matricula=convite.matricula)
+            if not form.is_valid():
+                raise ValidationError([erro for erros in form.errors.values() for erro in erros])
+            ativar_convite(convite, **form.cleaned_data)
             messages.success(request, 'Matrícula ativada.')
         elif acao == 'cancelar':
             cancelar_convite(convite)
@@ -101,9 +120,29 @@ def matricula_convite(request, token):
         except ValidationError as error:
             form.add_error(None, error)
         else:
+            _avisar_matricula_recebida(request, convite)
             request.session['matricula_convite_ok'] = str(convite.turma or convite.modalidade)
             return redirect('portal:matricula_convite_recebido')
     return render(request, 'portal/matricula_convite.html', {'estado': 'ok', 'convite': convite, 'form': form})
+
+
+def _avisar_matricula_recebida(request, convite):
+    """Avisa a escola pelo WhatsApp que há uma matrícula para conferir,
+    definir o vencimento e ativar. Melhor esforço: a família nunca vê erro
+    por causa do aviso — sem número cadastrado ou com o WhatsApp fora do ar,
+    a matrícula segue em "Preenchido — revisar" na lista de convites."""
+    from integracoes.whatsapp import enviar_aviso_escola
+    from integracoes.whatsapp.base import WhatsAppProviderError
+
+    link = request.build_absolute_uri(reverse('portal:matricula_convite_detalhe', args=[convite.pk]))
+    texto = (
+        f'Nova matrícula recebida: {convite.atleta.nome} — {convite.turma or convite.modalidade}. '
+        f'Confira os dados, defina o vencimento e ative: {link}'
+    )
+    try:
+        enviar_aviso_escola(convite.academia, texto)
+    except (ValueError, WhatsAppProviderError) as erro:
+        logger.warning('Aviso da matrícula do convite %s não enviado: %s', convite.pk, erro)
 
 
 def matricula_convite_recebido(request):

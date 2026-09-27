@@ -161,13 +161,24 @@ class TurmaSelect(forms.Select):
 class MatriculaForm(forms.ModelForm):
     class Meta:
         model = Matricula
-        fields = ('unidade', 'modalidade', 'turma', 'valor_mensalidade', 'dia_vencimento', 'data_inicio', 'data_fim', 'ativo')
-        widgets = {key: forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}) for key in ('data_inicio', 'data_fim')}
+        fields = ('unidade', 'modalidade', 'turma', 'valor_mensalidade', 'dia_vencimento', 'primeiro_vencimento', 'data_inicio', 'data_fim', 'ativo')
+        widgets = {key: forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}) for key in ('primeiro_vencimento', 'data_inicio', 'data_fim')}
         widgets['turma'] = TurmaSelect
 
     def __init__(self, *args, academia, **kwargs):
         super().__init__(*args, **kwargs)
+        # Antes da validação, que altera a instância: a cobrança começa
+        # quando a matrícula passa de inativa (ou nova) para ativa.
+        self.ativa_antes = bool(self.instance.pk and self.instance.ativo)
         self.instance.academia = academia
+        self.fields['primeiro_vencimento'].help_text = (
+            'Em branco: o próximo dia de vencimento a partir de hoje (ou da data de início, se for futura). '
+            'As mensalidades seguintes vencem no dia de vencimento.'
+        )
+        if self.ativa_antes:
+            # A cobrança já começou: as mensalidades se ajustam pela lista de cobranças.
+            self.fields['primeiro_vencimento'].disabled = True
+            self.fields['primeiro_vencimento'].help_text = 'A cobrança desta matrícula já começou.'
         self.fields['unidade'].queryset = Unidade.objects.filter(academia=academia)
         self.fields['unidade'].required = self.fields['unidade'].queryset.exists()
         self.fields['modalidade'].queryset = Modalidade.objects.filter(academia=academia)
@@ -198,6 +209,13 @@ class MatriculaForm(forms.ModelForm):
                 self.add_error('valor_mensalidade', 'Informe o valor ou escolha uma turma com valor definido.')
         if not data.get('dia_vencimento'):
             data['dia_vencimento'] = turma.dia_vencimento if turma else 10
+        primeiro = data.get('primeiro_vencimento')
+        ativando = data.get('ativo') and not self.ativa_antes
+        if primeiro and primeiro < timezone.localdate() and (ativando or 'primeiro_vencimento' in self.changed_data):
+            self.add_error(
+                'primeiro_vencimento',
+                'O primeiro vencimento não pode ser anterior a hoje. Deixe em branco para usar o próximo vencimento.',
+            )
         return data
 
 
