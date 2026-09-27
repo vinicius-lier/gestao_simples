@@ -98,6 +98,30 @@ class NovosCadastrosTests(TestCase):
         self.assertEqual(aluno.responsavel_financeiro_id,r.pk)
         self.assertContains(self.client.get(f'/alunos/{aluno.pk}/'), 'Próprio aluno')
 
+    def test_editar_aluno_proprio_responsavel_atualiza_o_contato(self):
+        # Regressão: ao editar, o responsável era achado pelo CPF e reaproveitado
+        # sem atualizar o WhatsApp — o número digitado era ignorado.
+        self.assertEqual(self.client.post('/alunos/novo/', self.payload()).status_code, 302)
+        aluno = Atleta.objects.get()
+        responsavel_id = aluno.responsavel_financeiro_id
+        dados = {k: v for k, v in self.payload().items() if not k.startswith('matricula-')}
+        dados.update({'aluno_whatsapp': '(24) 98888-7777', 'aluno_email': 'novo@example.com'})
+
+        self.assertEqual(self.client.post(f'/alunos/{aluno.pk}/editar/', dados).status_code, 302)
+
+        aluno.refresh_from_db()
+        self.assertEqual(aluno.responsavel_financeiro_id, responsavel_id)
+        r = Responsavel.objects.get(pk=responsavel_id)
+        self.assertEqual((r.whatsapp, r.email), ('24988887777', 'novo@example.com'))
+        self.assertEqual(Responsavel.objects.count(), 1)
+        self.assertContains(self.client.get(f'/alunos/{aluno.pk}/editar/'), '24988887777')
+
+    def test_aluno_novo_nao_sobrescreve_contato_de_responsavel_existente(self):
+        r = Responsavel.objects.create(academia=self.a, nome='Aluno adulto', cpf='12345678900', whatsapp='21911112222')
+        self.client.post('/alunos/novo/', self.payload())
+        r.refresh_from_db()
+        self.assertEqual(r.whatsapp, '21911112222')
+
     def test_proprio_responsavel_exige_contato_e_cpf(self):
         data=self.payload();data['cpf']='';data['aluno_whatsapp']=''
         self.assertEqual(self.client.post('/alunos/novo/',data).status_code,200)

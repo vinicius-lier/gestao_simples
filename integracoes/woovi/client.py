@@ -47,6 +47,7 @@ class Cobranca:
     expira_em: Optional[object]
     transaction_id: str
     pago_em: Optional[object]
+    taxa_centavos: Optional[int] = None  # "fee" — nem sempre vem no GET
 
 
 @dataclass(frozen=True)
@@ -178,6 +179,17 @@ class WooviClient:
             saque_bloqueado=bool(dados.get("withdrawBlocked")),
         )
 
+    def listar_subcontas(self):
+        """Subcontas da conta (somente leitura)."""
+        resposta = self._request("GET", "/api/v1/subaccount")
+        # O schema documenta "subaccounts"; o exemplo, "subAccounts".
+        itens = resposta.get("subaccounts") if isinstance(resposta, dict) else None
+        if itens is None and isinstance(resposta, dict):
+            itens = resposta.get("subAccounts")
+        if not isinstance(itens, list):
+            raise WooviInvalidResponseError("A Woovi retornou uma lista de subcontas inválida.")
+        return [self._subconta({"SubAccount": item}) for item in itens if isinstance(item, dict)]
+
     def criar_ou_obter_subconta(self, pix_key, nome):
         """Cria a subconta da chave Pix, ou devolve a existente."""
         resposta = self._request(
@@ -188,10 +200,20 @@ class WooviClient:
     def obter_subconta(self, pix_key):
         return self._subconta(self._request("GET", f"/api/v1/subaccount/{_caminho(pix_key)}"))
 
+    def creditar_subconta(self, pix_key, valor_centavos, descricao=""):
+        """Transfere ``valor_centavos`` da conta principal para a subconta.
+        NÃO é idempotente (não aceita correlationID): depois de um timeout,
+        confira o extrato da subconta antes de repetir."""
+        corpo = {"value": int(valor_centavos)}
+        if descricao:
+            corpo["description"] = descricao[:140]
+        return self._request("POST", f"/api/v1/subaccount/{_caminho(pix_key)}/credit", json=corpo)
+
     def sacar_subconta(self, pix_key, valor_centavos):
         """Saca da subconta para a própria chave Pix dela. NÃO é idempotente
         e responde antes da confirmação (status CREATED): a confirmação chega
-        pelos webhooks OPENPIX:MOVEMENT_CONFIRMED/FAILED."""
+        pelos webhooks OPENPIX:MOVEMENT_CONFIRMED/FAILED. A tarifa de saque
+        sai do saldo além do valor pedido (ver repasses.valor_do_saque)."""
         resposta = self._request(
             "POST",
             f"/api/v1/subaccount/{_caminho(pix_key)}/withdraw",
@@ -239,6 +261,7 @@ class WooviClient:
             expira_em=parse_datetime(dados.get("expiresDate") or ""),
             transaction_id=dados.get("transactionID") or "",
             pago_em=parse_datetime(dados.get("paidAt") or ""),
+            taxa_centavos=None if dados.get("fee") is None else _centavos(dados.get("fee")),
         )
 
     def criar_cobranca(

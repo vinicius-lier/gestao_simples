@@ -293,6 +293,28 @@ class CobrancaPix(models.Model):
     link_pagamento = models.URLField(max_length=500, blank=True)
     expira_em = models.DateTimeField()
     pago_em = models.DateTimeField(null=True, blank=True)
+
+    # O Pix é criado sem split (a Woovi não aceita split de 100%): o valor
+    # entra na conta principal e o repasse credita o LÍQUIDO na subconta —
+    # a taxa da Woovi é paga pela academia.
+    taxa = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Taxa da Woovi sobre este Pix (vem no aviso de pagamento). "
+                  "Se ficar vazia, o repasse para em 'Requer atenção' até ser informada.",
+    )
+    valor_liquido = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Valor pago menos a taxa: o que é creditado na subconta da academia.",
+    )
+    creditado_em = models.DateTimeField(
+        null=True, blank=True, help_text="Quando o líquido foi creditado na subconta.",
+    )
+    credito_incerto = models.BooleanField(
+        default=False,
+        help_text="O último pedido de crédito terminou sem resposta: conferir o extrato "
+                  "da subconta antes de pedir de novo (o crédito não é idempotente).",
+    )
+
     criada_em = models.DateTimeField(auto_now_add=True)
     atualizada_em = models.DateTimeField(auto_now=True)
 

@@ -10,10 +10,14 @@ comando ``processar_repasses`` (tarefa agendada a cada minuto) faz o resto:
    concorrentes da mesma subconta;
 2. se o pedido anterior terminou em timeout, confere o extrato ANTES de
    pedir de novo (o saque não é idempotente);
-3. consulta o saldo REAL da subconta — nunca assume que é o valor da
+3. credita na subconta o LÍQUIDO de cada Pix pago ainda não creditado (o Pix
+   é criado sem split — a Woovi não aceita split de 100% — e a taxa da Woovi
+   é paga pela academia). O crédito também não é idempotente: timeout marca
+   a cobrança e o extrato é conferido antes de repetir;
+4. consulta o saldo REAL da subconta — nunca assume que é o valor da
    mensalidade (taxas, pagamentos acumulados);
-4. saca todo o saldo disponível;
-5. a confirmação chega pelos webhooks MOVEMENT_CONFIRMED/FAILED; repasse
+5. saca todo o saldo disponível;
+6. a confirmação chega pelos webhooks MOVEMENT_CONFIRMED/FAILED; repasse
    sem confirmação depois de ``PRAZO_CONFIRMACAO`` é conferido no extrato.
 
 Falhas são retentadas após 1, 5, 15, 60 e 180 minutos (6 tentativas, ~4h20);
@@ -30,7 +34,7 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 from financeiro.alertas import alertar_plataforma
-from financeiro.models import ContaRecebimento, Repasse
+from financeiro.models import CobrancaPix, ContaRecebimento, Repasse
 from integracoes.woovi.client import WooviClient
 from integracoes.woovi.exceptions import WooviError, WooviTimeoutError
 
@@ -53,6 +57,20 @@ _URL = re.compile(r"https?://\S+")
 
 def saque_minimo_centavos():
     return int(getattr(settings, "WOOVI_SAQUE_MINIMO_CENTAVOS", 101))
+
+
+def valor_do_saque(saldo_centavos):
+    """Quanto pedir para esvaziar a subconta. Abaixo de R$ 1.000 a Woovi
+    cobra a tarifa de saque do próprio saldo, além do valor pedido (pedir
+    o saldo inteiro volta "Saldo insuficiente"); a partir daí não há
+    tarifa. A tarifa é paga pela academia."""
+    if saldo_centavos >= int(getattr(settings, "WOOVI_SAQUE_SEM_TARIFA_CENTAVOS", 100000)):
+        return saldo_centavos
+    return max(0, saldo_centavos - int(getattr(settings, "WOOVI_TARIFA_SAQUE_CENTAVOS", 100)))
+
+
+class TaxaDesconhecida(Exception):
+    """Pix pago sem a taxa da Woovi: não dá para calcular o líquido."""
 
 
 def _texto_erro(erro):
@@ -135,6 +153,57 @@ def _saque_no_extrato(client, repasse):
     return saque, estorno
 
 
+# ------------------------------------------------------------------ crédito
+def _credito_no_extrato(client, cobranca, centavos):
+    inicio = (cobranca.pago_em or cobranca.criada_em) - FOLGA_RELOGIO
+    for lancamento in client.extrato_subconta(cobranca.conta_recebimento.pix_key):
+        if (
+            lancamento.operacao in ("CREDIT", "TRANSFER_CREDIT")
+            and lancamento.valor_centavos == centavos
+            and (lancamento.momento is None or lancamento.momento >= inicio)
+        ):
+            return True
+    return False
+
+
+def _creditar_pagamentos(client, repasse):
+    """Credita na subconta o líquido (pago menos a taxa da Woovi) de cada
+    Pix pago desta conta ainda não creditado. Timeout marca
+    ``credito_incerto`` e propaga: na próxima tentativa, o extrato é
+    conferido antes de pedir o crédito de novo."""
+    pendentes = (
+        CobrancaPix.objects.filter(
+            conta_recebimento_id=repasse.conta_recebimento_id,
+            status=CobrancaPix.PAGA,
+            creditado_em__isnull=True,
+        )
+        .select_related("conta_recebimento")
+        .order_by("pago_em", "pk")
+    )
+    for cobranca in pendentes:
+        liquido = cobranca.valor_liquido
+        if liquido is None and cobranca.taxa is not None:
+            liquido = max(Decimal("0"), cobranca.valor - cobranca.taxa)
+        if liquido is None:
+            raise TaxaDesconhecida(
+                f"Pix {cobranca.correlation_id} pago sem a taxa da Woovi: informe a taxa na "
+                "cobrança Pix (admin) e use 'Tentar o repasse de novo'."
+            )
+        centavos = int(liquido * 100)
+        ja_creditado = cobranca.credito_incerto and _credito_no_extrato(client, cobranca, centavos)
+        if centavos > 0 and not ja_creditado:
+            try:
+                client.creditar_subconta(
+                    repasse.pix_key_destino, centavos, descricao=f"Pix {cobranca.correlation_id}",
+                )
+            except WooviTimeoutError:
+                CobrancaPix.objects.filter(pk=cobranca.pk).update(credito_incerto=True)
+                raise
+        CobrancaPix.objects.filter(pk=cobranca.pk).update(
+            valor_liquido=liquido, creditado_em=timezone.now(), credito_incerto=False,
+        )
+
+
 # ------------------------------------------------------------------ o job
 def reivindicar(repasse_id, agora=None):
     """PENDENTE/FALHA vencido -> PROCESSANDO, atomicamente. Só um processo
@@ -169,28 +238,32 @@ def processar_repasse(repasse_id):
             repasse.reconciliar = False
             repasse.save()
 
+        _creditar_pagamentos(client, repasse)
+
         subconta = client.obter_subconta(repasse.pix_key_destino)
         if subconta.saque_bloqueado:
             ContaRecebimento.objects.filter(pk=repasse.conta_recebimento_id).update(saque_bloqueado=True)
             return _requer_atencao(repasse, "O provedor bloqueou transferências para esta chave Pix.")
 
         saldo = subconta.saldo_centavos
-        if saldo < saque_minimo_centavos():
+        valor = valor_do_saque(saldo)
+        if valor < saque_minimo_centavos():
             if saldo <= 0 and repasse.tentativas < TENTATIVAS_AGUARDANDO_SALDO:
                 return _aguardar_saldo(repasse)
             repasse.valor = Decimal("0")
             return _concluir(repasse, observacao=(
-                "" if saldo <= 0 else "Saldo abaixo do mínimo para transferência; segue no próximo repasse."
+                "" if saldo <= 0 else
+                "Saldo abaixo do mínimo para transferência (contando a tarifa); segue no próximo repasse."
             ))
 
         # Registra o que vai pedir ANTES da chamada: se ela terminar sem
         # resposta, é com isto que o extrato será conferido.
-        repasse.valor = Decimal(saldo) / 100
+        repasse.valor = Decimal(valor) / 100
         repasse.processado_em = timezone.now()
         repasse.save()
 
         try:
-            saque = client.sacar_subconta(repasse.pix_key_destino, saldo)
+            saque = client.sacar_subconta(repasse.pix_key_destino, valor)
         except WooviTimeoutError as exc:
             repasse.reconciliar = True
             return _falha(repasse, exc)
@@ -202,6 +275,8 @@ def processar_repasse(repasse_id):
         repasse.save()  # segue PROCESSANDO até o webhook de confirmação
         return repasse
 
+    except TaxaDesconhecida as exc:
+        return _requer_atencao(repasse, exc)
     except WooviError as exc:
         return _falha(repasse, exc)
 
@@ -248,8 +323,12 @@ def processar_repasses(limite=50):
 
 
 # --------------------------------------------------------------- webhooks
-def _localizar(correlation_id, valor_centavos=None, destino=""):
+def _localizar(correlation_id, valor_centavos=None, destino="", end_to_end_id=""):
     repasse = Repasse.objects.filter(correlation_id=correlation_id).first() if correlation_id else None
+    if repasse is None and end_to_end_id:
+        # Em produção o webhook do saque veio com um correlationID diferente
+        # do devolvido pelo /withdraw; o endToEndId é o mesmo nos dois.
+        repasse = Repasse.objects.filter(end_to_end_id=end_to_end_id).first()
     if repasse is None and valor_centavos is not None and destino:
         # O webhook pode chegar antes de gravarmos o correlationID (ou o
         # pedido ter dado timeout): casa pelo destino e valor em andamento.
@@ -263,7 +342,7 @@ def _localizar(correlation_id, valor_centavos=None, destino=""):
 
 def confirmar_repasse(correlation_id, end_to_end_id="", valor_centavos=None, destino=""):
     """OPENPIX:MOVEMENT_CONFIRMED. Idempotente."""
-    repasse = _localizar(correlation_id, valor_centavos, destino)
+    repasse = _localizar(correlation_id, valor_centavos, destino, end_to_end_id)
     if repasse is None:
         return None
     if repasse.status != Repasse.CONCLUIDA:
@@ -273,9 +352,9 @@ def confirmar_repasse(correlation_id, end_to_end_id="", valor_centavos=None, des
     return repasse
 
 
-def falhar_repasse(correlation_id, motivo, valor_centavos=None, destino=""):
+def falhar_repasse(correlation_id, motivo, valor_centavos=None, destino="", end_to_end_id=""):
     """OPENPIX:MOVEMENT_FAILED: o Pix de saída não chegou; tenta de novo."""
-    repasse = _localizar(correlation_id, valor_centavos, destino)
+    repasse = _localizar(correlation_id, valor_centavos, destino, end_to_end_id)
     if repasse is None:
         return None
     if repasse.status == Repasse.PROCESSANDO:

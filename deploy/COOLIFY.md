@@ -4,7 +4,7 @@ Passo a passo para colocar o sistema no ar pelo Coolify: aplicação Django
 (Dockerfile na raiz), PostgreSQL, rotinas agendadas, Pix pela Woovi com
 repasse automático para a chave Pix da academia e WhatsApp pela Evolution API.
 
-Ordem recomendada: **Woovi (habilitar split) → banco → aplicação → primeiro
+Ordem recomendada: **Woovi (habilitar subcontas) → banco → aplicação → primeiro
 acesso → tarefas agendadas → Woovi no sandbox → WhatsApp → Woovi em
 produção**. Suba **uma** academia primeiro.
 
@@ -12,7 +12,8 @@ produção**. Suba **uma** academia primeiro.
 
 ## 0. Antes de começar
 
-- **Woovi: peça ao suporte a habilitação de _Split_ e _Subcontas_** na sua
+- **Woovi: peça ao suporte a habilitação de _Subcontas_** (crédito e saque de
+  subconta) na sua
   conta (sandbox e produção). Sem isso, a criação da subconta e o Pix com
   split são recusados — o sistema não consegue receber.
 - Um domínio (ou subdomínio) com registro DNS **A** apontando para o IP do
@@ -136,7 +137,7 @@ Aplicação → **Scheduled Tasks → + Add**, duas tarefas:
 ## 5. Woovi no sandbox (teste de ponta a ponta)
 
 1. Crie a conta em `https://app.woovi-sandbox.com`, peça a habilitação de
-   split/subcontas e gere o **AppID** em **API/Plugins → Nova API**. Coloque-o
+   subcontas e gere o **AppID** em **API/Plugins → Nova API**. Coloque-o
    em `WOOVI_APP_ID` (com `WOOVI_BASE_URL` do sandbox) e faça **Redeploy**.
 2. **Webhooks** — em API/Plugins → Webhooks, cadastre **três**, todos com a
    URL `https://gestao.seudominio.com.br/webhooks/woovi/`:
@@ -194,7 +195,7 @@ Aplicação → **Scheduled Tasks → + Add**, duas tarefas:
 
 ## 7. Virar a Woovi para produção
 
-1. Na conta de **produção** (`https://app.woovi.com`), com split/subcontas
+1. Na conta de **produção** (`https://app.woovi.com`), com subcontas
    habilitados: gere um novo AppID e cadastre os **mesmos três webhooks**.
 2. Variáveis da aplicação: `WOOVI_BASE_URL=https://api.woovi.com` e o novo
    `WOOVI_APP_ID`. Redeploy.
@@ -209,13 +210,20 @@ Aplicação → **Scheduled Tasks → + Add**, duas tarefas:
 A documentação da Woovi não fecha estes pontos; o código foi escrito para
 tolerar qualquer resposta, mas o custo e o resultado precisam ser conferidos:
 
-- **Tarifa por saque**: a FAQ fala em R$ 1,00 por saque abaixo de R$ 1.000,
-  e o extrato da subconta tem o lançamento `WITHDRAWAL_FEE`. Com repasse a
-  cada pagamento, isso pode significar uma tarifa por mensalidade paga.
-- **Taxa da cobrança com split de 100%**: não está documentado se sai da
-  conta principal ou da subconta. O repasse sempre saca o **saldo real** da
-  subconta (nunca assume o valor da mensalidade), então funciona nos dois
-  casos — mas o custo precisa ser conhecido.
+- **Tarifa por saque** (confirmada em produção): R$ 1,00 por saque abaixo de
+  R$ 1.000, cobrada do saldo da subconta **além** do valor pedido — pedir o
+  saldo inteiro volta "Saldo insuficiente". O repasse pede saldo − tarifa
+  (`WOOVI_TARIFA_SAQUE_CENTAVOS`, padrão 100); a partir de R$ 1.000
+  (`WOOVI_SAQUE_SEM_TARIFA_CENTAVOS`) saca tudo, sem tarifa. Com repasse a cada
+  pagamento, a academia paga R$ 1,00 por mensalidade, além da taxa do Pix.
+- **Sem split**: a Woovi recusa split de 100% ("O valor total do split de
+  pagamento não pode ser igual ao valor da cobrança"). O Pix vai sem split e,
+  depois do pagamento, o repasse credita na subconta o **líquido** (valor pago
+  menos a taxa da Woovi — a taxa é paga pela academia).
+- **Saque automático da conta principal**: desligue no painel da Woovi. O
+  dinheiro das academias fica na conta principal até ser creditado na subconta
+  (em até ~1 minuto); um saque automático nesse intervalo faria o crédito falhar
+  por falta de saldo.
 - **Nome do recebedor** que a família vê no app do banco ao pagar.
 - Se os webhooks `MOVEMENT_*` chegam para saques de subconta. Se não
   chegarem, o sistema conclui o repasse pelo extrato após 30 minutos.

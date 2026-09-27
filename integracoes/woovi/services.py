@@ -1,11 +1,13 @@
 """Recebimento das mensalidades por Pix via Woovi.
 
 Fluxo: a academia cadastra a chave Pix (``configurar_chave_pix``), que
-identifica uma subconta na Woovi. Cada Pix de mensalidade é criado com
-split de 100% para essa subconta (``garantir_cobranca_pix``). Quando o Pix
-é pago, o webhook registra o pagamento e abre um repasse
-(``registrar_pagamento_pix``); o job ``processar_repasses`` (ver
-``repasses``) transfere o saldo da subconta para a chave Pix.
+identifica uma subconta na Woovi. Cada Pix de mensalidade é criado SEM
+split (``garantir_cobranca_pix``): o valor entra na conta principal. A Woovi
+não aceita split de 100%, e o valor pago é todo da academia — então, quando o
+Pix é pago, o webhook registra o pagamento com a taxa da Woovi e abre um
+repasse (``registrar_pagamento_pix``); o job ``processar_repasses`` (ver
+``repasses``) credita na subconta o valor líquido (pago menos a taxa, que é
+paga pela academia) e transfere o saldo da subconta para a chave Pix.
 
 Mensagens de erro de negócio (``ValueError`` e subclasses) podem ir para a
 tela: não citam o provedor.
@@ -55,6 +57,7 @@ def valor_em_centavos(valor):
 
 def nome_da_academia(academia):
     return academia.nome_fantasia or academia.nome
+
 
 
 # ------------------------------------------------------ conta de recebimento
@@ -178,9 +181,9 @@ def garantir_cobranca_pix(mensalidade):
     — pendente ou vencida —, criando um se preciso. Idempotente: com Pix
     vigente para a conta de recebimento ativa, não chama o provedor.
 
-    O Pix é criado com split de 100% do valor para a subconta da chave de
-    recebimento (SPLIT_SUB_ACCOUNT). Taxas do provedor não são descontadas
-    aqui: o repasse transfere o saldo que houver de fato na subconta.
+    O Pix é criado sem split: o valor entra na conta principal e só depois
+    do pagamento o líquido é creditado na subconta da conta de recebimento
+    (ver ``repasses``). A cobrança guarda a conta de recebimento vigente.
 
     O lock na linha da mensalidade impede que operador e família, clicando
     ao mesmo tempo, gerem dois Pix."""
@@ -223,11 +226,6 @@ def garantir_cobranca_pix(mensalidade):
             comentario=f"Mensalidade {travada.competencia:%m/%Y} - {aluno.nome}"[:140],
             expira_em_segundos=VALIDADE_COBRANCA_DIAS * 24 * 60 * 60,
             cliente=_dados_cliente(aluno.responsavel_financeiro),
-            splits=[{
-                "value": valor_centavos,
-                "pixKey": conta.pix_key,
-                "splitType": "SPLIT_SUB_ACCOUNT",
-            }],
         )
         if not criada.correlation_id or not criada.br_code:
             raise WooviInvalidResponseError("A resposta da Woovi não contém o Pix da cobrança.")
@@ -287,6 +285,7 @@ def conferir_pagamento_pix(mensalidade):
         if remota.status == "COMPLETED":
             return registrar_pagamento_pix(
                 cobranca, pago_em=remota.pago_em, transaction_id=remota.transaction_id,
+                taxa_centavos=remota.taxa_centavos, valor_pago_centavos=remota.valor_centavos or None,
             )
         if remota.status == "EXPIRED":
             CobrancaPix.objects.filter(pk=cobranca.pk, status=CobrancaPix.ATIVA).update(
@@ -296,10 +295,13 @@ def conferir_pagamento_pix(mensalidade):
 
 
 # ------------------------------------------------------ pagamento e repasse
-def registrar_pagamento_pix(cobranca, *, pago_em=None, transaction_id=""):
+def registrar_pagamento_pix(cobranca, *, pago_em=None, transaction_id="", taxa_centavos=None, valor_pago_centavos=None):
     """Registra o pagamento de um Pix: marca a cobrança e a mensalidade como
-    pagas e abre um repasse para a conta que recebeu. Idempotente — o mesmo
-    Pix pago duas vezes (webhook repetido) não gera nada de novo.
+    pagas, guarda a taxa da Woovi e o líquido (o que será creditado na
+    subconta — a taxa é paga pela academia) e abre um repasse para a conta
+    que recebeu. Idempotente — o mesmo Pix pago duas vezes (webhook
+    repetido) não gera nada de novo. Sem a taxa, o líquido fica vazio e o
+    repasse pede atenção até alguém informá-la.
 
     O dinheiro caiu na subconta em qualquer caso, então o repasse é aberto
     mesmo quando a mensalidade já estava paga (pagamento em dobro) ou foi
@@ -319,7 +321,13 @@ def registrar_pagamento_pix(cobranca, *, pago_em=None, transaction_id=""):
         cobranca.status = CobrancaPix.PAGA
         cobranca.pago_em = pago_em or timezone.now()
         cobranca.transaction_id = transaction_id or cobranca.transaction_id
-        cobranca.save(update_fields=["status", "pago_em", "transaction_id", "atualizada_em"])
+        if taxa_centavos is not None:
+            pago = int(valor_pago_centavos) if valor_pago_centavos else valor_em_centavos(cobranca.valor)
+            cobranca.taxa = Decimal(int(taxa_centavos)) / 100
+            cobranca.valor_liquido = Decimal(max(0, pago - int(taxa_centavos))) / 100
+        cobranca.save(update_fields=[
+            "status", "pago_em", "transaction_id", "taxa", "valor_liquido", "atualizada_em",
+        ])
 
         mensalidade = Mensalidade.objects.select_for_update().get(pk=cobranca.mensalidade_id)
         if mensalidade.status == "paga":
@@ -386,7 +394,7 @@ def dados_do_evento(payload):
             return None
         referencia = pix.get("endToEndId") or charge.get("transactionID") or ""
         resumo = {
-            "charge": {k: charge.get(k) for k in ("correlationID", "status", "value", "transactionID", "paidAt")},
+            "charge": {k: charge.get(k) for k in ("correlationID", "status", "value", "fee", "transactionID", "paidAt")},
             "pix": {k: pix.get(k) for k in ("endToEndId", "value", "time")},
         }
     elif evento in (EVENTO_SAQUE_CONFIRMADO, EVENTO_SAQUE_FALHOU):
@@ -423,6 +431,8 @@ def processar_evento(evento):
             cobranca,
             pago_em=parse_datetime(charge.get("paidAt") or ""),
             transaction_id=charge.get("transactionID") or "",
+            taxa_centavos=charge.get("fee"),
+            valor_pago_centavos=charge.get("value"),
         ):
             motivo = "pagamento já registrado"
     else:
@@ -442,6 +452,7 @@ def processar_evento(evento):
                 motivo=erro.get("description") or erro.get("code") or "falha informada pelo provedor",
                 valor_centavos=payment.get("value"),
                 destino=payment.get("destinationAlias") or "",
+                end_to_end_id=transacao.get("endToEndId") or "",
             )
         if repasse is None:
             motivo = "repasse não encontrado"

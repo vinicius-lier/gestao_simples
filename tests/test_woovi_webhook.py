@@ -15,7 +15,7 @@ def pago(correlation_id="mensalidade-1-abc", e2e="E2E1"):
     return {
         "event": "OPENPIX:CHARGE_COMPLETED",
         "charge": {
-            "correlationID": correlation_id, "status": "COMPLETED", "value": 12000,
+            "correlationID": correlation_id, "status": "COMPLETED", "value": 12000, "fee": 85,
             "transactionID": "tx1", "paidAt": "2026-09-08T15:07:50.891Z",
             "customer": {"name": "Maria", "taxID": {"taxID": "52998224725", "type": "BR:CPF"}},
         },
@@ -67,6 +67,8 @@ class WebhookWooviTests(CenarioWoovi, TestCase):
         self.mensalidade.refresh_from_db()
         self.assertEqual((self.mensalidade.status, self.mensalidade.forma_pagamento), ("paga", "pix"))
         self.assertEqual(self.mensalidade.pago_em.day, 8)
+        self.cobranca_pix.refresh_from_db()
+        self.assertEqual((self.cobranca_pix.taxa, self.cobranca_pix.valor_liquido), (Decimal("0.85"), Decimal("119.15")))
         repasse = Repasse.objects.get()
         self.assertEqual((repasse.status, repasse.pix_key_destino), (Repasse.PENDENTE, CHAVE))
         # O webhook nunca chama o provedor: nem saldo, nem saque.
@@ -130,6 +132,19 @@ class WebhookWooviTests(CenarioWoovi, TestCase):
         self.assertEqual(resposta.status_code, 200)
         repasse.refresh_from_db()
         self.assertEqual((repasse.status, repasse.end_to_end_id), (Repasse.CONCLUIDA, "E-SAQUE"))
+
+    def test_saque_confirmado_com_outro_correlation_id_casa_pelo_end_to_end(self, _chaves):
+        # Em produção o webhook trouxe um correlationID diferente do devolvido
+        # pelo /withdraw; o endToEndId era o mesmo.
+        repasse = self._repasse_processando()
+        Repasse.objects.filter(pk=repasse.pk).update(end_to_end_id="E-SAQUE", valor=Decimal("1.30"))
+        self.post({
+            "event": "OPENPIX:MOVEMENT_CONFIRMED",
+            "payment": {"value": 999, "status": "CONFIRMED", "destinationAlias": CHAVE, "correlationID": "outro"},
+            "transaction": {"value": 999, "endToEndId": "E-SAQUE"},
+        })
+        repasse.refresh_from_db()
+        self.assertEqual(repasse.status, Repasse.CONCLUIDA)
 
     def test_saque_com_falha_agenda_nova_tentativa(self, _chaves):
         repasse = self._repasse_processando()

@@ -120,6 +120,17 @@ class EvolutionClient:
             "POST", f"/message/sendText/{self.instance_name}", json=corpo
         )
 
+    def enviar_botoes(self, telefone, titulo, descricao, botoes, rodape=""):
+        """Mensagem interativa com botões (ex.: {"type": "url", "displayText":
+        ..., "url": ...}). Não é recurso oficial do WhatsApp: aparece nos apps
+        de celular atuais, mas o WhatsApp Web costuma não mostrar os botões."""
+        corpo = {"number": telefone, "title": titulo, "description": descricao, "buttons": botoes}
+        if rodape:
+            corpo["footer"] = rodape
+        return self._request(
+            "POST", f"/message/sendButtons/{self.instance_name}", json=corpo
+        )
+
 
 def client_para_config(config, timeout=None):
     """Monta um EvolutionClient a partir do IntegracaoWhatsApp da academia."""

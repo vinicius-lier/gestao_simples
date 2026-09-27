@@ -106,6 +106,20 @@ class WooviClientTests(SimpleTestCase):
         self.assertNotIn(APP_ID, "\n".join(logs.output))
 
     # ------------------------------------------------------------- subcontas
+    def test_listar_subcontas_aceita_as_duas_grafias_documentadas(self, mock_request):
+        for chave in ("subaccounts", "subAccounts"):
+            with self.subTest(chave=chave):
+                mock_request.return_value = resposta(json={chave: [
+                    {"name": "Escola", "pixKey": "a@b.com", "balance": 700, "withdrawBlocked": False},
+                ]})
+                subcontas = self.client.listar_subcontas()
+                self.assertEqual(mock_request.call_args.args, ("GET", f"{BASE}/api/v1/subaccount"))
+                self.assertEqual([(s.pix_key, s.saldo_centavos) for s in subcontas], [("a@b.com", 700)])
+
+        mock_request.return_value = resposta(json={"outra": []})
+        with self.assertRaises(WooviInvalidResponseError):
+            self.client.listar_subcontas()
+
     def test_criar_subconta(self, mock_request):
         mock_request.return_value = resposta(json={"SubAccount": {"name": "Escola", "pixKey": "a@b.com"}})
 
@@ -164,6 +178,21 @@ class WooviClientTests(SimpleTestCase):
         saque = self.client.sacar_subconta("a@b.com", 900)
 
         self.assertEqual((saque.correlation_id, saque.valor_centavos, saque.end_to_end_id), ("saque-2", 900, ""))
+
+    def test_creditar_subconta(self, mock_request):
+        mock_request.return_value = resposta(json={"pixKey": "a@b.com", "value": 115, "success": "ok"})
+
+        self.client.creditar_subconta("+5521999998888", 115, descricao="Pix c1")
+
+        args, kwargs = mock_request.call_args
+        self.assertEqual(args, ("POST", f"{BASE}/api/v1/subaccount/%2B5521999998888/credit"))
+        self.assertEqual(kwargs["json"], {"value": 115, "description": "Pix c1"})
+
+    def test_cobranca_le_a_taxa_quando_vem(self, mock_request):
+        mock_request.return_value = resposta(json={"charge": {"correlationID": "c1", "status": "COMPLETED", "value": 200, "fee": 85}})
+        self.assertEqual(self.client.obter_cobranca("c1").taxa_centavos, 85)
+        mock_request.return_value = resposta(json={"charge": {"correlationID": "c1", "status": "COMPLETED", "value": 200}})
+        self.assertIsNone(self.client.obter_cobranca("c1").taxa_centavos)
 
     def test_extrato(self, mock_request):
         mock_request.return_value = resposta(json=[

@@ -55,7 +55,7 @@ Trocar a chave (`configurar_chave_pix`): bloqueado enquanto houver transferênci
 
 ### Pix via Woovi (`integracoes/woovi/`)
 
-- Cada Pix é uma `CobrancaPix` (histórico preservado; no máximo uma ativa por mensalidade, garantido no banco), criada com **split de 100% para a subconta** da chave ativa (`SPLIT_SUB_ACCOUNT`). Vale **30 dias**; expirado (ou faltando menos de 1h), o próximo acesso gera outro. A criação usa `return_existing=true` e trava a linha da mensalidade.
+- Cada Pix é uma `CobrancaPix` (histórico preservado; no máximo uma ativa por mensalidade, garantido no banco), criada **sem split**: o valor entra na conta principal. A Woovi recusa split de 100% (HTTP 400 em produção) e o valor pago é todo da academia, então, depois do pagamento, o repasse **credita na subconta o líquido** (valor pago menos a taxa da Woovi, que vem no aviso de pagamento — **a taxa é paga pela academia**) e só então saca. Vale **30 dias**; expirado (ou faltando menos de 1h), o próximo acesso gera outro. A criação usa `return_existing=true` e trava a linha da mensalidade.
 - Mensalidades pendentes **e vencidas** podem gerar Pix. Sem chave de recebimento cadastrada, não há Pix.
 - O QR Code é gerado no próprio servidor (SVG); a família nunca carrega nada do domínio do provedor nem recebe a página hospedada dele.
 - Configuração: `WOOVI_APP_ID` e `WOOVI_BASE_URL` (padrão: produção, `https://api.woovi.com`; sandbox para testes). O AppID só vai no header das chamadas — nunca em tela, log ou banco.
@@ -72,15 +72,15 @@ Cadastre a URL no painel da Woovi para três eventos: `OPENPIX:CHARGE_COMPLETED`
 
 ### Repasse automático (`integracoes/woovi/repasses.py`, comando `processar_repasses`)
 
-Tarefa agendada **a cada minuto**. Para cada repasse devido: reivindica atomicamente (dois processos nunca pegam o mesmo), consulta o **saldo real** da subconta e saca **todo o saldo disponível** — nunca assume que é o valor da mensalidade, então tarifas e pagamentos acumulados são tolerados. O banco garante **um único repasse aberto por conta**: dois pagamentos quase simultâneos viram um único saque, e pagamento que chega durante um saque abre outro repasse quando este terminar.
+Tarefa agendada **a cada minuto**. Para cada repasse devido: reivindica atomicamente (dois processos nunca pegam o mesmo), **credita na subconta o líquido de cada Pix pago ainda não creditado** (`POST /subaccount/{pixKey}/credit`; timeout marca a cobrança e o extrato é conferido antes de repetir; Pix sem taxa conhecida leva o repasse a **Requer atenção** até a taxa ser informada no admin), consulta o **saldo real** da subconta e saca **todo o saldo disponível** — nunca assume que é o valor da mensalidade, então tarifas e pagamentos acumulados são tolerados. O banco garante **um único repasse aberto por conta**: dois pagamentos quase simultâneos viram um único saque, e pagamento que chega durante um saque abre outro repasse quando este terminar.
 
-- Saldo zerado logo após o pagamento: espera o crédito cair (até 3 tentativas) antes de concluir sem saque; saldo abaixo do mínimo (`WOOVI_SAQUE_MINIMO_CENTAVOS`, padrão R$ 1,01) fica para o próximo repasse.
+- Saldo zerado logo após o pagamento: espera o crédito cair (até 3 tentativas) antes de concluir sem saque; o saque pede **saldo − tarifa de saque** (`WOOVI_TARIFA_SAQUE_CENTAVOS`, padrão R$ 1,00, paga pela academia; a Woovi a cobra do saldo além do valor pedido, e pedir o saldo inteiro volta "Saldo insuficiente"); a partir de R$ 1.000 (`WOOVI_SAQUE_SEM_TARIFA_CENTAVOS`) não há tarifa e saca o saldo inteiro. Se saldo − tarifa ficar abaixo do mínimo (`WOOVI_SAQUE_MINIMO_CENTAVOS`, padrão R$ 1,01), o saldo fica para o próximo repasse. Custo por mensalidade para a academia: taxa do Pix (R$ 0,85 no teste) + R$ 1,00 do saque.
 - Falha: novas tentativas após **1, 5, 15, 60 e 180 minutos** (6 tentativas, ~4h20); depois, **Requer atenção** + alerta (`financeiro/alertas.py`, logger `gestao.alertas` — ponto único para ligar Zabbix/Discord). Chave recusada pelo provedor vai direto para Requer atenção.
 - Timeout no saque (o endpoint não é idempotente): antes de qualquer nova tentativa, o **extrato** da subconta é conferido; se o saque saiu, não é pedido de novo.
 - Sem confirmação em 30 minutos, o extrato decide (saque → concluído; estorno ou nada → nova tentativa).
 - Superusuários veem um aviso no portal quando há repasse em Requer atenção; no `/admin/financeiro/repasse/` há a ação "Tentar o repasse de novo".
 
-Custos a validar em produção (tarifa por saque, taxa da cobrança com split): ver `deploy/COOLIFY.md`.
+Custos a validar em produção (tarifa por saque, taxa do Pix): ver `deploy/COOLIFY.md`.
 
 ### Portal do responsável (`/responsavel/`)
 

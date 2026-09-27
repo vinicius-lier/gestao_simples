@@ -334,6 +334,12 @@ WOOVI_TIMEOUT = int(os.getenv("WOOVI_TIMEOUT", "30"))
 # disso fica na subconta e sai junto com o próximo repasse.
 WOOVI_SAQUE_MINIMO_CENTAVOS = int(os.getenv("WOOVI_SAQUE_MINIMO_CENTAVOS", "101"))
 
+# Tarifa de saque da Woovi (R$ 1,00 por saque abaixo de R$ 1.000, pela
+# documentação). Sai do saldo da subconta além do valor sacado, então o
+# repasse pede saldo − tarifa. A tarifa é paga pela academia.
+WOOVI_TARIFA_SAQUE_CENTAVOS = int(os.getenv("WOOVI_TARIFA_SAQUE_CENTAVOS", "100"))
+WOOVI_SAQUE_SEM_TARIFA_CENTAVOS = int(os.getenv("WOOVI_SAQUE_SEM_TARIFA_CENTAVOS", "100000"))
+
 # Por quanto tempo as chaves públicas que assinam os webhooks ficam em cache.
 WOOVI_WEBHOOK_CHAVES_TTL = int(os.getenv("WOOVI_WEBHOOK_CHAVES_TTL", str(6 * 60 * 60)))
 
@@ -386,6 +392,13 @@ N8N_TIMEOUT = int(os.getenv("N8N_TIMEOUT", "10"))
 # =============================================================================
 
 EVOLUTION_TIMEOUT = int(os.getenv("EVOLUTION_TIMEOUT", "15"))
+
+# Botão "Pagar mensalidade"/"Abrir portal" nas mensagens. DESLIGADO por
+# padrão: botões não são recurso oficial do WhatsApp e, no teste real
+# (26/09/2026, Evolution 2.3.7), a mensagem com botão foi aceita pela
+# Evolution mas NUNCA chegou ao celular — o WhatsApp descarta em silêncio.
+# Com false, cobrança e acesso vão como texto com o link (que chega).
+EVOLUTION_BOTOES = os.getenv("EVOLUTION_BOTOES", "false").lower() == "true"
 
 # Webhook opcional de eventos de conexão (connection.update / qrcode.updated).
 EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")

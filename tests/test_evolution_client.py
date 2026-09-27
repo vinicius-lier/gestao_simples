@@ -129,6 +129,21 @@ class EvolutionClientRequestTests(SimpleTestCase):
         self.assertEqual(resp["key"]["id"], "3EB0")
 
     @patch("integracoes.evolution.client.requests.request")
+    def test_enviar_botoes(self, mock_req):
+        mock_req.return_value = self._resp(body={"key": {"id": "BTN1"}})
+        botoes = [{"type": "url", "displayText": "Pagar mensalidade", "url": "https://x/pagar"}]
+
+        resp = self.client.enviar_botoes("5521999998888", "Mensalidade de Ana", "Texto", botoes, rodape="Escola")
+
+        metodo, url = mock_req.call_args.args
+        self.assertEqual((metodo, url), ("POST", f"{BASE}/message/sendButtons/keiko"))
+        self.assertEqual(mock_req.call_args.kwargs["json"], {
+            "number": "5521999998888", "title": "Mensalidade de Ana", "description": "Texto",
+            "buttons": botoes, "footer": "Escola",
+        })
+        self.assertEqual(resp["key"]["id"], "BTN1")
+
+    @patch("integracoes.evolution.client.requests.request")
     def test_timeout_vira_erro_sanitizado(self, mock_req):
         mock_req.side_effect = requests.Timeout("timed out")
         with self.assertRaises(EvolutionAPIError) as ctx:

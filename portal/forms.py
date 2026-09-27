@@ -109,6 +109,18 @@ class AlunoForm(forms.ModelForm):
                 self.cleaned_data['responsavel_whatsapp'] = self.cleaned_data['aluno_whatsapp']
                 self.cleaned_data['responsavel_email'] = self.cleaned_data['aluno_email']
             responsavel = self.cleaned_data.get('responsavel')
+            atual = self.instance.responsavel_financeiro if self.instance.pk else None
+            if (self.cleaned_data.get('proprio_responsavel') and self.initial.get('proprio_responsavel')
+                    and atual is not None and atual.academia_id == self.academia.pk):
+                # Editando um aluno que já era o próprio responsável: o que foi
+                # digitado são os dados atuais dele. (Só no cadastro de aluno
+                # novo um responsável achado pelo CPF mantém o contato antigo.)
+                atual.nome = self.cleaned_data['responsavel_nome'].strip()
+                atual.cpf = digits(self.cleaned_data.get('responsavel_cpf', ''))
+                atual.whatsapp = digits(self.cleaned_data['responsavel_whatsapp'])
+                atual.email = self.cleaned_data.get('responsavel_email', '')
+                atual.save(update_fields=['nome', 'cpf', 'whatsapp', 'email'])
+                responsavel = atual
             if not responsavel:
                 cpf = digits(self.cleaned_data.get('responsavel_cpf', ''))
                 nome = self.cleaned_data['responsavel_nome'].strip()

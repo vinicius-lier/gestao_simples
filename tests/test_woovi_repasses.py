@@ -7,7 +7,7 @@ from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
 
-from financeiro.models import ContaRecebimento, Repasse
+from financeiro.models import CobrancaPix, ContaRecebimento, Repasse
 from integracoes.woovi import repasses
 from integracoes.woovi.client import LancamentoExtrato
 from integracoes.woovi.exceptions import WooviAuthError, WooviTimeoutError, WooviUnavailableError
@@ -37,18 +37,99 @@ class ProcessarRepasseTests(CenarioWoovi, TestCase):
     def vencer(self):
         Repasse.objects.filter(pk=self.repasse.pk).update(proxima_tentativa_em=timezone.now())
 
+    def pix_pago(self, liquido=Decimal("1.15"), taxa=Decimal("0.85"), correlation_id="c-pago"):
+        return self.cobranca(
+            correlation_id=correlation_id, status=CobrancaPix.PAGA, pago_em=timezone.now(),
+            taxa=taxa, valor_liquido=liquido,
+        )
+
+    # ------------------------------------------------ crédito do líquido
+    def test_credita_o_liquido_na_subconta_antes_de_sacar(self, mock_client):
+        api = mock_client.return_value
+        api.obter_subconta.return_value = subconta(saldo=215)
+        api.sacar_subconta.return_value = saque(115)
+        cobranca = self.pix_pago()
+
+        repasse = self.processar()
+
+        api.creditar_subconta.assert_called_once_with(CHAVE, 115, descricao="Pix c-pago")
+        cobranca.refresh_from_db()
+        self.assertIsNotNone(cobranca.creditado_em)
+        api.sacar_subconta.assert_called_once_with(CHAVE, 115)
+        self.assertEqual(repasse.status, Repasse.PROCESSANDO)
+
+    def test_pix_ja_creditado_nao_e_creditado_de_novo(self, mock_client):
+        api = mock_client.return_value
+        api.obter_subconta.return_value = subconta(saldo=0)
+        cobranca = self.pix_pago()
+        CobrancaPix.objects.filter(pk=cobranca.pk).update(creditado_em=timezone.now())
+        self.processar()
+        api.creditar_subconta.assert_not_called()
+
+    def test_taxa_informada_depois_calcula_o_liquido(self, mock_client):
+        api = mock_client.return_value
+        api.obter_subconta.return_value = subconta(saldo=0)
+        self.pix_pago(liquido=None, taxa=Decimal("0.85"))
+        self.processar()
+        # valor da cobrança de teste: R$ 120,00 − 0,85
+        api.creditar_subconta.assert_called_once_with(CHAVE, 11915, descricao="Pix c-pago")
+
+    def test_sem_taxa_requer_atencao_sem_creditar_nem_sacar(self, mock_client):
+        api = mock_client.return_value
+        self.pix_pago(liquido=None, taxa=None)
+        with self.assertLogs("gestao.alertas", level="ERROR"):
+            repasse = self.processar()
+        self.assertEqual(repasse.status, Repasse.REQUER_ATENCAO)
+        self.assertIn("taxa", repasse.erro)
+        api.creditar_subconta.assert_not_called()
+        api.sacar_subconta.assert_not_called()
+
+    def test_liquido_zero_nao_chama_o_credito(self, mock_client):
+        api = mock_client.return_value
+        api.obter_subconta.return_value = subconta(saldo=0)
+        cobranca = self.pix_pago(liquido=Decimal("0"))
+        self.processar()
+        api.creditar_subconta.assert_not_called()
+        cobranca.refresh_from_db()
+        self.assertIsNotNone(cobranca.creditado_em)
+
+    def test_timeout_no_credito_confere_o_extrato_antes_de_repetir(self, mock_client):
+        api = mock_client.return_value
+        api.creditar_subconta.side_effect = WooviTimeoutError("sem resposta")
+        cobranca = self.pix_pago()
+
+        repasse = self.processar()
+        self.assertEqual(repasse.status, Repasse.FALHA)
+        cobranca.refresh_from_db()
+        self.assertTrue(cobranca.credito_incerto)
+        api.sacar_subconta.assert_not_called()
+
+        # O crédito tinha entrado: aparece no extrato. Não pede de novo.
+        api.extrato_subconta.return_value = [lancamento("CREDIT", 115)]
+        api.obter_subconta.return_value = subconta(saldo=215)
+        api.sacar_subconta.return_value = saque(115)
+        self.vencer()
+        self.processar()
+
+        self.assertEqual(api.creditar_subconta.call_count, 1)
+        cobranca.refresh_from_db()
+        self.assertIsNotNone(cobranca.creditado_em)
+        self.assertFalse(cobranca.credito_incerto)
+        api.sacar_subconta.assert_called_once_with(CHAVE, 115)
+
     # --------------------------------------------------------- caminho feliz
-    def test_consulta_o_saldo_real_e_saca_tudo(self, mock_client):
+    def test_consulta_o_saldo_real_e_saca_o_saldo_menos_a_tarifa(self, mock_client):
         # Saldo acumulado maior que uma mensalidade: saca o saldo, não os 120.
+        # A tarifa de saque (R$ 1,00) sai do saldo além do valor pedido.
         mock_client.return_value.obter_subconta.return_value = subconta(saldo=23755)
-        mock_client.return_value.sacar_subconta.return_value = saque(23755)
+        mock_client.return_value.sacar_subconta.return_value = saque(23655)
 
         repasse = self.processar()
 
         mock_client.return_value.obter_subconta.assert_called_once_with(CHAVE)
-        mock_client.return_value.sacar_subconta.assert_called_once_with(CHAVE, 23755)
+        mock_client.return_value.sacar_subconta.assert_called_once_with(CHAVE, 23655)
         self.assertEqual(repasse.status, Repasse.PROCESSANDO)
-        self.assertEqual(repasse.valor, Decimal("237.55"))
+        self.assertEqual(repasse.valor, Decimal("236.55"))
         self.assertEqual(repasse.correlation_id, "saque-1")
         self.assertEqual(repasse.tentativas, 1)
         self.assertIsNotNone(repasse.processado_em)
@@ -59,11 +140,17 @@ class ProcessarRepasseTests(CenarioWoovi, TestCase):
         repasse = self.processar()
         self.assertEqual((repasse.status, repasse.end_to_end_id), (Repasse.CONCLUIDA, "E1"))
 
-    def test_saldo_liquido_depois_de_tarifa_e_aceito(self, mock_client):
-        mock_client.return_value.obter_subconta.return_value = subconta(saldo=11915)
-        mock_client.return_value.sacar_subconta.return_value = saque(11915)
+    def test_saque_a_partir_de_mil_reais_nao_tem_tarifa(self, mock_client):
+        mock_client.return_value.obter_subconta.return_value = subconta(saldo=100000)
+        mock_client.return_value.sacar_subconta.return_value = saque(100000)
         self.processar()
-        mock_client.return_value.sacar_subconta.assert_called_once_with(CHAVE, 11915)
+        mock_client.return_value.sacar_subconta.assert_called_once_with(CHAVE, 100000)
+
+    def test_abaixo_de_mil_reais_desconta_a_tarifa(self, mock_client):
+        mock_client.return_value.obter_subconta.return_value = subconta(saldo=99999)
+        mock_client.return_value.sacar_subconta.return_value = saque(99899)
+        self.processar()
+        mock_client.return_value.sacar_subconta.assert_called_once_with(CHAVE, 99899)
 
     # ------------------------------------------------------------ sem saldo
     def test_saldo_zerado_aguarda_credito_e_depois_conclui_sem_saque(self, mock_client):
@@ -77,6 +164,21 @@ class ProcessarRepasseTests(CenarioWoovi, TestCase):
         repasse = self.processar()
         self.assertEqual((repasse.status, repasse.valor), (Repasse.CONCLUIDA, Decimal("0")))
         mock_client.return_value.sacar_subconta.assert_not_called()
+
+    def test_saldo_que_nao_cobre_tarifa_e_minimo_fica_para_o_proximo(self, mock_client):
+        # Pix de teste de R$ 2,00: líquido R$ 1,15 na subconta. 1,15 − 1,00 de
+        # tarifa fica abaixo do mínimo de R$ 1,01: não saca, segue guardado.
+        mock_client.return_value.obter_subconta.return_value = subconta(saldo=115)
+        repasse = self.processar()
+        self.assertEqual((repasse.status, repasse.valor), (Repasse.CONCLUIDA, Decimal("0")))
+        self.assertIn("tarifa", repasse.erro)
+        mock_client.return_value.sacar_subconta.assert_not_called()
+
+    def test_saldo_que_cobre_tarifa_e_minimo_saca(self, mock_client):
+        mock_client.return_value.obter_subconta.return_value = subconta(saldo=201)
+        mock_client.return_value.sacar_subconta.return_value = saque(101)
+        self.processar()
+        mock_client.return_value.sacar_subconta.assert_called_once_with(CHAVE, 101)
 
     def test_saldo_abaixo_do_minimo_nao_saca(self, mock_client):
         mock_client.return_value.obter_subconta.return_value = subconta(saldo=100)
@@ -138,14 +240,27 @@ class ProcessarRepasseTests(CenarioWoovi, TestCase):
         self.assertEqual(repasse.status, Repasse.FALHA)
         self.assertTrue(repasse.reconciliar)
 
-        # O saque tinha saído: aparece no extrato. Não pede de novo.
-        api.extrato_subconta.return_value = [lancamento("WITHDRAWAL", 12000)]
+        # O saque tinha saído: aparece no extrato (com a tarifa à parte).
+        # Não pede de novo.
+        api.extrato_subconta.return_value = [lancamento("WITHDRAWAL", 11900), lancamento("WITHDRAWAL_FEE", 100)]
         self.vencer()
         repasse = self.processar()
 
         self.assertEqual(repasse.status, Repasse.PROCESSANDO)
         self.assertFalse(repasse.reconciliar)
         self.assertEqual(api.sacar_subconta.call_count, 1)
+
+    def test_saque_antigo_no_extrato_nao_conta(self, mock_client):
+        api = mock_client.return_value
+        api.obter_subconta.return_value = subconta(saldo=12000)
+        api.sacar_subconta.side_effect = [WooviTimeoutError("sem resposta"), saque(12000)]
+        self.processar()
+
+        api.extrato_subconta.return_value = [lancamento("WITHDRAWAL", 11900, minutos=-60)]
+        self.vencer()
+        self.processar()
+
+        self.assertEqual(api.sacar_subconta.call_count, 2)
 
     def test_timeout_sem_saque_no_extrato_consulta_saldo_e_saca(self, mock_client):
         api = mock_client.return_value

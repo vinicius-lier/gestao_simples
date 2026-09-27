@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase
@@ -180,8 +181,6 @@ class TrocarChavePixTests(CenarioWoovi, TestCase):
 
         cobranca = garantir_cobranca_pix(self.mensalidade)
 
-        split = mock_client.return_value.criar_cobranca.call_args.kwargs["splits"][0]
-        self.assertEqual(split["pixKey"], self.NOVA)
         self.assertEqual(cobranca.conta_recebimento.pix_key, self.NOVA)
 
 
@@ -190,14 +189,16 @@ class GarantirCobrancaPixTests(CenarioWoovi, TestCase):
     def setUp(self):
         self.criar_cenario()
 
-    def test_cria_pix_com_split_de_100_por_cento_para_a_subconta(self, mock_client):
+    def test_cria_pix_sem_split(self, mock_client):
         mock_client.return_value.criar_cobranca.side_effect = cobranca_criada
 
         cobranca = garantir_cobranca_pix(self.mensalidade)
 
         kwargs = mock_client.return_value.criar_cobranca.call_args.kwargs
         self.assertEqual(kwargs["valor_centavos"], 12000)
-        self.assertEqual(kwargs["splits"], [{"value": 12000, "pixKey": CHAVE, "splitType": "SPLIT_SUB_ACCOUNT"}])
+        # A Woovi recusa split de 100% (HTTP 400 em produção) e o valor é todo
+        # da academia: o Pix vai sem split e o líquido é creditado depois.
+        self.assertNotIn("splits", kwargs)
         self.assertTrue(kwargs["correlation_id"].startswith(f"mensalidade-{self.mensalidade.pk}-"))
         self.assertEqual(kwargs["comentario"], "Mensalidade 09/2026 - Ana")
         self.assertEqual(kwargs["cliente"], {"name": "Maria", "taxID": "52998224725", "phone": "5521999998888"})
@@ -273,6 +274,20 @@ class RegistrarPagamentoPixTests(CenarioWoovi, TestCase):
         repasse = Repasse.objects.get()
         self.assertEqual((repasse.status, repasse.pix_key_destino, repasse.valor), (Repasse.PENDENTE, CHAVE, None))
 
+    def test_guarda_a_taxa_e_o_liquido(self):
+        cobranca = self.cobranca()
+
+        registrar_pagamento_pix(cobranca, taxa_centavos=85, valor_pago_centavos=12000)
+
+        cobranca.refresh_from_db()
+        self.assertEqual((cobranca.taxa, cobranca.valor_liquido), (Decimal("0.85"), Decimal("119.15")))
+
+    def test_sem_taxa_o_liquido_fica_vazio(self):
+        cobranca = self.cobranca()
+        registrar_pagamento_pix(cobranca)
+        cobranca.refresh_from_db()
+        self.assertIsNone(cobranca.valor_liquido)
+
     def test_pagamento_repetido_nao_gera_nada_novo(self):
         cobranca = self.cobranca()
         registrar_pagamento_pix(cobranca)
@@ -339,3 +354,4 @@ class ConferirPagamentoPixTests(CenarioWoovi, TestCase):
         self.assertFalse(conferir_pagamento_pix(self.mensalidade))
         cobranca.refresh_from_db()
         self.assertEqual(cobranca.status, CobrancaPix.EXPIRADA)
+

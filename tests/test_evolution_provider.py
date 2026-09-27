@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from academias.models import Academia, IntegracaoWhatsApp
 from atletas.models import Atleta, Responsavel
@@ -43,11 +43,12 @@ class _Base(TestCase):
         )
 
 
+@override_settings(EVOLUTION_BOTOES=True)
 class EvolutionProviderTests(_Base):
     @patch("integracoes.evolution.client.client_para_config")
-    def test_enviar_cobranca_normaliza_retorno(self, mock_factory):
+    def test_cobranca_vai_com_botao_que_abre_o_pagamento(self, mock_factory):
         cliente = Mock()
-        cliente.enviar_texto.return_value = {"key": {"id": "3EB0FF"}, "status": "PENDING"}
+        cliente.enviar_botoes.return_value = {"key": {"id": "3EB0FF"}, "status": "PENDING"}
         mock_factory.return_value = cliente
 
         resultado = enviar_cobranca(
@@ -56,27 +57,61 @@ class EvolutionProviderTests(_Base):
 
         self.assertEqual(resultado["provider"], "evolution")
         self.assertEqual(resultado["message_id"], "3EB0FF")
-        numero, texto = cliente.enviar_texto.call_args.args
+        cliente.enviar_texto.assert_not_called()
+        numero, titulo, descricao, botoes = cliente.enviar_botoes.call_args.args
         self.assertEqual(numero, "5521999998888")  # normalizado
-        self.assertIn("https://pgto/x", texto)
-        self.assertIn("Bruno", texto)
+        self.assertEqual(titulo, "Mensalidade de Bruno")
+        self.assertIn("Ana", descricao)
+        # O link também vai no texto, para quem não enxerga o botão.
+        self.assertIn("https://pgto/x", descricao)
+        self.assertEqual(botoes, [{"type": "url", "displayText": "Pagar mensalidade", "url": "https://pgto/x"}])
+        self.assertEqual(cliente.enviar_botoes.call_args.kwargs["rodape"], "Keiko")
 
     @patch("integracoes.evolution.client.client_para_config")
-    def test_enviar_acesso(self, mock_factory):
+    def test_acesso_vai_com_botao_abrir_portal(self, mock_factory):
         cliente = Mock()
-        cliente.enviar_texto.return_value = {"key": {"id": "WAMID9"}}
+        cliente.enviar_botoes.return_value = {"key": {"id": "WAMID9"}}
         mock_factory.return_value = cliente
 
-        provider = EvolutionWhatsAppProvider(self.config)
-        resultado = provider.enviar_acesso(self.responsavel, "https://portal/entrar/abc")
+        resultado = EvolutionWhatsAppProvider(self.config).enviar_acesso(self.responsavel, "https://portal/entrar/abc")
 
         self.assertEqual(resultado["message_id"], "WAMID9")
-        self.assertIn("https://portal/entrar/abc", cliente.enviar_texto.call_args.args[1])
+        botoes = cliente.enviar_botoes.call_args.args[3]
+        self.assertEqual(botoes, [{"type": "url", "displayText": "Abrir portal", "url": "https://portal/entrar/abc"}])
+        self.assertIn("https://portal/entrar/abc", cliente.enviar_botoes.call_args.args[2])
+
+    @patch("integracoes.evolution.client.client_para_config")
+    def test_botao_recusado_pela_evolution_cai_para_texto(self, mock_factory):
+        cliente = Mock()
+        cliente.enviar_botoes.side_effect = EvolutionAPIError("A Evolution API retornou o status HTTP 400.")
+        cliente.enviar_texto.return_value = {"key": {"id": "TXT1"}}
+        mock_factory.return_value = cliente
+
+        with self.assertLogs("integracoes.whatsapp.evolution", level="WARNING"):
+            resultado = EvolutionWhatsAppProvider(self.config).enviar_cobranca(
+                self.responsavel, self.mensalidade, "https://pgto/x"
+            )
+
+        self.assertEqual(resultado["message_id"], "TXT1")
+        numero, texto = cliente.enviar_texto.call_args.args
+        self.assertIn("Pague por aqui: https://pgto/x", texto)
+
+    @override_settings(EVOLUTION_BOTOES=False)
+    @patch("integracoes.evolution.client.client_para_config")
+    def test_botoes_desligados_mandam_so_texto(self, mock_factory):
+        cliente = Mock()
+        cliente.enviar_texto.return_value = {"key": {"id": "TXT2"}}
+        mock_factory.return_value = cliente
+
+        EvolutionWhatsAppProvider(self.config).enviar_cobranca(self.responsavel, self.mensalidade, "https://x")
+
+        cliente.enviar_botoes.assert_not_called()
+        self.assertIn("https://x", cliente.enviar_texto.call_args.args[1])
 
     @patch("integracoes.evolution.client.client_para_config")
     def test_message_id_ausente_vira_string_vazia(self, mock_factory):
         cliente = Mock()
-        cliente.enviar_texto.return_value = {"status": "PENDING"}
+        cliente.enviar_botoes.return_value = {"status": "PENDING"}
         mock_factory.return_value = cliente
 
         resultado = EvolutionWhatsAppProvider(self.config).enviar_cobranca(
@@ -87,12 +122,13 @@ class EvolutionProviderTests(_Base):
     @patch("integracoes.evolution.client.client_para_config")
     def test_erro_da_evolution_vira_whatsapp_provider_error(self, mock_factory):
         cliente = Mock()
-        cliente.enviar_texto.side_effect = EvolutionAPIError(
-            "A Evolution API retornou o status HTTP 500."
-        )
+        erro = EvolutionAPIError("A Evolution API retornou o status HTTP 500.")
+        cliente.enviar_botoes.side_effect = erro
+        cliente.enviar_texto.side_effect = erro
         mock_factory.return_value = cliente
 
-        with self.assertRaises(WhatsAppProviderError):
+        with self.assertLogs("integracoes.whatsapp.evolution", level="WARNING"), \
+                self.assertRaises(WhatsAppProviderError):
             EvolutionWhatsAppProvider(self.config).enviar_cobranca(
                 self.responsavel, self.mensalidade, "https://x"
             )
