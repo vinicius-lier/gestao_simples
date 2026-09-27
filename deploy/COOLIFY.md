@@ -39,12 +39,19 @@ produção**. Suba **uma** academia primeiro.
 ## 2. Aplicação
 
 1. **+ New → Application → (repositório pelo GitHub App)**. Branch: `main`.
-2. **Build Pack: `Dockerfile`** (o arquivo está na raiz do repositório).
+2. **Build Pack: `Dockerfile`** (o arquivo está na raiz do repositório). Se a
+   aplicação foi criada com **Nixpacks** (o padrão do Coolify), troque em
+   **Configuration → General → Build Pack**. O Nixpacks ignora o Dockerfile,
+   sobe com `migrate && gunicorn` e **não roda o `collectstatic`**: o site abre,
+   mas **sem CSS nem JS**. O Dockerfile roda o `collectstatic` no build e o
+   WhiteNoise serve `/static/`.
 3. **Ports Exposes: `8000`**.
 4. **Domains**: `https://gestao.seudominio.com.br`. O Coolify emite o HTTPS
    (Let's Encrypt) e redireciona HTTP → HTTPS sozinho.
 5. **Health check**: deixe o do Coolify **desligado**. O Dockerfile já tem um
-   `HEALTHCHECK` (abre `/login/`), e o Coolify usa o dele.
+   `HEALTHCHECK` que chama `/health/` (200 `{"status": "ok", "database": "ok"}`
+   com o banco acessível; 503 sem ele), e o Coolify usa o dele. Se preferir
+   o do Coolify: caminho `/health/`, porta `8000`.
 6. Aba **Environment Variables**: cole as variáveis abaixo. Nenhuma precisa
    ser marcada como *Build Variable*.
 
@@ -230,7 +237,9 @@ tolerar qualquer resposta, mas o custo e o resultado precisam ser conferidos:
 
 ## Conferência rápida
 
-- `https://gestao.seudominio.com.br/login/` abre com o CSS carregado.
+- `https://gestao.seudominio.com.br/login/` abre com o CSS carregado, e
+  `https://gestao.seudominio.com.br/static/portal/site.css` responde 200.
+- `https://gestao.seudominio.com.br/health/` responde `{"status": "ok", "database": "ok"}`.
 - `https://gestao.seudominio.com.br/webhooks/woovi/` responde `{"status": "ok"}`.
 - Deployments: o contêiner fica **healthy**.
 - Scheduled Tasks → histórico: a rotina diária e os repasses aparecem com sucesso.
