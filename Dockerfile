@@ -20,7 +20,14 @@ COPY --chown=app:app . .
 USER app
 
 # Os estáticos entram na imagem; o WhiteNoise serve /static/ (não há Nginx).
-RUN python manage.py collectstatic --noinput
+# O collectstatic só importa o settings (não abre o banco). Roda com DEBUG e
+# uma chave descartável válidos só para este comando: o Coolify repassa ao
+# build as variáveis marcadas como Buildtime (ex.: DJANGO_DEBUG=false), mas a
+# chave real existe apenas em runtime. Não vira ENV da imagem — em runtime
+# valem as variáveis do Coolify, e a validação da chave continua igual.
+RUN DJANGO_DEBUG=true \
+    DJANGO_SECRET_KEY="build-only-secret-key-not-used-at-runtime-12345678901234567890" \
+    python manage.py collectstatic --noinput
 
 EXPOSE 8000
 
