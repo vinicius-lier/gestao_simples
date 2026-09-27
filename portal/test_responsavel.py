@@ -64,7 +64,7 @@ class ResponsavelPortalTests(TestCase):
 
     def test_link_valido_abre_sessao_e_e_consumido(self):
         acesso = TokenAcessoResponsavel.gerar(self.responsavel)
-        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/")
+        resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/")
         self.assertRedirects(resposta, "/responsavel/")
         self.assertEqual(self.client.session.get("responsavel_id"), self.responsavel.pk)
         acesso.refresh_from_db()
@@ -73,7 +73,7 @@ class ResponsavelPortalTests(TestCase):
     def test_link_com_next_valido_vai_direto_para_pagar(self):
         acesso = TokenAcessoResponsavel.gerar(self.responsavel)
         destino = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
-        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next={destino}")
+        resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/?next={destino}")
         self.assertRedirects(resposta, destino)
 
     def test_link_com_next_de_outra_familia_cai_no_painel(self):
@@ -82,20 +82,50 @@ class ResponsavelPortalTests(TestCase):
         )
         acesso = TokenAcessoResponsavel.gerar(outro_responsavel)
         destino = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
-        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next={destino}")
+        resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/?next={destino}")
         self.assertRedirects(resposta, "/responsavel/")
 
     def test_link_com_next_externo_e_ignorado(self):
         acesso = TokenAcessoResponsavel.gerar(self.responsavel)
-        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next=https://evil.example.com/")
+        resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/?next=https://evil.example.com/")
         self.assertRedirects(resposta, "/responsavel/")
 
     def test_link_usado_duas_vezes_falha_na_segunda(self):
         acesso = TokenAcessoResponsavel.gerar(self.responsavel)
-        self.client.get(f"/responsavel/entrar/{acesso.token}/")
+        self.client.post(f"/responsavel/entrar/{acesso.token}/")
         self.client.logout()
-        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/")
+        resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/")
         self.assertEqual(resposta.status_code, 410)
+
+    def test_abrir_o_link_mostra_tela_de_entrada_sem_consumir(self):
+        # Prévia de link do WhatsApp e antivírus fazem GET: não podem
+        # queimar o token antes da família clicar.
+        acesso = TokenAcessoResponsavel.gerar(self.responsavel)
+        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/")
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, "Entrar")
+        self.assertNotIn("responsavel_id", self.client.session)
+        acesso.refresh_from_db()
+        self.assertIsNone(acesso.usado_em)
+
+    def test_tela_de_entrada_preserva_o_next_no_formulario(self):
+        acesso = TokenAcessoResponsavel.gerar(self.responsavel)
+        destino = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
+        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next={destino}")
+        self.assertContains(resposta, f'action="/responsavel/entrar/{acesso.token}/?next={destino}"')
+
+    def test_reabrir_link_usado_no_mesmo_navegador_segue_logado(self):
+        acesso = TokenAcessoResponsavel.gerar(self.responsavel)
+        destino = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
+        self.client.post(f"/responsavel/entrar/{acesso.token}/")
+        resposta = self.client.get(f"/responsavel/entrar/{acesso.token}/?next={destino}")
+        self.assertRedirects(resposta, destino, fetch_redirect_response=False)
+
+    def test_link_expirado_da_410_mesmo_no_get(self):
+        acesso = TokenAcessoResponsavel.gerar(self.responsavel)
+        acesso.expira_em = timezone.now() - timedelta(minutes=1)
+        acesso.save(update_fields=["expira_em"])
+        self.assertEqual(self.client.get(f"/responsavel/entrar/{acesso.token}/").status_code, 410)
 
     def test_link_inexistente_da_404(self):
         self.assertEqual(self.client.get("/responsavel/entrar/token-invalido/").status_code, 404)
@@ -106,7 +136,7 @@ class ResponsavelPortalTests(TestCase):
 
     def _logar(self, responsavel):
         acesso = TokenAcessoResponsavel.gerar(responsavel)
-        self.client.get(f"/responsavel/entrar/{acesso.token}/")
+        self.client.post(f"/responsavel/entrar/{acesso.token}/")
 
     def test_painel_mostra_so_os_alunos_do_proprio_responsavel(self):
         self._logar(self.responsavel)
@@ -123,33 +153,83 @@ class ResponsavelPortalTests(TestCase):
         resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
         self.assertEqual(resposta.status_code, 404)
 
-    @patch("integracoes.asaas.services.AsaasClient")
-    @patch("integracoes.asaas.services.sincronizar_responsavel_asaas")
-    def test_pagar_gera_cobranca_multipla_e_mostra_pix(self, mock_sincronizar, mock_client_class):
-        mock_sincronizar.return_value = "cus_123"
-        mock_client_class.return_value.criar_cobranca.return_value = {
-            "id": "pay_abc", "invoiceUrl": "https://sandbox.asaas.com/i/abc", "bankSlipUrl": "https://sandbox.asaas.com/b/abc",
-        }
-        mock_client_class.return_value.obter_pix_qrcode.return_value = {
-            "payload": "copia-e-cola", "encodedImage": "aW1nZGF0YQ==", "expirationDate": "2027-01-01",
-        }
+    def _com_chave(self):
+        from financeiro.models import ContaRecebimento
+
+        ContaRecebimento.objects.create(
+            academia=self.a, tipo_chave=ContaRecebimento.EMAIL, pix_key="escola@exemplo.com",
+        )
+
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_pagar_gera_pix_e_mostra_qrcode_sem_nada_do_provedor(self, mock_client_class):
+        from tests.woovi_base import cobranca_criada
+
+        self._com_chave()
+        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
         self._logar(self.responsavel)
 
         resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
 
         self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "copia-e-cola")
-        self.assertContains(resposta, "Pagar com cartão")
-        self.assertContains(resposta, "Boleto (PDF)")
+        self.assertContains(resposta, "00020126PIX")
+        self.assertContains(resposta, "<svg")
+        for termo in ("woovi", "Woovi", "openpix", "OpenPix", "subconta"):
+            self.assertNotContains(resposta, termo)
         mock_client_class.return_value.criar_cobranca.assert_called_once()
-        self.assertEqual(mock_client_class.return_value.criar_cobranca.call_args.kwargs["billing_type"], "UNDEFINED")
 
-    def test_pagar_mensalidade_ja_paga_mostra_aviso_sem_chamar_asaas(self):
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_pagar_reaproveita_pix_vigente(self, mock_client_class):
+        from tests.woovi_base import cobranca_criada
+
+        self._com_chave()
+        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
+        self._logar(self.responsavel)
+        url = f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/"
+
+        self.client.get(url)
+        self.client.get(url)
+
+        mock_client_class.return_value.criar_cobranca.assert_called_once()
+
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_pagar_mensalidade_vencida_tambem_gera_pix(self, mock_client_class):
+        # Regressão: a integração anterior só cobrava mensalidades
+        # "pendente" — justamente as atrasadas ficavam sem como pagar.
+        from tests.woovi_base import cobranca_criada
+
+        self._com_chave()
+        mock_client_class.return_value.criar_cobranca.side_effect = cobranca_criada
+        self.mensalidade.status = "vencida"
+        self.mensalidade.save(update_fields=["status"])
+        self._logar(self.responsavel)
+
+        resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
+
+        self.assertContains(resposta, "00020126PIX")
+
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_falha_ao_gerar_pix_mostra_mensagem_generica(self, mock_client_class):
+        from integracoes.woovi.exceptions import WooviUnavailableError
+
+        self._com_chave()
+        mock_client_class.return_value.criar_cobranca.side_effect = WooviUnavailableError(
+            "A Woovi retornou o status HTTP 503."
+        )
+        self._logar(self.responsavel)
+
+        with self.assertLogs("portal.views_responsavel", level="WARNING"):
+            resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
+
+        self.assertContains(resposta, "Não foi possível carregar o Pix agora")
+        self.assertNotContains(resposta, "Woovi")
+        self.assertNotContains(resposta, "503")
+
+    def test_pagar_mensalidade_ja_paga_mostra_aviso_sem_chamar_o_provedor(self):
         self.mensalidade.status = "paga"
         self.mensalidade.pago_em = timezone.now()
         self.mensalidade.save(update_fields=["status", "pago_em"])
         self._logar(self.responsavel)
-        with patch("integracoes.asaas.services.AsaasClient") as mock_client_class:
+        with patch("integracoes.woovi.services.WooviClient") as mock_client_class:
             resposta = self.client.get(f"/responsavel/mensalidade/{self.mensalidade.pk}/pagar/")
         self.assertContains(resposta, "já está paga")
         mock_client_class.assert_not_called()

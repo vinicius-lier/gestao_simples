@@ -1,7 +1,7 @@
 import os
 import re
 
-from integracoes.whatsapp.client import WhatsAppAPIError, WhatsAppClient
+from integracoes.whatsapp.meta import WhatsAppAPIError, WhatsAppClient
 
 
 def normalizar_telefone(numero):

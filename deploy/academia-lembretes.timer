@@ -1,0 +1,16 @@
+[Unit]
+Description=Academia Gestao - dispara os lembretes de cobranca 1x por dia
+
+[Timer]
+# 09:00 no fuso do servidor. Se a EC2 estiver em UTC e voce quiser 09:00 no
+# horario de Brasilia, use OnCalendar=*-*-* 12:00:00 ou defina o fuso da
+# maquina (timedatectl set-timezone America/Sao_Paulo).
+OnCalendar=*-*-* 09:00:00
+# Recupera a execucao se a maquina estava desligada no horario.
+Persistent=true
+# Espalha o disparo em ate 5 min para nao coincidir com outros jobs.
+RandomizedDelaySec=300
+Unit=academia-lembretes.service
+
+[Install]
+WantedBy=timers.target

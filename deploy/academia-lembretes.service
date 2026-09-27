@@ -1,0 +1,23 @@
+[Unit]
+Description=Academia Gestao - rotina diaria de cobranca (gera mensalidades e envia lembretes por WhatsApp)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/apps/gestao_simples
+# config.settings carrega o .env via python-dotenv (mesmo arquivo do gunicorn).
+Environment=DJANGO_SETTINGS_MODULE=config.settings
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/apps/gestao_simples/.venv/bin/python manage.py enviar_lembretes_cobranca
+# O comando marca vencidas e envia cada estagio no maximo uma vez por
+# mensalidade (idempotente). systemd nao roda duas instancias em paralelo.
+TimeoutStartSec=600
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

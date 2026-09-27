@@ -1,4 +1,10 @@
 import secrets
+from .models_experimentais import (
+    AulaExperimental,
+    ConfiguracaoExperimental,
+    InscricaoExperimental,
+)
+from .models_matricula import ConviteMatricula
 from datetime import timedelta
 
 from django.conf import settings
@@ -39,7 +45,13 @@ class TokenAcessoResponsavel(models.Model):
     """Link de acesso ao portal do responsável — sem senha. O staff gera
     (ou, no futuro, o próprio sistema via API do WhatsApp) e envia; um
     clique válido abre uma sessão comum no navegador do responsável,
-    que dura o tempo padrão de sessão do Django. Token de uso único."""
+    que dura o tempo padrão de sessão do Django. Token de uso único,
+    consumido só no POST da tela de entrada — abrir o link (GET) não o
+    gasta, então prévia de link do WhatsApp e antivírus não o queimam."""
+
+    # Links de pagamento (lembretes e "Enviar cobrança") valem mais que o
+    # acesso avulso: o de "5 dias antes" precisa funcionar até o vencimento.
+    VALIDADE_PAGAMENTO_HORAS = 24 * 7
 
     responsavel = models.ForeignKey(
         'atletas.Responsavel', on_delete=models.CASCADE, related_name='tokens_acesso'

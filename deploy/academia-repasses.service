@@ -1,0 +1,23 @@
+[Unit]
+Description=Academia Gestao - repasse do Pix recebido para a chave Pix de cada academia
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/apps/gestao_simples
+# config.settings carrega o .env via python-dotenv (mesmo arquivo do gunicorn).
+Environment=DJANGO_SETTINGS_MODULE=config.settings
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/apps/gestao_simples/.venv/bin/python manage.py processar_repasses
+# Cada repasse e reivindicado atomicamente; systemd nao roda duas instancias
+# desta unit em paralelo.
+TimeoutStartSec=120
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

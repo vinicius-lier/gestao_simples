@@ -18,7 +18,7 @@ def cpf_valido(valor):
     verificador — o projeto usa CPFs de teste sem esse cuidado (ex.:
     '12345678900'), e o problema real que motivou este checador foi um
     CPF com 12 dígitos passando sem aviso e só quebrando depois, ao
-    gerar cobrança no Asaas."""
+    gerar a cobrança no gateway de pagamento."""
     numeros = digits(valor)
     return len(numeros) == 11 and numeros != numeros[0] * 11
 
@@ -109,6 +109,18 @@ class AlunoForm(forms.ModelForm):
                 self.cleaned_data['responsavel_whatsapp'] = self.cleaned_data['aluno_whatsapp']
                 self.cleaned_data['responsavel_email'] = self.cleaned_data['aluno_email']
             responsavel = self.cleaned_data.get('responsavel')
+            atual = self.instance.responsavel_financeiro if self.instance.pk else None
+            if (self.cleaned_data.get('proprio_responsavel') and self.initial.get('proprio_responsavel')
+                    and atual is not None and atual.academia_id == self.academia.pk):
+                # Editando um aluno que já era o próprio responsável: o que foi
+                # digitado são os dados atuais dele. (Só no cadastro de aluno
+                # novo um responsável achado pelo CPF mantém o contato antigo.)
+                atual.nome = self.cleaned_data['responsavel_nome'].strip()
+                atual.cpf = digits(self.cleaned_data.get('responsavel_cpf', ''))
+                atual.whatsapp = digits(self.cleaned_data['responsavel_whatsapp'])
+                atual.email = self.cleaned_data.get('responsavel_email', '')
+                atual.save(update_fields=['nome', 'cpf', 'whatsapp', 'email'])
+                responsavel = atual
             if not responsavel:
                 cpf = digits(self.cleaned_data.get('responsavel_cpf', ''))
                 nome = self.cleaned_data['responsavel_nome'].strip()
@@ -149,13 +161,24 @@ class TurmaSelect(forms.Select):
 class MatriculaForm(forms.ModelForm):
     class Meta:
         model = Matricula
-        fields = ('unidade', 'modalidade', 'turma', 'valor_mensalidade', 'dia_vencimento', 'data_inicio', 'data_fim', 'ativo')
-        widgets = {key: forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}) for key in ('data_inicio', 'data_fim')}
+        fields = ('unidade', 'modalidade', 'turma', 'valor_mensalidade', 'dia_vencimento', 'primeiro_vencimento', 'data_inicio', 'data_fim', 'ativo')
+        widgets = {key: forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}) for key in ('primeiro_vencimento', 'data_inicio', 'data_fim')}
         widgets['turma'] = TurmaSelect
 
     def __init__(self, *args, academia, **kwargs):
         super().__init__(*args, **kwargs)
+        # Antes da validação, que altera a instância: a cobrança começa
+        # quando a matrícula passa de inativa (ou nova) para ativa.
+        self.ativa_antes = bool(self.instance.pk and self.instance.ativo)
         self.instance.academia = academia
+        self.fields['primeiro_vencimento'].help_text = (
+            'Em branco: o próximo dia de vencimento a partir de hoje (ou da data de início, se for futura). '
+            'As mensalidades seguintes vencem no dia de vencimento.'
+        )
+        if self.ativa_antes:
+            # A cobrança já começou: as mensalidades se ajustam pela lista de cobranças.
+            self.fields['primeiro_vencimento'].disabled = True
+            self.fields['primeiro_vencimento'].help_text = 'A cobrança desta matrícula já começou.'
         self.fields['unidade'].queryset = Unidade.objects.filter(academia=academia)
         self.fields['unidade'].required = self.fields['unidade'].queryset.exists()
         self.fields['modalidade'].queryset = Modalidade.objects.filter(academia=academia)
@@ -186,6 +209,13 @@ class MatriculaForm(forms.ModelForm):
                 self.add_error('valor_mensalidade', 'Informe o valor ou escolha uma turma com valor definido.')
         if not data.get('dia_vencimento'):
             data['dia_vencimento'] = turma.dia_vencimento if turma else 10
+        primeiro = data.get('primeiro_vencimento')
+        ativando = data.get('ativo') and not self.ativa_antes
+        if primeiro and primeiro < timezone.localdate() and (ativando or 'primeiro_vencimento' in self.changed_data):
+            self.add_error(
+                'primeiro_vencimento',
+                'O primeiro vencimento não pode ser anterior a hoje. Deixe em branco para usar o próximo vencimento.',
+            )
         return data
 
 
@@ -312,3 +342,32 @@ GraduacaoFormSet = forms.inlineformset_factory(
     extra=1,
     can_delete=True,
 )
+
+
+class ChavePixForm(forms.Form):
+    """Chave Pix onde a academia recebe as mensalidades."""
+
+    tipo_chave = forms.ChoiceField(label='Tipo da chave')
+    chave = forms.CharField(label='Chave Pix', max_length=100)
+    confirmacao = forms.BooleanField(
+        label='Confirmo que esta chave Pix é da conta onde a escola deve receber as mensalidades.',
+    )
+
+    def __init__(self, *args, **kwargs):
+        from financeiro.models import ContaRecebimento
+
+        super().__init__(*args, **kwargs)
+        self.fields['tipo_chave'].choices = ContaRecebimento.TIPOS_CHAVE
+        for field in self.fields.values():
+            field.widget.attrs['class'] = 'form-check-input' if isinstance(field.widget, forms.CheckboxInput) else 'form-select' if isinstance(field.widget, forms.Select) else 'form-control'
+
+    def clean(self):
+        from integracoes.woovi.chave_pix import ChavePixInvalida, normalizar_chave_pix
+
+        dados = super().clean()
+        if dados.get('tipo_chave') and dados.get('chave'):
+            try:
+                dados['chave'] = normalizar_chave_pix(dados['tipo_chave'], dados['chave'])
+            except ChavePixInvalida as erro:
+                self.add_error('chave', str(erro))
+        return dados

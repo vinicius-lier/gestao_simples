@@ -37,6 +37,51 @@ class FotoPublicaAdmin(AcessoAcademiaAdmin):
     list_filter = ('publicada',)
 
 
+from .models import AulaExperimental, ConfiguracaoExperimental, InscricaoExperimental
+
+
+@admin.register(ConfiguracaoExperimental)
+class ConfiguracaoExperimentalAdmin(AcessoAcademiaAdmin):
+    list_display = ('academia', 'ativo', 'vagas_padrao', 'janela_dias', 'fila_habilitada_padrao')
+    list_filter = ('ativo',)
+
+
+class InscricaoExperimentalInline(admin.TabularInline):
+    model = InscricaoExperimental
+    extra = 0
+    fields = ('nome', 'idade', 'responsavel', 'telefone', 'email', 'status', 'criado_em')
+    readonly_fields = ('criado_em',)
+
+
+@admin.register(AulaExperimental)
+class AulaExperimentalAdmin(AcessoAcademiaAdmin):
+    list_display = ('turma', 'inicio', 'vagas', 'ocupadas', 'fila_habilitada', 'ativa')
+    list_filter = ('ativa', 'fila_habilitada')
+    search_fields = ('turma__nome', 'turma__modalidade__nome')
+    inlines = [InscricaoExperimentalInline]
+
+
+@admin.register(InscricaoExperimental)
+class InscricaoExperimentalAdmin(AcessoAcademiaAdmin):
+    list_display = ('nome', 'aula', 'status', 'telefone', 'criado_em')
+    list_filter = ('status',)
+    search_fields = ('nome', 'telefone', 'email')
+
+
+from .models import ConviteMatricula
+
+
+@admin.register(ConviteMatricula)
+class ConviteMatriculaAdmin(AcessoAcademiaAdmin):
+    list_display = ('__str__', 'academia', 'status', 'criado_em', 'expira_em')
+    list_filter = ('status', 'academia')
+    search_fields = ('convidado_nome', 'atleta__nome', 'token')
+    readonly_fields = ('token', 'criado_em', 'preenchido_em', 'ativado_em', 'atleta', 'matricula')
+
+    def has_add_permission(self, request):
+        return False
+
+
 from .models import TokenAcessoResponsavel
 
 

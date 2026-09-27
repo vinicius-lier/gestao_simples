@@ -65,8 +65,8 @@ DB_CONN_MAX_AGE=60
 SITE_URL=https://<dominio-real>
 ```
 
-Preserve as vari?veis Asaas/Meta existentes. Configure o token de webhook Asaas
-antes de expor o endpoint. Gere a chave Django por um gerenciador de senhas e
+Preserve as variaveis Woovi/Meta existentes (WOOVI_APP_ID, WOOVI_BASE_URL).
+Para publicar pelo Coolify em vez da EC2, siga deploy/COOLIFY.md. Gere a chave Django por um gerenciador de senhas e
 n?o publique o resultado em logs do Actions. N?o use `source .env`: python-dotenv
 carrega o arquivo tanto no Django/Gunicorn quanto nos comandos de manuten??o.
 
@@ -92,6 +92,39 @@ sudo systemctl enable academia-gunicorn
 N?o use `--now` nessa etapa: o primeiro deploy instala o c?digo e depend?ncias
 antes de iniciar o servi?o. Atualiza??es futuras da unit exigem instala??o
 administrativa e daemon-reload; o Actions n?o pode alterar arquivos de root.
+
+### Lembretes de cobranca (timer)
+
+A rotina diaria de cobranca (gera as mensalidades do mes e antecipa as do mes
+seguinte que vencem em ate 7 dias, depois envia os lembretes por WhatsApp) roda
+por um systemd timer, instalado uma vez como admin (o Actions nao mexe em
+arquivos de root). Sem esse timer, nenhuma mensalidade nova e criada a partir
+do 2o mes:
+
+```bash
+sudo install -o root -g root -m 644 deploy/academia-lembretes.service /etc/systemd/system/academia-lembretes.service
+sudo install -o root -g root -m 644 deploy/academia-lembretes.timer   /etc/systemd/system/academia-lembretes.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now academia-lembretes.timer
+```
+
+### Repasse do Pix (timer a cada minuto)
+
+Depois de cada Pix pago, o webhook abre um repasse; este timer transfere o
+saldo recebido para a chave Pix da academia. Sem ele, o dinheiro fica parado
+na conta do provedor:
+
+```bash
+sudo install -o root -g root -m 644 deploy/academia-repasses.service /etc/systemd/system/academia-repasses.service
+sudo install -o root -g root -m 644 deploy/academia-repasses.timer   /etc/systemd/system/academia-repasses.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now academia-repasses.timer
+```
+
+No Coolify, o equivalente sao as tarefas agendadas de `deploy/COOLIFY.md`.
+
+Passo a passo completo do WhatsApp/Evolution (servidor no compose, conexao por
+QR, teste e rollback): `deploy/EVOLUTION.md`.
 
 Sudoers m?nimo (os nomes sem `.service` coincidem com o script):
 

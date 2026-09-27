@@ -20,3 +20,18 @@ def link_whatsapp(numero, mensagem):
     if not numero:
         return ''
     return f"https://wa.me/{numero}?text={quote(mensagem)}"
+
+
+@register.simple_tag
+def pix_qrcode(br_code, escala=5):
+    """QR Code do Pix gerado aqui mesmo, como SVG inline: nenhuma imagem é
+    carregada de fora (a família não vê o endereço do provedor)."""
+    if not br_code:
+        return ''
+    import segno
+    from django.utils.safestring import mark_safe
+
+    svg = segno.make(br_code, error='m').svg_inline(
+        scale=escala, border=2, svgclass='pix-qrcode', title='QR Code para pagamento via Pix',
+    )
+    return mark_safe(svg)

@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from django.core.exceptions import ImproperlyConfigured
 
 
 # =============================================================================
@@ -24,16 +23,23 @@ load_dotenv(BASE_DIR / ".env")
 # SECURITY
 # =============================================================================
 
-DEBUG = os.getenv("DJANGO_DEBUG", "true").lower() == "true"
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY") or (
-    "django-insecure-dev-only" if DEBUG else ""
+SECRET_KEY = os.getenv(
+    "DJANGO_SECRET_KEY",
+    "django-insecure-dev-only",
 )
-if not DEBUG and (
-    not SECRET_KEY
-    or SECRET_KEY.startswith("django-insecure-")
-    or SECRET_KEY == "CHANGE_ME"
-):
-    raise ImproperlyConfigured("Configure uma DJANGO_SECRET_KEY exclusiva em producao.")
+
+DEBUG = os.getenv(
+    "DJANGO_DEBUG",
+    "true",
+).lower() == "true"
+
+if not DEBUG and (SECRET_KEY.startswith("django-insecure") or len(SECRET_KEY) < 50):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "Com DJANGO_DEBUG=false, defina uma DJANGO_SECRET_KEY exclusiva "
+        "com pelo menos 50 caracteres."
+    )
 
 
 ALLOWED_HOSTS = [
@@ -74,6 +80,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # Serve /static/ direto do Django (no Coolify não há Nginx na frente).
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -108,6 +116,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "portal.context_processors.alertas_plataforma",
             ],
         },
     },
@@ -127,7 +136,7 @@ TEMPLATES = [
 DB_ENGINE = os.getenv(
     "DB_ENGINE",
     "sqlite",
-).strip().lower()
+).lower()
 
 
 if DB_ENGINE == "postgresql":
@@ -174,7 +183,7 @@ if DB_ENGINE == "postgresql":
         }
     }
 
-elif DB_ENGINE == "sqlite":
+else:
 
     DATABASES = {
         "default": {
@@ -182,9 +191,6 @@ elif DB_ENGINE == "sqlite":
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
-
-else:
-    raise ImproperlyConfigured("DB_ENGINE deve ser sqlite ou postgresql.")
 
 
 # =============================================================================
@@ -240,6 +246,16 @@ STATIC_URL = "/static/"
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        # Sem manifest: não exige collectstatic para rodar os testes.
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+
 
 # =============================================================================
 # MEDIA FILES
@@ -255,6 +271,9 @@ MEDIA_ROOT = BASE_DIR / "media"
 # =============================================================================
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Bloqueia chamadas reais à Woovi durante os testes (ver config/test_runner.py).
+TEST_RUNNER = "config.test_runner.ProjetoTestRunner"
 
 
 # =============================================================================
@@ -294,23 +313,35 @@ MAILERS = {
 
 
 # =============================================================================
-# ASAAS
+# WOOVI (Pix)
+#
+# AppID: painel da Woovi > API/Plugins > Nova API. Produção em
+# https://api.woovi.com (padrão); testes em https://api.woovi-sandbox.com.
+# O webhook (/webhooks/woovi/) valida o header x-webhook-signature com as
+# chaves públicas da Woovi — não há segredo de webhook para configurar.
 # =============================================================================
 
-ASAAS_API_KEY = os.getenv(
-    "ASAAS_API_KEY",
-    "",
+WOOVI_APP_ID = os.getenv("WOOVI_APP_ID", "")
+
+WOOVI_BASE_URL = os.getenv(
+    "WOOVI_BASE_URL",
+    "https://api.woovi.com",
 )
 
-ASAAS_BASE_URL = os.getenv(
-    "ASAAS_BASE_URL",
-    "https://api-sandbox.asaas.com/v3",
-)
+WOOVI_TIMEOUT = int(os.getenv("WOOVI_TIMEOUT", "30"))
 
-ASAAS_WEBHOOK_TOKEN = os.getenv(
-    "ASAAS_WEBHOOK_TOKEN",
-    "",
-)
+# Menor saque aceito pela Woovi (R$ 1,01 na documentação). Saldo abaixo
+# disso fica na subconta e sai junto com o próximo repasse.
+WOOVI_SAQUE_MINIMO_CENTAVOS = int(os.getenv("WOOVI_SAQUE_MINIMO_CENTAVOS", "101"))
+
+# Tarifa de saque da Woovi (R$ 1,00 por saque abaixo de R$ 1.000, pela
+# documentação). Sai do saldo da subconta além do valor sacado, então o
+# repasse pede saldo − tarifa. A tarifa é paga pela academia.
+WOOVI_TARIFA_SAQUE_CENTAVOS = int(os.getenv("WOOVI_TARIFA_SAQUE_CENTAVOS", "100"))
+WOOVI_SAQUE_SEM_TARIFA_CENTAVOS = int(os.getenv("WOOVI_SAQUE_SEM_TARIFA_CENTAVOS", "100000"))
+
+# Por quanto tempo as chaves públicas que assinam os webhooks ficam em cache.
+WOOVI_WEBHOOK_CHAVES_TTL = int(os.getenv("WOOVI_WEBHOOK_CHAVES_TTL", str(6 * 60 * 60)))
 
 
 # =============================================================================
@@ -341,6 +372,62 @@ META_WHATSAPP_WEBHOOK_VERIFY_TOKEN = os.getenv(
     "META_WHATSAPP_WEBHOOK_VERIFY_TOKEN",
     "",
 )
+
+
+# =============================================================================
+# N8N (contrato preparado — não acionado no fluxo de lembretes ainda)
+# =============================================================================
+
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
+N8N_TOKEN = os.getenv("N8N_TOKEN", "")
+N8N_TIMEOUT = int(os.getenv("N8N_TIMEOUT", "10"))
+
+
+# =============================================================================
+# EVOLUTION API
+#
+# A API key de cada academia NÃO fica aqui nem no banco: fica numa variável
+# de ambiente cujo NOME é guardado em IntegracaoWhatsApp.credencial_ref
+# (ex.: EVOLUTION_API_KEY_KEIKO). Não crie uma EVOLUTION_API_KEY global.
+# =============================================================================
+
+EVOLUTION_TIMEOUT = int(os.getenv("EVOLUTION_TIMEOUT", "15"))
+
+# Botão "Pagar mensalidade"/"Abrir portal" nas mensagens. DESLIGADO por
+# padrão: botões não são recurso oficial do WhatsApp e, no teste real
+# (26/09/2026, Evolution 2.3.7), a mensagem com botão foi aceita pela
+# Evolution mas NUNCA chegou ao celular — o WhatsApp descarta em silêncio.
+# Com false, cobrança e acesso vão como texto com o link (que chega).
+EVOLUTION_BOTOES = os.getenv("EVOLUTION_BOTOES", "false").lower() == "true"
+
+# Webhook opcional de eventos de conexão (connection.update / qrcode.updated).
+EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
+EVOLUTION_WEBHOOK_REQUIRE_TOKEN = os.getenv(
+    "EVOLUTION_WEBHOOK_REQUIRE_TOKEN",
+    "true" if not DEBUG else "false",
+).lower() == "true"
+
+
+# =============================================================================
+# LEMBRETES DE COBRANÇA — chaves de ativação da FASE 2
+#
+# Ambas começam desligadas: o lembrete continua exatamente como hoje
+# (envia o link de pagamento pelo provedor de WhatsApp da academia).
+# Quando a automação estiver pronta, ligue por ambiente.
+# =============================================================================
+
+# Gera/garante o Pix da Woovi antes de enviar o lembrete, para o Pix
+# copia-e-cola já existir no payload do n8n.
+LEMBRETES_GERAM_COBRANCA_PIX = os.getenv(
+    "LEMBRETES_GERAM_COBRANCA_PIX",
+    "false",
+).lower() == "true"
+
+# Envia o payload ao n8n (que aciona a Evolution) em vez do provedor Meta.
+LEMBRETES_ENVIAM_N8N = os.getenv(
+    "LEMBRETES_ENVIAM_N8N",
+    "false",
+).lower() == "true"
 
 
 # =============================================================================

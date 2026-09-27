@@ -16,5 +16,86 @@ services:
       timeout: 5s
       retries: 10
 
+  # ---------------------------------------------------------------------------
+  # WhatsApp via Evolution API. Fica no profile "evolution": não sobe com um
+  # `docker compose up` comum — use `docker compose --profile evolution up -d`.
+  # A aplicação Django (gunicorn no systemd, fora do compose) fala com este
+  # serviço em http://127.0.0.1:${EVOLUTION_PORT:-8080} — é o valor de
+  # `evolution_base_url` no registro IntegracaoWhatsApp da academia.
+  # ---------------------------------------------------------------------------
+  evolution:
+    image: ${EVOLUTION_IMAGE:-evoapicloud/evolution-api:v2.3.7}
+    restart: unless-stopped
+    profiles: ["evolution"]
+    depends_on:
+      evolution_db:
+        condition: service_healthy
+      evolution_redis:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${EVOLUTION_PORT:-8080}:8080"
+    environment:
+      SERVER_URL: ${EVOLUTION_SERVER_URL:?Configure EVOLUTION_SERVER_URL no .env}
+      # Chave global da Evolution. É o valor que cada EVOLUTION_API_KEY_<ACADEMIA>
+      # do .env precisa conter para o app autenticar as chamadas.
+      AUTHENTICATION_API_KEY: ${EVOLUTION_AUTHENTICATION_API_KEY:?Configure EVOLUTION_AUTHENTICATION_API_KEY no .env}
+      AUTHENTICATION_TYPE: apikey
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_DB_PASSWORD:?Configure EVOLUTION_DB_PASSWORD no .env}@evolution_db:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: evolution
+      # Só o necessário para reconectar instâncias. Não guardamos histórico de
+      # conversas nem contatos — o sistema apenas envia lembretes.
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://evolution_redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_REDIS_SAVE_INSTANCES: "true"
+      CACHE_LOCAL_ENABLED: "false"
+      DEL_INSTANCE: "false"
+      QRCODE_LIMIT: "30"
+      CONFIG_SESSION_PHONE_CLIENT: GestaoSimples
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      LOG_LEVEL: ${EVOLUTION_LOG_LEVEL:-ERROR}
+      LOG_BAILEYS: error
+    volumes:
+      - evolution_instances:/evolution/instances
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  evolution_db:
+    image: postgres:17
+    restart: unless-stopped
+    profiles: ["evolution"]
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${EVOLUTION_DB_PASSWORD:?Configure EVOLUTION_DB_PASSWORD no .env}
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  evolution_redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    profiles: ["evolution"]
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - evolution_redis_data:/data
+
 volumes:
   postgres_data:
+  evolution_postgres_data:
+  evolution_redis_data:
+  evolution_instances:

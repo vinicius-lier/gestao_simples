@@ -3,6 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.test import TestCase
+from django.utils import timezone
 
 from academias.models import Academia
 from atletas.models import Atleta, Responsavel
@@ -11,6 +12,7 @@ from financeiro.models import LembreteCobranca, Mensalidade
 from integracoes.whatsapp.client import WhatsAppAPIError
 from matriculas.models import Matricula
 from modalidades.models import Modalidade
+from portal.models import TokenAcessoResponsavel
 
 HOJE = date(2026, 9, 6)
 
@@ -92,11 +94,13 @@ class EnviarLembretesTests(TestCase):
 
         self.assertEqual(enviados, [mensalidade.pk])
         mock_client_class.return_value.enviar_template.assert_called_once()
-        self.assertTrue(
-            LembreteCobranca.objects.filter(
-                mensalidade=mensalidade, estagio=LembreteCobranca.CINCO_DIAS
-            ).exists()
+        lembrete = LembreteCobranca.objects.get(
+            mensalidade=mensalidade, estagio=LembreteCobranca.CINCO_DIAS
         )
+        self.assertEqual(lembrete.status, LembreteCobranca.ENVIADO)
+        self.assertEqual(lembrete.tentativas, 1)
+        self.assertEqual(lembrete.provider, "meta")
+        self.assertIsNotNone(lembrete.enviado_em)
 
     @patch("integracoes.whatsapp.services.WhatsAppClient")
     def test_link_enviado_leva_direto_para_pagamento(self, mock_client_class):
@@ -109,6 +113,16 @@ class EnviarLembretesTests(TestCase):
         link = kwargs["parametros"][-1]
         self.assertIn(f"/responsavel/mensalidade/{mensalidade.pk}/pagar/", link)
         self.assertTrue(link.startswith("http"))
+
+    @patch("integracoes.whatsapp.services.WhatsAppClient")
+    def test_link_do_lembrete_de_5_dias_vale_ate_depois_do_vencimento(self, mock_client_class):
+        mock_client_class.return_value.enviar_template.return_value = {"ok": True}
+        self.criar_mensalidade(HOJE + timedelta(days=5))
+
+        enviar_lembretes(hoje=HOJE)
+
+        acesso = TokenAcessoResponsavel.objects.get(responsavel=self.responsavel)
+        self.assertGreater(acesso.expira_em, timezone.now() + timedelta(days=6))
 
     @patch("integracoes.whatsapp.services.WhatsAppClient")
     def test_nao_reenvia_o_mesmo_estagio(self, mock_client_class):
@@ -162,12 +176,24 @@ class EnviarLembretesTests(TestCase):
 
         primeira = enviar_lembretes(hoje=HOJE)
         self.assertEqual(primeira, [])
-        self.assertFalse(LembreteCobranca.objects.exists())
+        # Agora o registro é criado antes da tentativa: ele existe, mas com
+        # status=erro (não conclui o estágio) e conta a tentativa.
+        lembrete = LembreteCobranca.objects.get()
+        self.assertEqual(lembrete.status, LembreteCobranca.ERRO)
+        self.assertEqual(lembrete.tentativas, 1)
+        self.assertNotEqual(lembrete.ultimo_erro, "")
+        self.assertIsNone(lembrete.enviado_em)
 
         mock_client_class.return_value.enviar_template.side_effect = None
         mock_client_class.return_value.enviar_template.return_value = {"ok": True}
         segunda = enviar_lembretes(hoje=HOJE)
         self.assertEqual(len(segunda), 1)
+
+        lembrete.refresh_from_db()
+        self.assertEqual(lembrete.status, LembreteCobranca.ENVIADO)
+        self.assertEqual(lembrete.tentativas, 2)
+        self.assertEqual(lembrete.ultimo_erro, "")
+        self.assertIsNotNone(lembrete.enviado_em)
 
     @patch("integracoes.whatsapp.services.WhatsAppClient")
     def test_isola_por_academia(self, mock_client_class):
@@ -193,3 +219,156 @@ class EnviarLembretesTests(TestCase):
 
         self.assertEqual(enviados, [mensalidade_a.pk])
         mock_client_class.return_value.enviar_template.assert_called_once()
+
+
+class LembreteCobrancaCicloVidaTests(TestCase):
+    """FASE 1B — LembreteCobranca como registro operacional da tentativa."""
+
+    def setUp(self):
+        self.academia = Academia.objects.create(nome="Academia", cnpj="CV1")
+        self.responsavel = Responsavel.objects.create(
+            academia=self.academia, nome="Resp", cpf="1", whatsapp="21999998888"
+        )
+        self.atleta = Atleta.objects.create(
+            academia=self.academia, nome="Aluno", responsavel_financeiro=self.responsavel
+        )
+        self.modalidade = Modalidade.objects.create(academia=self.academia, nome="Judô")
+        self.matricula = Matricula.objects.create(
+            academia=self.academia, atleta=self.atleta, modalidade=self.modalidade,
+            valor_mensalidade=Decimal("120.00"), dia_vencimento=10, data_inicio=date(2020, 1, 1),
+        )
+
+    def _pix(self, mensalidade):
+        from financeiro.models import CobrancaPix, ContaRecebimento
+
+        conta = ContaRecebimento.objects.create(
+            academia=self.academia, tipo_chave=ContaRecebimento.EMAIL, pix_key="escola@exemplo.com",
+        )
+        return CobrancaPix.objects.create(
+            mensalidade=mensalidade, conta_recebimento=conta, correlation_id="mensalidade-x",
+            valor=Decimal("120.00"), br_code="000201", expira_em=timezone.now() + timedelta(days=5),
+        )
+
+    def _mensalidade(self, vencimento=HOJE, status="pendente"):
+        return Mensalidade.objects.create(
+            academia=self.academia, matricula=self.matricula, competencia=date(2026, 9, 1),
+            valor=Decimal("120.00"), vencimento=vencimento, status=status,
+        )
+
+    @patch("integracoes.whatsapp.services.WhatsAppClient")
+    def test_sucesso_grava_provider_e_message_id(self, mock_client_class):
+        mock_client_class.return_value.enviar_template.return_value = {
+            "messages": [{"id": "wamid.XYZ"}]
+        }
+        m = self._mensalidade()
+
+        enviar_lembretes(hoje=HOJE)
+
+        lembrete = LembreteCobranca.objects.get(mensalidade=m)
+        self.assertEqual(lembrete.status, LembreteCobranca.ENVIADO)
+        self.assertEqual(lembrete.provider, "meta")
+        self.assertEqual(lembrete.provider_message_id, "wamid.XYZ")
+        self.assertEqual(lembrete.tentativas, 1)
+
+    @patch("integracoes.whatsapp.services.WhatsAppClient")
+    def test_nao_reenvia_estagio_ja_enviado(self, mock_client_class):
+        m = self._mensalidade()
+        LembreteCobranca.objects.create(
+            mensalidade=m, estagio=LembreteCobranca.VENCIMENTO,
+            status=LembreteCobranca.ENVIADO, tentativas=1,
+        )
+
+        enviados = enviar_lembretes(hoje=HOJE)
+
+        self.assertEqual(enviados, [])
+        mock_client_class.return_value.enviar_template.assert_not_called()
+        self.assertEqual(LembreteCobranca.objects.count(), 1)
+
+    @patch("integracoes.whatsapp.services.WhatsAppClient")
+    def test_retenta_estagio_com_status_erro(self, mock_client_class):
+        mock_client_class.return_value.enviar_template.return_value = {"ok": True}
+        m = self._mensalidade()
+        LembreteCobranca.objects.create(
+            mensalidade=m, estagio=LembreteCobranca.VENCIMENTO,
+            status=LembreteCobranca.ERRO, tentativas=3, ultimo_erro="falha anterior",
+        )
+
+        enviados = enviar_lembretes(hoje=HOJE)
+
+        self.assertEqual(enviados, [m.pk])
+        lembrete = LembreteCobranca.objects.get(mensalidade=m)
+        self.assertEqual(lembrete.status, LembreteCobranca.ENVIADO)
+        self.assertEqual(lembrete.tentativas, 4)
+        self.assertEqual(lembrete.ultimo_erro, "")
+
+    @patch("integracoes.whatsapp.services.WhatsAppClient")
+    def test_erro_sanitiza_mensagem_sem_url(self, mock_client_class):
+        mock_client_class.return_value.enviar_template.side_effect = WhatsAppAPIError(
+            "falhou ao chamar https://site/responsavel/entrar/tok-secreto?next=/x"
+        )
+        m = self._mensalidade()
+
+        enviar_lembretes(hoje=HOJE)
+
+        lembrete = LembreteCobranca.objects.get(mensalidade=m)
+        self.assertEqual(lembrete.status, LembreteCobranca.ERRO)
+        self.assertNotIn("tok-secreto", lembrete.ultimo_erro)
+        self.assertIn("[url]", lembrete.ultimo_erro)
+
+    @patch("financeiro.lembretes._enviar_cobranca_whatsapp")
+    @patch("integracoes.woovi.services.garantir_cobranca_pix")
+    def test_flag_gera_pix_antes_do_envio(self, mock_garantir, mock_envio):
+        mock_envio.return_value = {"provider": "meta", "message_id": ""}
+        m = self._mensalidade()
+
+        with self.settings(LEMBRETES_GERAM_COBRANCA_PIX=True):
+            enviar_lembretes(hoje=HOJE)
+
+        mock_garantir.assert_called_once()
+        self.assertEqual(mock_garantir.call_args.args[0].pk, m.pk)
+
+    @patch("financeiro.lembretes._enviar_cobranca_whatsapp")
+    @patch("integracoes.woovi.services.garantir_cobranca_pix")
+    def test_sem_flag_nao_gera_pix(self, mock_garantir, mock_envio):
+        mock_envio.return_value = {"provider": "meta", "message_id": ""}
+        self._mensalidade()
+
+        enviar_lembretes(hoje=HOJE)
+
+        mock_garantir.assert_not_called()
+
+    @patch("financeiro.lembretes._enviar_cobranca_whatsapp")
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_nao_cobra_quem_ja_pagou_o_pix_mesmo_sem_webhook(self, mock_woovi, mock_envio):
+        # O aviso de pagamento se perdeu: antes do lembrete, o provedor
+        # confirma o pagamento, a baixa é feita, o repasse é aberto e nada
+        # é enviado.
+        from financeiro.models import Repasse
+        from integracoes.woovi.client import Cobranca
+
+        m = self._mensalidade()
+        self._pix(m)
+        mock_woovi.return_value.obter_cobranca.return_value = Cobranca(
+            "mensalidade-x", "COMPLETED", 12000, "", "", None, "tx1", None,
+        )
+
+        enviados = enviar_lembretes(hoje=HOJE)
+
+        self.assertEqual(enviados, [])
+        mock_envio.assert_not_called()
+        m.refresh_from_db()
+        self.assertEqual(m.status, "paga")
+        self.assertEqual(m.forma_pagamento, "pix")
+        self.assertEqual(Repasse.objects.count(), 1)
+
+    @patch("financeiro.lembretes._enviar_cobranca_whatsapp")
+    @patch("integracoes.woovi.services.WooviClient")
+    def test_falha_ao_consultar_a_woovi_nao_bloqueia_o_lembrete(self, mock_woovi, mock_envio):
+        from integracoes.woovi.exceptions import WooviError
+
+        mock_woovi.return_value.obter_cobranca.side_effect = WooviError("fora do ar")
+        mock_envio.return_value = {"provider": "meta", "message_id": ""}
+        m = self._mensalidade()
+        self._pix(m)
+
+        self.assertEqual(enviar_lembretes(hoje=HOJE), [m.pk])

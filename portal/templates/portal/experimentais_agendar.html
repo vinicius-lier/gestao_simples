@@ -1,0 +1,17 @@
+{% extends 'portal/publica_base.html' %}{% block title %}Inscrição — aula experimental{% endblock %}{% block content %}
+<section class="section">
+  <p><a href="{% url 'portal:experimentais_publico' %}">← Escolher outro horário</a></p>
+  <p class="eyebrow">SUA PRIMEIRA AULA</p>
+  <h2>{{ aula.turma.modalidade.nome }} · {{ aula.turma.nome }}</h2>
+  <p>{{ aula.turma.unidade.academia.nome }} — {{ aula.turma.unidade.nome }}<br>{% if aula.inicio|date:'d/m/Y' == aula.fim|date:'d/m/Y' %}{{ aula.inicio|date:'d/m/Y' }}, das {{ aula.inicio|date:'H:i' }} às {{ aula.fim|date:'H:i' }}{% else %}De {{ aula.inicio|date:'d/m/Y H:i' }} até {{ aula.fim|date:'d/m/Y H:i' }}{% endif %}<br>Inscrições até {{ aula.inscricoes_encerram|date:'d/m/Y H:i' }}</p>
+  {% if disponivel %}
+    <p>{{ aula.vagas_disponiveis }} vaga(s) livre(s). Quem já está na fila tem prioridade.</p>
+    {% if aula.fila_habilitada %}<p>Fila de espera habilitada: sem vaga, você pode optar por aguardar. A equipe confirma pelo painel e entra em contato.</p>{% else %}<p>Este horário não aceita fila de espera.</p>{% endif %}
+    <form method="post" class="form-experimental">{% csrf_token %}{{ form.non_field_errors }}{{ form.as_p }}
+      <p class="small">Usaremos os dados informados para organizar a aula e falar com você sobre a inscrição.</p>
+      <button class="button red">Enviar inscrição</button>
+    </form>
+  {% else %}
+    <p role="status">As inscrições para este horário não estão disponíveis no momento.</p>
+  {% endif %}
+</section>{% endblock %}

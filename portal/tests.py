@@ -58,12 +58,12 @@ class PortalTests(TestCase):
             self.assertEqual(self.client.get(url).status_code, 200)
         self.assertContains(self.client.get('/painel/'), '1')
 
-    def test_reutiliza_cpf_normalizado_sem_alterar_asaas(self):
-        r = Responsavel.objects.create(academia=self.a, nome='Maria existente', cpf='12345678900', whatsapp='21', asaas_customer_id='cus_preservado')
+    def test_reutiliza_cpf_normalizado_sem_alterar_contato(self):
+        r = Responsavel.objects.create(academia=self.a, nome='Maria existente', cpf='12345678900', whatsapp='21')
         aluno = self.criar()
         self.assertEqual(aluno.responsavel_financeiro_id, r.pk)
         r.refresh_from_db()
-        self.assertEqual(r.asaas_customer_id, 'cus_preservado')
+        self.assertEqual(r.whatsapp, '21')
         self.assertEqual(Responsavel.objects.count(), 1)
 
     def test_reutiliza_sem_cpf_por_nome_whatsapp(self):
@@ -203,3 +203,19 @@ class PaginaPublicaTests(TestCase):
         self.assertContains(response, 'Foto aprovada')
         self.assertNotContains(response, 'Foto privada')
         self.assertNotContains(response, '<script>alert(1)</script>')
+
+
+class CreditoNoRodapeTests(TestCase):
+    """Crédito do desenvolvedor no rodapé de cada layout."""
+
+    LINK = '<a href="https://viniciusoliveira-six.vercel.app/" target="_blank" rel="noopener noreferrer">Vinicius Oliveira</a>'
+
+    def test_rodape_de_todos_os_layouts(self):
+        paginas = {
+            'portal (login)': reverse('portal:login'),
+            'página pública': reverse('portal:publica'),
+            'layout público': reverse('portal:experimentais_publico'),
+        }
+        for nome, url in paginas.items():
+            with self.subTest(nome):
+                self.assertContains(self.client.get(url), f'Desenvolvido por {self.LINK}', html=False)

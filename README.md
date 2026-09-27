@@ -17,7 +17,7 @@ Sistema de gestão para academias (ex: academias de artes marciais), construído
 | `modalidades` | Modalidades oferecidas (lutas, esportes), suas graduações/faixas, professores e turmas |
 | `matriculas` | Vínculo entre um atleta, uma modalidade/turma e o valor da mensalidade |
 | `financeiro` | Mensalidades geradas a partir das matrículas; painel, cobranças e pagamentos no portal |
-| `integracoes` | Cliente e serviços do Asaas (clientes, cobrança Pix, webhook de pagamento) — não é um app Django, é uma lib interna |
+| `integracoes` | Clientes e serviços externos: Woovi (Pix, subconta, webhook e repasse), WhatsApp (Meta e Evolution) e n8n — não é um app Django, é uma lib interna |
 | `config` | Configurações do projeto Django (settings, urls, wsgi/asgi) |
 
 ### Modelo de dados
@@ -31,7 +31,11 @@ Todas as entidades principais pertencem a uma `Academia`, o que permite operar m
 - **Graduacao**: graduação/faixa de uma modalidade, com ordem de evolução. Cadastrada dentro da própria modalidade.
 - **Turma**: turma de uma modalidade, com unidade/polo, professor responsável, dias da semana, horário, local, valor de referência da mensalidade e dia de vencimento.
 - **Matricula**: liga um atleta a uma modalidade (e opcionalmente turma). Valor de mensalidade e dia de vencimento vêm da turma e podem ser ajustados por matrícula.
-- **Mensalidade**: cobrança mensal gerada a partir de uma matrícula, com competência, vencimento, status (`pendente`, `paga`, `vencida`, `cancelada`, `isenta`), `forma_pagamento` e `asaas_payment_id`. Integrada ao [Asaas](https://www.asaas.com/) (cliente, cobrança Pix e webhook de confirmação de pagamento — ver `MVP.md`).
+- **Mensalidade**: cobrança mensal gerada a partir de uma matrícula, com competência, vencimento, status (`pendente`, `paga`, `vencida`, `cancelada`, `isenta`), `forma_pagamento`. Paga por Pix via [Woovi](https://woovi.com/) — ver `MVP.md`.
+- **ContaRecebimento**: chave Pix onde a academia recebe (uma ativa; as anteriores ficam como histórico).
+- **CobrancaPix**: cada Pix gerado para uma mensalidade, com a conta de recebimento que o recebeu.
+- **Repasse**: transferência do valor recebido para a chave Pix da academia, com retentativas.
+- **EventoWebhook**: avisos do provedor de pagamento, gravados de forma idempotente.
 
 ## Como rodar localmente
 

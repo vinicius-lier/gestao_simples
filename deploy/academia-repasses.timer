@@ -1,0 +1,10 @@
+[Unit]
+Description=Academia Gestao - processa os repasses de Pix a cada minuto
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=true
+Unit=academia-repasses.service
+
+[Install]
+WantedBy=timers.target

@@ -1,3 +1,4 @@
+import logging
 from datetime import date, timedelta
 from functools import wraps
 from django.contrib import messages
@@ -7,11 +8,31 @@ from django.core.paginator import Paginator
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from atletas.models import Atleta
 from matriculas.models import Matricula
 from .forms import AlunoForm, MatriculaForm
 from .models import AcessoAcademia, TokenAcessoResponsavel
+
+
+logger = logging.getLogger(__name__)
+
+
+def mensagem_erro_pix(error, acao):
+    """Texto de erro de Pix para a equipe da academia: nunca cita o provedor
+    de pagamento nem detalhes técnicos (esses vão para o log)."""
+    from integracoes.woovi.exceptions import WooviConfigError, WooviError
+    from integracoes.woovi.services import RecebimentoNaoConfigurado
+
+    if isinstance(error, RecebimentoNaoConfigurado):
+        return 'Cadastre a chave Pix de recebimento em Configurações → Recebimento.'
+    if isinstance(error, WooviError):
+        logger.warning('Pix: falha ao %s: %s', acao, error)
+        if isinstance(error, WooviConfigError):
+            return 'O recebimento por Pix está indisponível no momento. Fale com o suporte.'
+        return f'Não foi possível {acao} agora. Tente novamente em alguns minutos.'
+    return str(error)
 
 
 def redirecionamento_seguro(request, padrao):
@@ -69,8 +90,11 @@ def detalhe(request, pk):
     matriculas = aluno.matriculas.filter(academia=request.academia, modalidade__academia=request.academia)
     # Do not expose legacy cross-tenant relationships.
     matriculas = [m for m in matriculas if not m.turma_id or m.turma.academia_id == request.academia.pk]
+    from .forms_matricula import AtivacaoMatriculaForm
     for matricula in matriculas:
         matricula.mensalidades_recentes = matricula.mensalidades.filter(academia=request.academia).order_by('-competencia')[:6]
+        if not matricula.ativo and request.administrador_academia:
+            matricula.ativacao_form = AtivacaoMatriculaForm(matricula=matricula, prefix=f'ativar-{matricula.pk}')
     return render(request, 'portal/detalhe.html', {'aluno': aluno, 'responsavel': responsavel, 'matriculas': matriculas})
 
 
@@ -82,6 +106,10 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
     aluno = get_object_or_404(Atleta, pk=pk, academia=request.academia) if pk else None
     matricula = get_object_or_404(Matricula, pk=matricula_pk, academia=request.academia, atleta=aluno) if matricula_pk else None
     unidade_anterior = matricula.unidade_id if matricula else None
+    # Situação antes da edição (os forms alteram as instâncias ao validar):
+    # decide se a cobrança começa agora.
+    matricula_ativa_antes = matricula.ativo if matricula else False
+    aluno_ativo_antes = aluno.status == 'ativo' if aluno else False
     data = request.POST if request.method == 'POST' else None
     form = AlunoForm(data, instance=aluno, academia=request.academia)
     incluir_matricula = not pk or matricula_pk is not None or nova_matricula
@@ -91,9 +119,11 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
         if matricula_form is not None:
             valid = matricula_form.is_valid() and valid
         if valid:
+            from financeiro.services import iniciar_cobranca
             try:
                 with transaction.atomic():
                     aluno = form.save()
+                    comecam = {}  # matrícula -> 1º vencimento escolhido (None: o próximo)
                     if matricula_form is not None:
                         inscricao = matricula_form.save(commit=False)
                         inscricao.atleta = aluno
@@ -104,6 +134,14 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
                             if outras.exists():
                                 raise ValidationError('Somente o administrador pode autorizar matrícula em outro polo.')
                         inscricao.save()
+                        if inscricao.ativo and not matricula_ativa_antes:
+                            comecam[inscricao] = matricula_form.cleaned_data.get('primeiro_vencimento')
+                    if pk and aluno.status == 'ativo' and not aluno_ativo_antes:
+                        # Voltou de trancado/inativo: cobra a partir do próximo vencimento.
+                        for ativa in aluno.matriculas.filter(ativo=True):
+                            comecam.setdefault(ativa, None)
+                    for inscricao_ativa, primeiro_vencimento in comecam.items():
+                        iniciar_cobranca(inscricao_ativa, primeiro_vencimento)
             except ValidationError as error:
                 form.add_error(None, ValidationError(error.messages))
             else:
@@ -114,7 +152,9 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
 
 def pagina_publica(request):
     from .models import PaginaPublica, FotoPublica
+    from .views_experimentais import contexto_publico
     return render(request, 'portal/publica.html', {
+        **contexto_publico(request),
         'pagina': PaginaPublica.objects.order_by('pk').first(),
         'fotos': FotoPublica.objects.filter(publicada=True),
     })
@@ -183,7 +223,7 @@ def cadastros(request, tipo, pk=None, novo=False, excluir=False, detalhe=False):
 def financeiro_dashboard(request):
     from financeiro.models import Mensalidade
     from financeiro.services import resumo_financeiro
-    hoje = date.today()
+    hoje = timezone.localdate()
     competencia = date(hoje.year, hoje.month, 1)
     Mensalidade.objects.filter(academia=request.academia).marcar_vencidas()
     base = Mensalidade.objects.filter(academia=request.academia).select_related('matricula__atleta')
@@ -204,7 +244,13 @@ def financeiro_cobrancas(request):
     if status not in dict(Mensalidade.STATUS):
         status = ''
     mes = request.GET.get('mes', '')
-    cobrancas = Mensalidade.objects.filter(academia=request.academia).select_related('matricula__atleta').order_by('-vencimento', '-pk')
+    from financeiro.models import CobrancaPix
+    cobrancas = (
+        Mensalidade.objects.filter(academia=request.academia)
+        .select_related('matricula__atleta')
+        .prefetch_related(CobrancaPix.prefetch_ativas())
+        .order_by('-vencimento', '-pk')
+    )
     if query:
         cobrancas = cobrancas.filter(matricula__atleta__nome__icontains=query)
     if status:
@@ -223,6 +269,45 @@ def financeiro_cobrancas(request):
 
 @academia_required
 @require_http_methods(['POST'])
+def matricula_ativar(request, pk, matricula_pk):
+    """Ativa a matrícula direto do cadastro do aluno, sem passar pelo
+    formulário de edição: o administrador confere o dia de vencimento e
+    define o 1º vencimento. Se ela veio de um convite de matrícula ainda
+    'preenchido', ativa pelo mesmo caminho do convite (mantém o status do
+    convite em sincronia)."""
+    if not request.administrador_academia:
+        raise PermissionDenied('Somente o administrador da academia ativa matrículas.')
+
+    from .forms_matricula import AtivacaoMatriculaForm
+    from .models import ConviteMatricula
+    from .services_matricula import ativar_convite, ativar_matricula
+
+    matricula = get_object_or_404(
+        Matricula, pk=matricula_pk, atleta__pk=pk, academia=request.academia,
+    )
+    if matricula.ativo:
+        messages.info(request, 'Esta matrícula já está ativa.')
+        return redirect('portal:detalhe', pk=pk)
+
+    form = AtivacaoMatriculaForm(request.POST, matricula=matricula, prefix=f'ativar-{matricula.pk}')
+    if not form.is_valid():
+        erros = ' '.join(erro for lista in form.errors.values() for erro in lista)
+        messages.error(request, f'Matrícula não ativada: {erros}')
+        return redirect('portal:detalhe', pk=pk)
+
+    convite = ConviteMatricula.objects.filter(
+        matricula=matricula, status=ConviteMatricula.PREENCHIDO,
+    ).first()
+    if convite is not None:
+        ativar_convite(convite, **form.cleaned_data)
+    else:
+        ativar_matricula(matricula, **form.cleaned_data)
+    messages.success(request, 'Matrícula ativada.')
+    return redirect('portal:detalhe', pk=pk)
+
+
+@academia_required
+@require_http_methods(['POST'])
 def financeiro_marcar_pago(request, pk):
     from financeiro.models import Mensalidade
     from financeiro.services import registrar_pagamento
@@ -234,8 +319,52 @@ def financeiro_marcar_pago(request, pk):
         registrar_pagamento(mensalidade, forma_pagamento=forma)
     except ValueError as error:
         messages.error(request, str(error))
+        return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
+    messages.success(request, f'Mensalidade de {mensalidade.matricula.atleta.nome} marcada como paga.')
+
+    # Pago por fora (dinheiro, transferência...): tira o Pix do ar para a
+    # família não pagar de novo pelo código que recebeu no lembrete.
+    from integracoes.woovi.exceptions import WooviError
+    from integracoes.woovi.services import remover_cobranca_pix
+    try:
+        remover_cobranca_pix(mensalidade)
+    except WooviError as error:
+        logger.warning('Pix: falha ao cancelar o Pix da mensalidade %s: %s', mensalidade.pk, error)
+        messages.warning(
+            request,
+            'Não foi possível cancelar o Pix desta mensalidade agora. Se a família pagar por ele, '
+            'fale com o suporte para evitar pagamento em dobro.',
+        )
+    return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
+
+
+@academia_required
+@require_http_methods(['POST'])
+def financeiro_encerrar_cobranca(request, pk):
+    """Cancela ou isenta uma mensalidade em aberto. Só administrador:
+    diferente de dar baixa, isso apaga uma dívida."""
+    if not request.administrador_academia:
+        raise PermissionDenied('Somente o administrador da academia cancela ou isenta mensalidades.')
+
+    from financeiro.models import Mensalidade
+    from financeiro.services import encerrar_mensalidade
+    from integracoes.woovi.exceptions import WooviError
+
+    mensalidade = get_object_or_404(
+        Mensalidade.objects.select_related('matricula__atleta'), pk=pk, academia=request.academia
+    )
+    try:
+        encerrar_mensalidade(mensalidade, request.POST.get('status', ''))
+    except (ValueError, WooviError) as error:
+        messages.error(
+            request, f'Não foi possível alterar a mensalidade: {mensagem_erro_pix(error, "cancelar o Pix")}'
+        )
     else:
-        messages.success(request, f'Mensalidade de {mensalidade.matricula.atleta.nome} marcada como paga.')
+        messages.success(
+            request,
+            f'Mensalidade {mensalidade.competencia:%m/%Y} de {mensalidade.matricula.atleta.nome}: '
+            f'{mensalidade.get_status_display().lower()}.',
+        )
     return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
 
@@ -243,39 +372,34 @@ def financeiro_marcar_pago(request, pk):
 @require_http_methods(['POST'])
 def financeiro_gerar_pix(request, pk):
     from financeiro.models import Mensalidade
-    from integracoes.asaas.client import AsaasAPIError
-    from integracoes.asaas.services import criar_cobranca_multipla_asaas
+    from integracoes.woovi.exceptions import WooviError
+    from integracoes.woovi.services import garantir_cobranca_pix
     mensalidade = get_object_or_404(Mensalidade, pk=pk, academia=request.academia)
     try:
-        criar_cobranca_multipla_asaas(mensalidade)
-    except (ValueError, AsaasAPIError) as error:
-        messages.error(request, f'Não foi possível gerar a cobrança: {error}')
+        garantir_cobranca_pix(mensalidade)
+    except (ValueError, WooviError) as error:
+        messages.error(request, mensagem_erro_pix(error, 'gerar o Pix'))
     else:
-        messages.success(request, 'Cobrança gerada no Asaas (Pix, boleto e cartão).')
+        messages.success(request, 'Pix gerado.')
     return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
 
 @academia_required
 def financeiro_pix_qrcode(request, pk):
-    """Tela com o QR code e o código copia-e-cola da cobrança já gerada.
-    Abre como página normal (funciona sem JS) e também é usada como
-    conteúdo do modal de detalhe (mesmo mecanismo de [data-detalhe])."""
+    """Tela com o QR code e o Pix copia-e-cola já gerado. Abre como página
+    normal (funciona sem JS) e também é usada como conteúdo do modal de
+    detalhe (mesmo mecanismo de [data-detalhe]). Não chama o provedor: os
+    dados do Pix ficam gravados na cobrança."""
     from financeiro.models import Mensalidade
-    from integracoes.asaas.client import AsaasAPIError
-    from integracoes.asaas.services import obter_pix_mensalidade
     mensalidade = get_object_or_404(
         Mensalidade.objects.select_related('matricula__atleta', 'matricula__modalidade', 'matricula__unidade'),
         pk=pk, academia=request.academia,
     )
-    pix, erro = None, None
-    if not mensalidade.asaas_payment_id:
-        erro = 'Esta mensalidade ainda não tem uma cobrança Pix gerada.'
-    else:
-        try:
-            pix = obter_pix_mensalidade(mensalidade)
-        except (ValueError, AsaasAPIError) as error:
-            erro = str(error)
-    return render(request, 'portal/financeiro_pix.html', {'mensalidade': mensalidade, 'pix': pix, 'erro': erro})
+    cobranca = mensalidade.cobranca_pix_vigente
+    erro = None
+    if cobranca is None:
+        erro = 'Esta mensalidade não tem um Pix vigente. Gere um novo pela lista de cobranças.'
+    return render(request, 'portal/financeiro_pix.html', {'mensalidade': mensalidade, 'cobranca': cobranca, 'erro': erro})
 
 
 @academia_required
@@ -284,8 +408,8 @@ def gerar_acesso_responsavel(request, pk):
     """Gera um link de acesso ao portal do responsável. Se a API do
     WhatsApp estiver configurada, envia sozinho; senão, mostra o link
     para o operador mandar manualmente (mesmo caminho de sempre)."""
-    from integracoes.whatsapp.client import WhatsAppAPIError
-    from integracoes.whatsapp.services import enviar_acesso_portal_responsavel
+    from integracoes.whatsapp import enviar_acesso
+    from integracoes.whatsapp.base import WhatsAppProviderError
 
     aluno = get_object_or_404(Atleta, pk=pk, academia=request.academia)
     responsavel = aluno.responsavel_financeiro
@@ -297,10 +421,10 @@ def gerar_acesso_responsavel(request, pk):
     link = request.build_absolute_uri(reverse('portal:responsavel_entrar', args=[acesso.token]))
 
     try:
-        enviar_acesso_portal_responsavel(responsavel, link)
+        enviar_acesso(request.academia, responsavel, link)
     except ValueError:
         pass  # API do WhatsApp não configurada: operador envia manualmente abaixo
-    except WhatsAppAPIError as error:
+    except WhatsAppProviderError as error:
         messages.warning(request, f'Não deu para enviar automaticamente pelo WhatsApp: {error}')
     else:
         messages.success(request, f'Acesso enviado automaticamente para {responsavel.nome} pelo WhatsApp.')
@@ -320,9 +444,10 @@ def financeiro_enviar_cobranca(request, pk):
     direto na página de pagamento dessa mensalidade — não no painel
     geral. Mesma regra de fallback do acesso ao portal: sem a API do
     WhatsApp configurada, mostra o link para enviar na mão."""
+    from financeiro.lembretes import calcular_estagio
     from financeiro.models import Mensalidade
-    from integracoes.whatsapp.client import WhatsAppAPIError
-    from integracoes.whatsapp.services import enviar_cobranca_responsavel
+    from integracoes.whatsapp import enviar_cobranca
+    from integracoes.whatsapp.base import WhatsAppProviderError
 
     mensalidade = get_object_or_404(
         Mensalidade.objects.select_related('matricula__atleta'), pk=pk, academia=request.academia
@@ -333,15 +458,18 @@ def financeiro_enviar_cobranca(request, pk):
         messages.error(request, 'Este aluno não tem responsável financeiro cadastrado.')
         return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
-    acesso = TokenAcessoResponsavel.gerar(responsavel)
+    acesso = TokenAcessoResponsavel.gerar(responsavel, validade_horas=TokenAcessoResponsavel.VALIDADE_PAGAMENTO_HORAS)
     destino = reverse('portal:responsavel_pagar', args=[mensalidade.pk])
     link = request.build_absolute_uri(reverse('portal:responsavel_entrar', args=[acesso.token])) + f'?next={destino}'
 
     try:
-        enviar_cobranca_responsavel(responsavel, mensalidade, link)
+        enviar_cobranca(
+            request.academia, responsavel, mensalidade, link,
+            estagio=calcular_estagio(mensalidade),
+        )
     except ValueError:
         pass  # API do WhatsApp não configurada: operador envia manualmente abaixo
-    except WhatsAppAPIError as error:
+    except WhatsAppProviderError as error:
         messages.warning(request, f'Não deu para enviar automaticamente pelo WhatsApp: {error}')
     else:
         messages.success(request, f'Cobrança enviada automaticamente para {responsavel.nome} pelo WhatsApp.')

@@ -11,13 +11,13 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate
 # Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env  # preencha ASAAS_BASE_URL/ASAAS_API_KEY para usar o Pix (ver abaixo)
+cp .env.example .env  # preencha WOOVI_BASE_URL/WOOVI_APP_ID para usar o Pix (ver abaixo)
 python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
-Sem o `.env` preenchido, o sistema funciona normalmente — só o botão **Gerar Pix** do financeiro falha com uma mensagem amigável ("ASAAS_BASE_URL não configurada"), em vez de gerar a cobrança. Isso é esperado, não é bug.
+Sem o `.env` preenchido, o sistema funciona normalmente — só o botão **Gerar Pix** do financeiro mostra "O recebimento por Pix está indisponível no momento" em vez de gerar o Pix. Isso é esperado, não é bug. Para testar localmente, use o sandbox da Woovi (`.env.example.local`); os testes automatizados nunca chamam a Woovi de verdade (`config/test_runner.py`).
 
 No `/admin/`, o superusuário deve cadastrar a academia, as modalidades e as turmas desejadas. Cadastre um usuário comum (sem acesso de equipe) e, em **Acessos às academias**, vincule-o à academia. Cada usuário tem uma academia. Apenas superusuários podem gerenciar esses vínculos.
 
@@ -31,49 +31,90 @@ Abra `/login/` com o usuário vinculado. Mesmo superusuários precisam de víncu
 - No detalhe: edição dos dados do aluno e vínculo do responsável; cada matrícula tem seu próprio link de edição para evitar escolher arbitrariamente entre múltiplas inscrições.
 - Logout usa POST com CSRF.
 
-Responsáveis são reutilizados dentro da academia pelo CPF sem pontuação. Sem CPF, a comparação usa nome e WhatsApp normalizados. Havendo vários candidatos, o formulário solicita seleção explícita. Reutilização não sobrescreve dados de contato nem o identificador Asaas existente.
+Responsáveis são reutilizados dentro da academia pelo CPF sem pontuação. Sem CPF, a comparação usa nome e WhatsApp normalizados. Havendo vários candidatos, o formulário solicita seleção explícita. Reutilização não sobrescreve dados de contato existentes.
 
 Academia é derivada exclusivamente do usuário autenticado. IDs de aluno, responsável, modalidade, turma e matrícula são filtrados no servidor. A relação turma/modalidade, datas e dia do vencimento são validados pelo model de matrícula. Valores negativos e nascimento futuro são rejeitados. A gravação de responsável, aluno e matrícula acontece em uma única transação; falha na matrícula desfaz o cadastro inteiro.
 
 ## Financeiro e limites
 
-A integração Asaas e a geração de mensalidades existente foram preservadas. O formulário salva a matrícula; não dispara cobranças nem gera mensalidades automaticamente. Continue usando o comando `gerar_mensalidades` do projeto.
+Os pagamentos são por **Pix via Woovi** (boleto e cartão não fazem parte do MVP). **Quem cria a matrícula define o vencimento**: o dia de vencimento de cada mês (vem da turma e pode ser ajustado) e o **primeiro vencimento** (`Matricula.primeiro_vencimento`). Em branco, o 1º vencimento é o próximo dia de vencimento a partir de hoje (ou da data de início, se ela for futura). Ele não pode ser anterior a hoje, e nenhuma mensalidade vence antes dele: **não há cobrança retroativa** — quem já treinava antes de entrar no sistema começa a pagar no vencimento escolhido. Quando a matrícula fica ativa, o sistema cria a 1ª mensalidade, que vence no 1º vencimento; as seguintes vencem no dia de vencimento. Depois que a cobrança começou, o 1º vencimento não é mais editável. As seguintes são criadas pela **rotina diária** (`enviar_lembretes_cobranca`, ver abaixo): ela garante as mensalidades do mês corrente e antecipa as do mês seguinte que vencem em até 7 dias, a tempo do lembrete de 5 dias antes. Só entram matrículas ativas de alunos com status **ativo** em academias ativas. Matrícula com valor R$ 0,00 (bolsa integral) gera mensalidades **isentas**, fora da régua e do Pix. O comando `gerar_mensalidades --ano --mes` continua disponível para gerar um mês avulso.
+
+**Aluno trancado, inativo ou com a matrícula desativada** não gera mensalidade nova. As que já estavam em aberto continuam em aberto (a academia cancela ou isenta pela lista de cobranças, se quiser), mas saem da régua automática de lembretes. Quando o aluno volta a ficar ativo, a cobrança recomeça no próximo dia de vencimento.
+
+**Convite de matrícula**: quando a família envia a ficha, a matrícula fica inativa e a escola recebe um aviso no **WhatsApp para avisos da escola** (Configurações → WhatsApp; exige o provedor Evolution). O **administrador da academia** abre o convite, confere os dados, define o dia de vencimento e o 1º vencimento e ativa. A mesma ativação existe no detalhe do aluno. Sem número de avisos (ou com o WhatsApp fora do ar), nada muda para a família: o convite fica em "Preenchido — revisar" na lista.
+
+Todas as datas ("hoje", vencida, estágio do lembrete) seguem o fuso de Brasília (`TIME_ZONE`), mesmo com o servidor em UTC: a mensalidade pode ser paga até as 23h59 do dia do vencimento e só vira **vencida** a partir de 0h do dia seguinte.
 
 ### Painel financeiro (`/financeiro/`)
 
 - **Painel**: previsto, recebido, a receber e em atraso do mês corrente, vencimentos dos próximos 7 dias e lista de inadimplentes. A cada acesso, mensalidades pendentes vencidas são promovidas para `vencida` automaticamente (`Mensalidade.objects.marcar_vencidas()`), sem depender de job externo.
-- **Cobranças** (`/financeiro/cobrancas/`): lista com busca por aluno, filtro por situação e por mês, paginada. Ações por linha: **Marcar como pago** (define `status`, `forma_pagamento` e `pago_em`), **Gerar Pix** (chama a integração Asaas já existente) e **Cobrar** (abre o WhatsApp do responsável com a mensagem preenchida — `portal/templatetags/portal_extras.py`).
+- **Cobranças** (`/financeiro/cobrancas/`): lista com busca por aluno, filtro por situação e por mês, paginada. Ações por linha: **Marcar como pago** (define `status`, `forma_pagamento` e `pago_em`; só vale para mensalidade em aberto — uma tela desatualizada não sobrescreve um pagamento já registrado, como o Pix que caiu enquanto a lista estava aberta), **Gerar Pix** / **Ver Pix** (cria o Pix ou mostra o QR e o copia-e-cola já gerado) e **Enviar cobrança** (ver WhatsApp abaixo). Marcar como pago uma mensalidade com Pix vigente também cancela o Pix, para a família não pagar em dobro; se não der, a tela avisa. Nenhuma tela cita o provedor de pagamento: erros técnicos vão só para o log.
 - Qualquer usuário vinculado à academia pode registrar pagamentos e gerar cobranças (não é uma ação restrita a administrador da academia).
+- **Cancelar / Isentar** (só administrador da academia): tira uma mensalidade em aberto da cobrança e dos lembretes. Se ela tem Pix vigente, o Pix é cancelado antes; se o provedor recusar (por exemplo, porque acabou de ser pago), nada muda localmente.
 - No detalhe do aluno, cada matrícula mostra as últimas mensalidades e o status.
 
-### Webhook do Asaas (`/webhooks/asaas/`)
+### Recebimento (Configurações → Recebimento)
 
-Endpoint público (`POST`, isento de CSRF) que recebe a confirmação de pagamento do Asaas e marca a mensalidade correspondente como paga automaticamente — sem conferência manual. Aceita `PAYMENT_RECEIVED` e `PAYMENT_CONFIRMED`, casando pelo `asaas_payment_id`. Configure `ASAAS_WEBHOOK_TOKEN` (mesmo token cadastrado no painel do Asaas) para exigir o cabeçalho `asaas-access-token`; sem essa variável definida, o endpoint aceita qualquer chamada — use isso só em desenvolvimento.
+A proprietária (administradora da academia) cadastra a **chave Pix** onde a escola recebe. Na Woovi, cada chave Pix identifica uma **subconta**: o sistema cria ou recupera a subconta ao salvar a chave. A tela mostra só a chave, um status simples (ativo / transferência em andamento / precisa de atenção), a última transferência e as chaves anteriores — nunca provedor, subconta, saldo ou saque.
+
+Trocar a chave (`configurar_chave_pix`): bloqueado enquanto houver transferência em andamento; a subconta da chave nova é criada antes de qualquer mudança no banco; os Pix **não pagos** da chave antiga são cancelados (e gerados de novo, já com a chave nova, no próximo acesso); a conta antiga fica inativa como histórico, com as cobranças e transferências ligadas a ela.
+
+### Pix via Woovi (`integracoes/woovi/`)
+
+- Cada Pix é uma `CobrancaPix` (histórico preservado; no máximo uma ativa por mensalidade, garantido no banco), criada **sem split**: o valor entra na conta principal. A Woovi recusa split de 100% (HTTP 400 em produção) e o valor pago é todo da academia, então, depois do pagamento, o repasse **credita na subconta o líquido** (valor pago menos a taxa da Woovi, que vem no aviso de pagamento — **a taxa é paga pela academia**) e só então saca. Vale **30 dias**; expirado (ou faltando menos de 1h), o próximo acesso gera outro. A criação usa `return_existing=true` e trava a linha da mensalidade.
+- Mensalidades pendentes **e vencidas** podem gerar Pix. Sem chave de recebimento cadastrada, não há Pix.
+- O QR Code é gerado no próprio servidor (SVG); a família nunca carrega nada do domínio do provedor nem recebe a página hospedada dele.
+- Configuração: `WOOVI_APP_ID` e `WOOVI_BASE_URL` (padrão: produção, `https://api.woovi.com`; sandbox para testes). O AppID só vai no header das chamadas — nunca em tela, log ou banco.
+
+### Webhook da Woovi (`/webhooks/woovi/`)
+
+Cadastre a URL no painel da Woovi para três eventos: `OPENPIX:CHARGE_COMPLETED`, `OPENPIX:MOVEMENT_CONFIRMED` e `OPENPIX:MOVEMENT_FAILED`.
+
+- **Segurança**: todo evento que muda algo exige `x-webhook-signature` válido (RSA-SHA256 sobre o corpo bruto, chaves públicas da Woovi em cache com rotação — `integracoes/woovi/assinatura.py`). Sem assinatura válida: 401.
+- **Idempotência**: cada evento é gravado em `EventoWebhook` com chave única (tipo + correlationID + endToEndId) antes de processar; repetição responde 200 sem efeito. O payload é guardado sem nome/CPF de quem pagou.
+- `CHARGE_COMPLETED` só registra o pagamento (mensalidade paga, forma Pix) e abre um **Repasse PENDENTE** — o saque nunca acontece dentro do webhook. `MOVEMENT_*` concluem ou reprovam o repasse.
+- Regras de negócio conhecidas (cobrança inexistente, já paga, mensalidade cancelada, pagamento em dobro) respondem 200 e ficam registradas no evento; cancelada e em dobro geram alerta para a plataforma (o dinheiro é repassado mesmo assim).
+- Rede de segurança: antes de cada lembrete, a rotina diária pergunta ao provedor se o Pix ativo da mensalidade já foi pago — um webhook perdido não vira cobrança de quem já pagou (e o repasse é aberto nessa hora).
+
+### Repasse automático (`integracoes/woovi/repasses.py`, comando `processar_repasses`)
+
+Tarefa agendada **a cada minuto**. Para cada repasse devido: reivindica atomicamente (dois processos nunca pegam o mesmo), **credita na subconta o líquido de cada Pix pago ainda não creditado** (`POST /subaccount/{pixKey}/credit`; timeout marca a cobrança e o extrato é conferido antes de repetir; Pix sem taxa conhecida leva o repasse a **Requer atenção** até a taxa ser informada no admin), consulta o **saldo real** da subconta e saca **todo o saldo disponível** — nunca assume que é o valor da mensalidade, então tarifas e pagamentos acumulados são tolerados. O banco garante **um único repasse aberto por conta**: dois pagamentos quase simultâneos viram um único saque, e pagamento que chega durante um saque abre outro repasse quando este terminar.
+
+- Saldo zerado logo após o pagamento: espera o crédito cair (até 3 tentativas) antes de concluir sem saque; o saque pede **saldo − tarifa de saque** (`WOOVI_TARIFA_SAQUE_CENTAVOS`, padrão R$ 1,00, paga pela academia; a Woovi a cobra do saldo além do valor pedido, e pedir o saldo inteiro volta "Saldo insuficiente"); a partir de R$ 1.000 (`WOOVI_SAQUE_SEM_TARIFA_CENTAVOS`) não há tarifa e saca o saldo inteiro. Se saldo − tarifa ficar abaixo do mínimo (`WOOVI_SAQUE_MINIMO_CENTAVOS`, padrão R$ 1,01), o saldo fica para o próximo repasse. Custo por mensalidade para a academia: taxa do Pix (R$ 0,85 no teste) + R$ 1,00 do saque.
+- Falha: novas tentativas após **1, 5, 15, 60 e 180 minutos** (6 tentativas, ~4h20); depois, **Requer atenção** + alerta (`financeiro/alertas.py`, logger `gestao.alertas` — ponto único para ligar Zabbix/Discord). Chave recusada pelo provedor vai direto para Requer atenção.
+- Timeout no saque (o endpoint não é idempotente): antes de qualquer nova tentativa, o **extrato** da subconta é conferido; se o saque saiu, não é pedido de novo.
+- Sem confirmação em 30 minutos, o extrato decide (saque → concluído; estorno ou nada → nova tentativa).
+- Superusuários veem um aviso no portal quando há repasse em Requer atenção; no `/admin/financeiro/repasse/` há a ação "Tentar o repasse de novo".
+
+Custos a validar em produção (tarifa por saque, taxa do Pix): ver `deploy/COOLIFY.md`.
 
 ### Portal do responsável (`/responsavel/`)
 
-Área pública, sem o login de staff, onde o responsável financeiro acompanha as mensalidades dos próprios alunos e paga por Pix, boleto ou cartão.
+Área pública, sem o login de staff, onde o responsável financeiro acompanha as mensalidades dos próprios alunos e paga por Pix.
 
 - **Acesso**: sem senha. O staff clica **"Gerar acesso ao portal de pagamentos"** no detalhe do aluno (`AcessoAcademia`/administrador não é exigido para isso — qualquer usuário da academia pode gerar). Isso cria um `TokenAcessoResponsavel` (link de uso único, válido por 24h) e tenta enviar pelo WhatsApp automaticamente; se a API do WhatsApp não estiver configurada, mostra o link para o operador mandar manualmente (mesmo padrão wa.me usado no financeiro).
-- Ao abrir o link, o navegador ganha uma sessão comum (`request.session['responsavel_id']`) que dura o padrão de sessão do Django — não precisa do link de novo até expirar os cookies.
+- Abrir o link mostra uma tela com o botão **Entrar**; o token só é gasto nesse clique (POST). Assim, prévia de link do WhatsApp e antivírus — que abrem o link por GET — não queimam o acesso antes da família. Links de pagamento (lembretes e "Enviar cobrança") valem 7 dias; o acesso avulso ao portal, 24h. Reabrir um link já usado no mesmo navegador segue direto, sem "link expirado".
+- Ao clicar em Entrar, o navegador ganha uma sessão comum (`request.session['responsavel_id']`) que dura o padrão de sessão do Django — não precisa do link de novo até expirar os cookies.
 - **Painel**: lista os alunos vinculados àquele responsável e as mensalidades de cada um, com botão **Pagar** nas pendentes/atrasadas.
-- **Pagar**: gera (ou reaproveita) uma cobrança Asaas com `billing_type=UNDEFINED` (`criar_cobranca_multipla_asaas`), mostra o QR/copia-e-cola do Pix na hora, um link do boleto (PDF) e um botão "Pagar com cartão" que abre o checkout hospedado do próprio Asaas (`invoiceUrl`) — cartão nunca passa pelo nosso servidor.
+- **Pagar**: gera (ou reaproveita) o Pix (`garantir_cobranca_pix`) e mostra o QR Code e o copia-e-cola na hora — inclusive para mensalidades já vencidas. Se não der, mostra uma mensagem genérica (o detalhe vai para o log).
 - Isolamento: toda consulta filtra por `matricula__atleta__responsavel_financeiro=request.responsavel` — um responsável nunca alcança mensalidade de outra família, mesmo advinhando o ID na URL.
 
 ### WhatsApp Cloud API (`integracoes/whatsapp/`)
 
-Cliente da API oficial da Meta, mesmo formato do cliente do Asaas. Usado para enviar automaticamente o acesso ao portal (`enviar_acesso_portal_responsavel`), o botão manual "Enviar cobrança" do painel financeiro e os lembretes automáticos abaixo (todos via `enviar_cobranca_responsavel`). Exige `WHATSAPP_PHONE_NUMBER_ID` e `WHATSAPP_ACCESS_TOKEN` (`.env.example`) e templates aprovados no Meta Business Manager (nomes configuráveis via `WHATSAPP_TEMPLATE_ACESSO`/`WHATSAPP_TEMPLATE_COBRANCA`). Sem configurar, todo fluxo cai automaticamente no link manual (wa.me) — nada quebra.
+Cliente da API oficial da Meta. Usado para enviar automaticamente o acesso ao portal (`enviar_acesso_portal_responsavel`), o botão manual "Enviar cobrança" do painel financeiro e os lembretes automáticos abaixo (todos via `enviar_cobranca_responsavel`). Exige `WHATSAPP_PHONE_NUMBER_ID` e `WHATSAPP_ACCESS_TOKEN` (`.env.example`) e templates aprovados no Meta Business Manager (nomes configuráveis via `WHATSAPP_TEMPLATE_ACESSO`/`WHATSAPP_TEMPLATE_COBRANCA`). Sem configurar, todo fluxo cai automaticamente no link manual (wa.me) — nada quebra.
 
 No painel financeiro, o botão único **"Enviar cobrança"** substitui o antigo par "Cobrar" (wa.me manual) + "Enviar cobrança": ele tenta mandar pela API automaticamente e só cai para o link manual se o WhatsApp não estiver configurado ou a chamada falhar.
 
 ### Lembretes automáticos de cobrança (`financeiro/lembretes.py`)
 
-Comando `enviar_lembretes_cobranca` (agendar para rodar 1x por dia via cron/Agendador de Tarefas do Windows — o projeto não agenda nada sozinho) que avisa o responsável pelo WhatsApp em 4 estágios, cada um disparado **no máximo uma vez por mensalidade**:
+Comando `enviar_lembretes_cobranca` — a rotina diária de cobrança (na EC2 roda pelo timer `deploy/academia-lembretes.timer`; no Windows, agende pelo Agendador de Tarefas). Primeiro gera as mensalidades pendentes de criação (ver "Financeiro e limites"), depois avisa o responsável pelo WhatsApp em 4 estágios, cada um disparado **no máximo uma vez por mensalidade**:
 
 1. **5 dias antes** do vencimento;
 2. **1 dia antes**, se ainda não paga;
 3. **no dia** do vencimento, se ainda não paga;
 4. **atrasada** — dispara uma vez ao ficar em atraso; não repete todo dia depois disso (evita virar máquina de spam).
+
+A régua automática só fala com quem ainda é aluno: matrícula ativa, aluno ativo, academia ativa e competência dentro da data de fim da matrícula. A dívida de quem saiu continua no painel e pode ser cobrada pelo botão manual **Enviar cobrança**.
 
 Controle de idempotência: tabela `LembreteCobranca` (`mensalidade` + `estagio`, único), criada só depois do envio dar certo — se falhar (WhatsApp não configurado, API fora do ar, responsável sem WhatsApp cadastrado), tenta de novo na próxima execução em vez de desistir para sempre. O link enviado é o mesmo link de pagamento de uso único do portal do responsável (`TokenAcessoResponsavel` + `?next=`), montado com a variável `SITE_URL` (`.env.example`) já que o comando roda fora de uma request HTTP.
 
@@ -91,7 +132,7 @@ python manage.py test
 python manage.py makemigrations --check --dry-run
 ```
 
-Os testes do portal cobrem autenticação, academia ausente/inativa, isolamento, formulários, reutilização de responsável, edição, rollback, CSRF, busca e paginação. Os testes financeiros e Asaas originais permanecem intactos.
+Os testes do portal cobrem autenticação, academia ausente/inativa, isolamento, formulários, reutilização de responsável, edição, rollback, CSRF, busca e paginação. Os testes financeiros e da Woovi cobrem geração de mensalidades, régua de lembretes, chave Pix/subconta, split, webhook assinado e idempotente, repasse (saldo real, retry, limite, timeout, concorrência) e a ausência de termos do provedor nas telas.
 
 
 ## Polos, professores e turmas
@@ -104,4 +145,4 @@ A **modalidade** guarda só o nome e a descrição — nada de valores ou horár
 
 Superusuários ou usuários com a opção “administrador da academia” no acesso podem gerenciar esses cadastros. Um administrador pode abrir o detalhe do aluno e criar outra matrícula; transferir uma matrícula de polo também exige administrador. Os filtros de acesso atuais continuam sendo por Academia; permissões de visualização individuais por polo ainda não estão implementadas.
 
-No cadastro do aluno, marque “O próprio aluno é o responsável financeiro” e informe CPF e WhatsApp. O sistema cria/reutiliza um Responsavel compatível com a integração Asaas e preserva os identificadores existentes. Não dispara cobranças ao cadastrar.
+No cadastro do aluno, marque “O próprio aluno é o responsável financeiro” e informe CPF e WhatsApp. O sistema cria/reutiliza um Responsavel com esses dados, usados também como cliente do Pix. Não dispara cobranças ao cadastrar.

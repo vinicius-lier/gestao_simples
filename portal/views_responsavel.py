@@ -1,7 +1,8 @@
 """Portal do responsável financeiro: área pública (sem o login de staff)
-onde ele acompanha as mensalidades dos alunos e paga por Pix, boleto ou
-cartão. Acesso por link de uso único (sem senha) — ver TokenAcessoResponsavel.
+onde ele acompanha as mensalidades dos alunos e paga por Pix. Acesso por
+link de uso único (sem senha) — ver TokenAcessoResponsavel.
 """
+import logging
 import re
 from functools import wraps
 
@@ -12,6 +13,8 @@ from django.views.decorators.http import require_http_methods
 from atletas.models import Atleta, Responsavel
 from financeiro.models import Mensalidade
 from .models import TokenAcessoResponsavel
+
+logger = logging.getLogger(__name__)
 
 _PADRAO_DESTINO_PAGAR = re.compile(r'^/responsavel/mensalidade/(\d+)/pagar/$')
 
@@ -43,16 +46,36 @@ def responsavel_required(view):
     return wrapped
 
 
+@require_http_methods(['GET', 'POST'])
 def responsavel_entrar(request, token):
-    acesso = get_object_or_404(TokenAcessoResponsavel.objects.select_related('responsavel'), token=token)
+    """GET mostra a tela "Entrar" sem gastar o token; só o POST (clique do
+    responsável) consome. Robôs de prévia de link e antivírus fazem GET,
+    então não queimam o link de uso único antes da família clicar."""
+    acesso = get_object_or_404(
+        TokenAcessoResponsavel.objects.select_related('responsavel__academia'), token=token
+    )
+
+    def seguir():
+        destino = destino_pos_login(request.GET.get('next', ''), acesso.responsavel)
+        return redirect(destino) if destino else redirect('portal:responsavel_painel')
+
+    # Já entrou com este responsável neste navegador (ex.: abriu o mesmo
+    # link de novo pelo WhatsApp): segue direto, mesmo com o token gasto.
+    if request.session.get('responsavel_id') == acesso.responsavel_id:
+        return seguir()
+
     if not acesso.valido:
         return render(request, 'portal/responsavel_link_expirado.html', status=410)
+
+    if request.method == 'GET':
+        return render(request, 'portal/responsavel_entrar.html', {'academia': acesso.responsavel.academia})
+
     acesso.consumir()
+    request.session.cycle_key()
     request.session['responsavel_id'] = acesso.responsavel_id
     request.session.set_expiry(60 * 60 * 24 * 14)  # 14 dias, como o padrão de sessão do Django
     messages.success(request, f'Bem-vindo(a), {acesso.responsavel.nome}.')
-    destino = destino_pos_login(request.GET.get('next', ''), acesso.responsavel)
-    return redirect(destino) if destino else redirect('portal:responsavel_painel')
+    return seguir()
 
 
 def responsavel_link_expirado(request):
@@ -86,8 +109,8 @@ def responsavel_painel(request):
 
 @responsavel_required
 def responsavel_pagar(request, pk):
-    from integracoes.asaas.client import AsaasAPIError
-    from integracoes.asaas.services import criar_cobranca_multipla_asaas, obter_pix_mensalidade
+    from integracoes.woovi.exceptions import WooviError
+    from integracoes.woovi.services import garantir_cobranca_pix
 
     mensalidade = get_object_or_404(
         Mensalidade.objects.select_related('matricula__atleta', 'matricula__modalidade', 'matricula__unidade'),
@@ -96,15 +119,18 @@ def responsavel_pagar(request, pk):
         matricula__atleta__responsavel_financeiro=request.responsavel,
     )
 
-    pix, erro = None, None
+    cobranca, erro = None, None
     if mensalidade.status in ('pendente', 'vencida'):
         try:
-            if not mensalidade.asaas_payment_id:
-                criar_cobranca_multipla_asaas(mensalidade)
-            pix = obter_pix_mensalidade(mensalidade)
-        except (ValueError, AsaasAPIError) as error:
-            erro = str(error)
+            cobranca = garantir_cobranca_pix(mensalidade)
+        except (ValueError, WooviError) as error:
+            # A família não vê detalhe técnico nem o nome do provedor.
+            logger.warning('Pix: falha ao gerar o Pix da mensalidade %s: %s', mensalidade.pk, error)
+            erro = (
+                'Não foi possível carregar o Pix agora. Tente novamente em instantes '
+                'ou fale com a secretaria.'
+            )
 
     return render(request, 'portal/responsavel_pagar.html', {
-        'mensalidade': mensalidade, 'pix': pix, 'erro': erro,
+        'mensalidade': mensalidade, 'cobranca': cobranca, 'erro': erro,
     })

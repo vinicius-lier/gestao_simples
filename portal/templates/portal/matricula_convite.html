@@ -1,0 +1,47 @@
+{% extends 'portal/publica_base.html' %}{% block title %}Matrícula{% endblock %}{% block content %}
+<section class="section">
+{% if estado == 'ok' %}
+  <p class="eyebrow">MATRÍCULA</p>
+  <h2>Ficha de matrícula</h2>
+  <p>Turma: <strong>{{ convite.turma|default:convite.modalidade }}</strong>{% if convite.turma.unidade %} — {{ convite.turma.unidade }}{% endif %}.<br>
+  {% if convite.valor_efetivo %}Mensalidade de R$ {{ convite.valor_efetivo }}, vencimento dia {{ convite.vencimento_efetivo }}.{% endif %}</p>
+  <p>Preencha os dados abaixo. A escola confere e confirma a matrícula em seguida.</p>
+
+  <form method="post" class="form-publica">{% csrf_token %}
+    {{ form.non_field_errors }}
+
+    <h3>Dados do aluno</h3>
+    {% include 'portal/_campo_publico.html' with campo=form.nome %}
+    {% include 'portal/_campo_publico.html' with campo=form.data_nascimento %}
+    {% include 'portal/_campo_publico.html' with campo=form.cpf %}
+    {% include 'portal/_campo_publico.html' with campo=form.faixa %}
+    {% include 'portal/_campo_publico.html' with campo=form.observacoes %}
+
+    <h3>Responsável financeiro</h3>
+    <p class="check"><label for="{{ form.proprio_responsavel.id_for_label }}">{{ form.proprio_responsavel }} {{ form.proprio_responsavel.label }}</label></p>
+    <div id="bloco-responsavel">
+      {% include 'portal/_campo_publico.html' with campo=form.responsavel_nome %}
+      {% include 'portal/_campo_publico.html' with campo=form.responsavel_cpf %}
+      {% include 'portal/_campo_publico.html' with campo=form.responsavel_email %}
+    </div>
+    {% include 'portal/_campo_publico.html' with campo=form.responsavel_whatsapp %}
+
+    <p class="small">Os dados serão usados para o cadastro do aluno e a cobrança da mensalidade.</p>
+    <button class="button red">Enviar matrícula</button>
+  </form>
+  <script>
+    (function () {
+      var chk = document.getElementById('{{ form.proprio_responsavel.id_for_label }}');
+      var bloco = document.getElementById('bloco-responsavel');
+      function sync() { bloco.hidden = chk.checked; }
+      chk.addEventListener('change', sync); sync();
+    })();
+  </script>
+{% elif estado == 'expirado' %}
+  <h2>Link expirado</h2><p>Este link de matrícula expirou. Peça um novo ao professor.</p>
+{% elif estado == 'usado' %}
+  <h2>Matrícula já enviada</h2><p>Os dados deste link já foram preenchidos. Se precisar corrigir algo, fale com a escola.</p>
+{% else %}
+  <h2>Link inválido</h2><p>Não encontramos este convite de matrícula. Confira o endereço com o professor.</p>
+{% endif %}
+</section>{% endblock %}

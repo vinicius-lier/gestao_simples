@@ -1,0 +1,12 @@
+{% extends 'portal/publica_base.html' %}{% block title %}Inscrição enviada{% endblock %}{% block content %}
+<section class="section">
+  <p class="eyebrow">INSCRIÇÃO ENVIADA</p>
+  <h2>{{ resultado.status }}</h2>
+  <p>{{ resultado.aula }}</p>
+  {% if resultado.espera %}
+    <p>Você entrou na fila de espera. <strong>Sua vaga ainda não está confirmada.</strong> A equipe entra em contato assim que uma vaga for liberada.</p>
+  {% else %}
+    <p>Sua vaga está confirmada. Esperamos você na unidade no horário escolhido!</p>
+  {% endif %}
+  <p><a class="button red" href="{% url 'portal:publica' %}">Voltar para a escola</a></p>
+</section>{% endblock %}

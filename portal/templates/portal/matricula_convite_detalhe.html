@@ -1,0 +1,60 @@
+{% extends 'portal/base.html' %}{% block title %}Convite de matrícula{% endblock %}{% block content %}
+<p><a href="{% url 'portal:matricula_convites' %}">← Convites de matrícula</a></p>
+<h1>Convite de matrícula</h1>
+<p class="text-secondary">{{ convite.get_status_display }} · criado em {{ convite.criado_em|date:'d/m/Y H:i' }} · expira {{ convite.expira_em|date:'d/m/Y H:i' }}</p>
+
+<article class="card p-3 mb-3">
+  <p class="mb-1"><strong>Turma:</strong> {{ convite.turma|default:convite.modalidade }}{% if convite.turma.unidade %} — {{ convite.turma.unidade }}{% endif %}</p>
+  <p class="mb-1"><strong>Mensalidade:</strong> {% if convite.valor_efetivo %}R$ {{ convite.valor_efetivo }}{% else %}—{% endif %} · vencimento dia {{ convite.vencimento_efetivo }}</p>
+  {% if convite.observacao_interna %}<p class="mb-0"><strong>Obs. interna:</strong> {{ convite.observacao_interna }}</p>{% endif %}
+</article>
+
+{% if convite.aberto_para_preenchimento %}
+<div class="card p-3 mb-3">
+  <label for="link" class="form-label"><strong>Link para enviar à família</strong></label>
+  <input id="link" class="form-control" value="{{ link }}" readonly onclick="this.select()">
+  <small class="text-secondary">Uso único · válido até {{ convite.expira_em|date:'d/m/Y H:i' }}</small>
+  {% if convite.convidado_whatsapp %}
+  <form method="post" action="{% url 'portal:matricula_convite_enviar' convite.pk %}" class="mt-3">{% csrf_token %}
+    <button class="btn btn-primary">Enviar por WhatsApp ({{ convite.convidado_whatsapp }})</button>
+  </form>
+  {% else %}
+  <p class="small text-secondary mb-0 mt-3">Sem WhatsApp cadastrado neste convite — copie o link acima e envie manualmente.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if convite.status == 'preenchido' and convite.atleta %}
+<article class="card p-3 mb-3">
+  <h2 class="h5">Dados enviados pela família</h2>
+  <p class="mb-1"><strong>Aluno:</strong> {{ convite.atleta.nome }}{% if convite.atleta.data_nascimento %} · nasc. {{ convite.atleta.data_nascimento|date:'d/m/Y' }}{% endif %}{% if convite.atleta.cpf %} · CPF {{ convite.atleta.cpf }}{% endif %}{% if convite.atleta.faixa %} · {{ convite.atleta.faixa }}{% endif %}</p>
+  {% with r=convite.atleta.responsavel_financeiro %}{% if r %}<p class="mb-1"><strong>Responsável:</strong> {{ r.nome }} · {{ r.whatsapp }}{% if r.email %} · {{ r.email }}{% endif %}{% if r.cpf %} · CPF {{ r.cpf }}{% endif %}</p>{% endif %}{% endwith %}
+  {% if convite.atleta.observacoes %}<p class="mb-0"><strong>Observações:</strong> {{ convite.atleta.observacoes }}</p>{% endif %}
+</article>
+{% endif %}
+
+{% if convite.status == 'preenchido' %}
+{% if ativacao_form %}
+<form method="post" action="{% url 'portal:matricula_convite_acao' convite.pk %}" class="card p-3 mb-3">{% csrf_token %}
+  <h2 class="h5">Definir vencimento e ativar</h2>
+  <p class="text-secondary small">A 1ª mensalidade vence no primeiro vencimento; as seguintes, no dia de vencimento de cada mês.</p>
+  <div class="d-flex gap-3 flex-wrap align-items-end">
+    {% for field in ativacao_form %}<div><label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>{{ field }}</div>{% endfor %}
+    <button class="btn btn-primary" name="acao" value="ativar">Ativar matrícula</button>
+  </div>
+</form>
+{% else %}
+<p class="text-secondary">Aguardando o administrador da academia conferir, definir o vencimento e ativar.</p>
+{% endif %}
+{% endif %}
+
+{% if convite.status == 'pendente' or convite.status == 'preenchido' %}
+<form method="post" action="{% url 'portal:matricula_convite_acao' convite.pk %}">{% csrf_token %}
+  <button class="btn btn-outline-danger" name="acao" value="cancelar">Cancelar convite</button>
+</form>
+{% endif %}
+
+{% if convite.status == 'ativado' and convite.atleta %}
+<p class="mt-3">Matrícula ativada em {{ convite.ativado_em|date:'d/m/Y H:i' }}. <a href="{% url 'portal:detalhe' convite.atleta.pk %}">Abrir cadastro do aluno →</a></p>
+{% endif %}
+{% endblock %}
