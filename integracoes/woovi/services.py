@@ -5,8 +5,8 @@ identifica uma subconta na Woovi. Cada Pix de mensalidade é criado SEM
 split (``garantir_cobranca_pix``): o valor entra na conta principal. A Woovi
 não aceita split de 100%, e o valor pago é todo da academia — então, quando o
 Pix é pago, o webhook registra o pagamento com a taxa da Woovi e abre um
-repasse (``registrar_pagamento_pix``); o job ``processar_repasses`` (ver
-``repasses``) credita na subconta o valor líquido (pago menos a taxa, que é
+repasse (``registrar_pagamento_pix``); logo em seguida, em segundo plano,
+``repasses`` credita na subconta o valor líquido (pago menos a taxa, que é
 paga pela academia) e transfere o saldo da subconta para a chave Pix.
 
 Mensagens de erro de negócio (``ValueError`` e subclasses) podem ir para a
@@ -352,7 +352,11 @@ def solicitar_repasse(conta):
     aguardando nova tentativa, ele vai transferir o saldo todo — inclusive
     este pagamento. Se houver um em processamento (valor já definido),
     marca que chegou saldo novo, para outro repasse abrir quando ele
-    terminar. Deve rodar dentro de uma transação."""
+    terminar. Deve rodar dentro de uma transação; quando ela for gravada, o
+    repasse é processado em segundo plano."""
+    from integracoes.woovi.repasses import acompanhar_repasses
+
+    transaction.on_commit(acompanhar_repasses)
     aberto = (
         Repasse.objects.select_for_update()
         .filter(conta_recebimento=conta, status__in=Repasse.STATUS_ABERTOS)
@@ -456,6 +460,10 @@ def processar_evento(evento):
             )
         if repasse is None:
             motivo = "repasse não encontrado"
+        else:
+            # A falha agenda nova tentativa (e a confirmação pode abrir outro
+            # repasse): garante que alguém está acompanhando.
+            transaction.on_commit(repasses.acompanhar_repasses)
 
     evento.status = EventoWebhook.IGNORADO if motivo else EventoWebhook.PROCESSADO
     evento.erro = motivo

@@ -23,6 +23,14 @@ EXPLICACOES = {
         "errada, peça à escola para cadastrar outra em Configurações → Recebimento. Depois selecione "
         "o repasse e use a ação **Tentar o repasse de novo**.",
     ),
+    "Acompanhamento dos repasses Pix falhou": (
+        "O sistema teve um erro inesperado ao transferir para as escolas o dinheiro dos Pix pagos. "
+        "O dinheiro está guardado na conta da plataforma na Woovi — nada se perdeu —, e o sistema "
+        "tenta de novo a cada minuto.",
+        "Se o aviso se repetir, veja o erro nos Logs da aplicação no Coolify (procure por "
+        "\"Acompanhamento dos repasses\") e confira se o banco keiko-postgres está Running. Para "
+        "tentar na hora, rode `python manage.py processar_repasses` no Terminal do Coolify.",
+    ),
     "Chave Pix cadastrada com transferência bloqueada": (
         "A escola cadastrou uma chave Pix que a Woovi não aceita como destino de transferência "
         "(chave inválida ou com restrição). Os pagamentos entram, mas não chegam à escola.",

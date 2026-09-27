@@ -40,6 +40,8 @@ class ProjetoTestRunner(DiscoverRunner):
         settings.WOOVI_BASE_URL = "https://woovi.invalid"
         # Nenhum teste posta no Discord de verdade, mesmo com webhook no .env.
         settings.ALERTAS_DISCORD_WEBHOOK_URL = ""
+        # Nenhum teste deixa uma thread de repasse rodando por trás.
+        settings.REPASSES_EM_SEGUNDO_PLANO = False
         settings.WOOVI_APP_ID = "app-id-somente-para-testes"
         self._bloqueio_woovi = mock.patch("integracoes.woovi.client.requests", _RequestsSemRede())
         self._bloqueio_woovi.start()

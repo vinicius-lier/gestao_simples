@@ -7,9 +7,10 @@ class Command(BaseCommand):
     help = (
         "Transfere para a chave Pix de cada academia o saldo recebido pelos "
         "Pix pagos (repasses pendentes e novas tentativas vencidas) e confere "
-        "os repasses sem confirmação. Agende a cada minuto (Coolify: "
-        "Scheduled Task '* * * * *'). Seguro rodar em paralelo: cada repasse "
-        "é reivindicado atomicamente."
+        "os repasses sem confirmação. Não precisa de agendamento: o site faz "
+        "isso sozinho quando entra um Pix, e a rotina diária dá uma passada. "
+        "Use para rodar na hora, à mão. Seguro rodar em paralelo: cada "
+        "repasse é reivindicado atomicamente."
     )
 
     def handle(self, *args, **options):

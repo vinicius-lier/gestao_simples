@@ -3,6 +3,7 @@ from django.core.management.base import BaseCommand
 from financeiro.lembretes import enviar_lembretes
 from financeiro.models import Mensalidade
 from financeiro.services import gerar_mensalidades_do_dia
+from integracoes.woovi.repasses import processar_repasses
 
 
 class Command(BaseCommand):
@@ -28,3 +29,9 @@ class Command(BaseCommand):
 
         self.stdout.write(f"{gerar_faturas()} fatura(s) da assinatura do sistema gerada(s).")
         avisar_faturas_vencidas()
+
+        # Rede de segurança dos repasses Pix (o site os processa sozinho
+        # quando o Pix entra): pega algum que tenha ficado para trás.
+        repasses = processar_repasses()
+        if repasses["processados"] or repasses["conferidos"]:
+            self.stdout.write(f"{repasses['processados']} repasse(s) Pix retomado(s).")

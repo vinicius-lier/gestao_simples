@@ -4,13 +4,14 @@ from io import StringIO
 from unittest.mock import patch
 
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from financeiro.models import CobrancaPix, ContaRecebimento, Repasse
+from financeiro.models import CobrancaPix, ContaRecebimento, EventoWebhook, Repasse
 from integracoes.woovi import repasses
 from integracoes.woovi.client import LancamentoExtrato
 from integracoes.woovi.exceptions import WooviAuthError, WooviTimeoutError, WooviUnavailableError
+from integracoes.woovi.services import EVENTO_SAQUE_FALHOU, processar_evento, registrar_pagamento_pix
 from tests.woovi_base import CHAVE, CenarioWoovi, saque, subconta
 
 
@@ -357,3 +358,103 @@ class ProcessarRepasseTests(CenarioWoovi, TestCase):
         self.assertIn("1 repasse(s) processado(s)", saida.getvalue())
         self.repasse.refresh_from_db()
         self.assertEqual(self.repasse.status, Repasse.PROCESSANDO)
+
+
+class ThreadNaHora:
+    """No lugar da thread do acompanhamento: roda na hora, na thread do
+    teste (a única que enxerga o banco do teste)."""
+
+    def __init__(self, target, **kwargs):
+        self.target = target
+
+    def start(self):
+        self.target()
+
+
+@override_settings(REPASSES_EM_SEGUNDO_PLANO=True)
+@patch("integracoes.woovi.repasses.time.sleep")
+@patch("integracoes.woovi.repasses.connection")
+@patch("integracoes.woovi.repasses.threading.Thread", ThreadNaHora)
+@patch("integracoes.woovi.repasses.WooviClient")
+class AcompanhamentoTests(CenarioWoovi, TestCase):
+    """O repasse roda sozinho quando entra um Pix — sem tarefa agendada."""
+
+    def setUp(self):
+        self.criar_cenario()
+        self.addCleanup(lambda: self.assertFalse(repasses._acompanhando.locked(), "acompanhamento ficou preso"))
+
+    def test_pix_pago_e_repassado_na_hora(self, mock_client, _conexao, espera):
+        mock_client.return_value.obter_subconta.return_value = subconta(saldo=11915)
+        mock_client.return_value.sacar_subconta.return_value = saque(11815, status="CONFIRMED")
+
+        with self.captureOnCommitCallbacks(execute=True):
+            registrar_pagamento_pix(self.cobranca(), taxa_centavos=85)
+
+        mock_client.return_value.creditar_subconta.assert_called_once()
+        mock_client.return_value.sacar_subconta.assert_called_once_with(CHAVE, 11815)
+        self.assertEqual(Repasse.objects.get().status, Repasse.CONCLUIDA)
+        espera.assert_not_called()  # nada mais aberto: parou
+
+    def test_sem_pix_nao_faz_nada(self, mock_client, _conexao, espera):
+        repasses.acompanhar_repasses()  # como na subida do site
+        mock_client.assert_not_called()
+        espera.assert_not_called()
+
+    def test_volta_a_cada_minuto_ate_a_confirmacao_e_para(self, mock_client, _conexao, espera):
+        mock_client.return_value.obter_subconta.return_value = subconta(saldo=12000)
+        mock_client.return_value.sacar_subconta.return_value = saque(11900)
+        espera.side_effect = lambda _segundos: repasses.confirmar_repasse("saque-1")  # webhook chega
+        Repasse.objects.create(academia=self.academia, conta_recebimento=self.conta, pix_key_destino=CHAVE)
+
+        repasses.acompanhar_repasses()
+
+        espera.assert_called_once_with(repasses.INTERVALO_ACOMPANHAMENTO)
+        self.assertEqual(Repasse.objects.get().status, Repasse.CONCLUIDA)
+
+    def test_pedido_no_fim_da_passada_nao_se_perde(self, mock_client, _conexao, espera):
+        rodadas = []
+
+        def rodada():
+            rodadas.append(1)
+            if len(rodadas) == 1:
+                repasses.acompanhar_repasses()  # Pix entrou enquanto a passada terminava
+            return False
+
+        with patch("integracoes.woovi.repasses._rodada", side_effect=rodada):
+            repasses.acompanhar_repasses()
+        self.assertEqual(len(rodadas), 2)
+
+    @patch("integracoes.woovi.repasses.alertar_plataforma")
+    def test_erro_inesperado_avisa_e_tenta_de_novo(self, alerta, mock_client, _conexao, espera):
+        with patch("integracoes.woovi.repasses.processar_repasses",
+                   side_effect=[RuntimeError("banco caiu"), {"processados": 0, "conferidos": 0}]):
+            repasses.acompanhar_repasses()
+        self.assertEqual(alerta.call_args.args[0], "Acompanhamento dos repasses Pix falhou")
+        espera.assert_called_once()
+
+    def test_desligado_nao_roda(self, mock_client, _conexao, espera):
+        Repasse.objects.create(academia=self.academia, conta_recebimento=self.conta, pix_key_destino=CHAVE)
+        with override_settings(REPASSES_EM_SEGUNDO_PLANO=False):
+            self.assertFalse(repasses.acompanhar_repasses())
+        mock_client.assert_not_called()
+
+    def test_falha_de_saque_avisada_pela_woovi_volta_a_ser_acompanhada(self, mock_client, _conexao, espera):
+        Repasse.objects.create(
+            academia=self.academia, conta_recebimento=self.conta, pix_key_destino=CHAVE,
+            status=Repasse.PROCESSANDO, correlation_id="saque-1", valor=Decimal("119.00"),
+        )
+        evento = EventoWebhook.objects.create(
+            chave="falhou-1", tipo=EVENTO_SAQUE_FALHOU, correlation_id="saque-1",
+            payload={"event": EVENTO_SAQUE_FALHOU, "error": {"description": "chave recusada"}},
+        )
+        with patch("integracoes.woovi.repasses.acompanhar_repasses") as acompanhar,                 self.captureOnCommitCallbacks(execute=True):
+            processar_evento(evento)
+        acompanhar.assert_called_once()
+
+    def test_rotina_diaria_da_uma_passada_nos_repasses(self, mock_client, _conexao, espera):
+        with patch("financeiro.management.commands.enviar_lembretes_cobranca.processar_repasses",
+                   return_value={"processados": 1, "conferidos": 0}) as passada:
+            saida = StringIO()
+            call_command("enviar_lembretes_cobranca", stdout=saida)
+        passada.assert_called_once()
+        self.assertIn("1 repasse(s) Pix retomado(s)", saida.getvalue())

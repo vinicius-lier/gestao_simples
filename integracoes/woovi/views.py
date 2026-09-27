@@ -19,7 +19,8 @@ def webhook(request):
     """Recebe os avisos da Woovi.
 
     - OPENPIX:CHARGE_COMPLETED: registra o pagamento e abre o repasse
-      PENDENTE. O saque NUNCA acontece aqui — ver integracoes.woovi.repasses.
+      PENDENTE. O saque NUNCA acontece nesta requisição: depois de gravar,
+      uma thread em segundo plano cuida dele — ver integracoes.woovi.repasses.
     - OPENPIX:MOVEMENT_CONFIRMED / MOVEMENT_FAILED: atualizam o repasse.
 
     Segurança: todo evento que muda algo exige ``x-webhook-signature``

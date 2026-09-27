@@ -124,12 +124,11 @@ costuma ser mais seguro.
 
 ## 4. Tarefas agendadas
 
-Aplicação → **Scheduled Tasks → + Add**, duas tarefas:
+Aplicação → **Scheduled Tasks → + Add**:
 
 | Name | Command | Frequency | Timeout |
 |---|---|---|---|
 | `rotina-diaria-cobranca` | `python manage.py enviar_lembretes_cobranca` | `0 9 * * *` | `600` |
-| `repasses-pix` | `python manage.py processar_repasses` | `* * * * *` | `120` |
 
 > O horário segue o **fuso do servidor**. Com o servidor em UTC (o padrão, e a API do
 > Coolify não altera o fuso), use `0 12 * * *` para rodar às 9h de Brasília.
@@ -138,11 +137,14 @@ Aplicação → **Scheduled Tasks → + Add**, duas tarefas:
   seguinte que vencem em até 7 dias), marca as vencidas, confere se algum
   Pix já foi pago antes de cobrar e envia os lembretes. Sem ela, **nenhuma
   mensalidade nova é criada a partir do 2º mês**.
-- **Repasses**: depois de cada Pix pago, transfere o saldo recebido para a
-  chave Pix da academia (em até ~1 minuto). Falhas são retentadas após 1, 5,
-  15, 60 e 180 minutos; depois disso o repasse fica em **Requer atenção** e
-  aparece um aviso para superusuários no portal e em `/admin/financeiro/repasse/`.
-  Sem esta tarefa, **o dinheiro fica parado na conta da Woovi**.
+- **Repasses do Pix: não têm tarefa agendada.** Quando um Pix é pago, o
+  próprio site transfere o saldo para a chave Pix da academia, em segundo
+  plano, e volta a cada minuto **só enquanto houver repasse em aberto**
+  (novas tentativas após 1, 5, 15, 60 e 180 minutos; depois disso o repasse
+  fica em **Requer atenção**, com aviso no portal para superusuários e em
+  `/admin/financeiro/repasse/`). Sem Pix, nada roda. Depois de um deploy o
+  site retoma o que ficou aberto, e a rotina diária dá uma passada. Para
+  rodar na hora, à mão: `python manage.py processar_repasses` no Terminal.
 
 > Cuidado com o **Execute Now** da rotina diária: se o WhatsApp já estiver
 > conectado e houver mensalidade na janela de lembrete, saem mensagens reais.

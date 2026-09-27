@@ -14,3 +14,9 @@ from django.core.wsgi import get_wsgi_application
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
 
 application = get_wsgi_application()
+
+# Retoma os repasses Pix que ficaram em aberto quando o site parou (deploy,
+# reinício). Sem nenhum aberto, só consulta o banco e para.
+from integracoes.woovi.repasses import acompanhar_repasses  # noqa: E402
+
+acompanhar_repasses()

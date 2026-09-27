@@ -1,8 +1,13 @@
 """Repasse automático: transfere o saldo da subconta para a chave Pix da
 academia depois de cada pagamento.
 
-Nunca roda dentro do webhook. O webhook só abre o ``Repasse`` PENDENTE; o
-comando ``processar_repasses`` (tarefa agendada a cada minuto) faz o resto:
+Nunca roda dentro do webhook. O webhook só abre o ``Repasse`` PENDENTE e,
+depois de gravar, chama ``acompanhar_repasses``: uma thread do próprio site
+faz o resto na hora e volta a cada minuto enquanto houver repasse aberto
+(tentativas, espera da confirmação). Sem Pix, nada roda — não há tarefa
+agendada. Quando o site sobe (deploy, reinício), retoma o que ficou aberto;
+a rotina diária também dá uma passada, como rede de segurança. Cada
+passada:
 
 1. reivindica o repasse com um UPDATE condicional (compare-and-swap):
    dois processos rodando juntos nunca pegam o mesmo repasse, e o banco já
@@ -25,11 +30,13 @@ depois o repasse vai para REQUER_ATENCAO e a plataforma é alertada.
 """
 import logging
 import re
+import threading
+import time
 from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
@@ -320,6 +327,59 @@ def processar_repasses(limite=50):
         conferir_repasse_em_andamento(pk)
 
     return {"processados": processados, "conferidos": len(parados)}
+
+
+# ------------------------------------------------- acompanhamento automático
+INTERVALO_ACOMPANHAMENTO = 60  # segundos entre as passadas
+
+_acompanhando = threading.Lock()  # um acompanhamento por processo
+_novo_pedido = threading.Event()
+
+
+def acompanhar_repasses():
+    """Começa a cuidar dos repasses em segundo plano, no processo do site.
+    Chamado quando entra dinheiro (Pix pago), quando a Woovi avisa de um
+    saque e quando o site sobe. Se já houver um acompanhamento rodando
+    neste processo, ele atende o pedido. Devolve True se começou agora.
+
+    Desligado com ``REPASSES_EM_SEGUNDO_PLANO`` falso (testes e, por
+    padrão, desenvolvimento — para o runserver não sacar de verdade)."""
+    if not getattr(settings, "REPASSES_EM_SEGUNDO_PLANO", False):
+        return False
+    _novo_pedido.set()
+    if not _acompanhando.acquire(blocking=False):
+        return False
+    threading.Thread(target=_acompanhar, name="repasses-pix", daemon=True).start()
+    return True
+
+
+def _acompanhar():
+    while True:
+        _novo_pedido.clear()
+        try:
+            abertos = _rodada()
+        finally:
+            connection.close()  # não deixa conexão parada no banco entre as passadas
+        if abertos:
+            time.sleep(INTERVALO_ACOMPANHAMENTO)
+            continue
+        _acompanhando.release()
+        # Um pedido pode ter chegado enquanto esta passada terminava.
+        if not (_novo_pedido.is_set() and _acompanhando.acquire(blocking=False)):
+            return
+
+
+def _rodada():
+    """Uma passada. Devolve True se ainda há repasse aberto (volta daqui a
+    um minuto). Erro inesperado também volta: o dinheiro não pode ficar
+    parado sem ninguém olhando — e a plataforma é avisada."""
+    try:
+        processar_repasses()
+        return Repasse.objects.filter(status__in=Repasse.STATUS_ABERTOS).exists()
+    except Exception as exc:
+        logger.exception("Acompanhamento dos repasses falhou")
+        alertar_plataforma("Acompanhamento dos repasses Pix falhou", _texto_erro(exc))
+        return True
 
 
 # --------------------------------------------------------------- webhooks

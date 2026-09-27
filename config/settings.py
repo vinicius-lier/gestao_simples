@@ -346,6 +346,14 @@ WOOVI_SAQUE_SEM_TARIFA_CENTAVOS = int(os.getenv("WOOVI_SAQUE_SEM_TARIFA_CENTAVOS
 # Por quanto tempo as chaves públicas que assinam os webhooks ficam em cache.
 WOOVI_WEBHOOK_CHAVES_TTL = int(os.getenv("WOOVI_WEBHOOK_CHAVES_TTL", str(6 * 60 * 60)))
 
+# Repasse do Pix para a chave da academia: roda sozinho, em segundo plano no
+# próprio site, só quando entra um Pix (sem tarefa agendada). Desligado por
+# padrão em desenvolvimento, para o runserver não sacar dinheiro de verdade.
+REPASSES_EM_SEGUNDO_PLANO = os.getenv(
+    "REPASSES_EM_SEGUNDO_PLANO",
+    "false" if DEBUG else "true",
+).lower() == "true"
+
 
 # =============================================================================
 # META / WHATSAPP CLOUD API
