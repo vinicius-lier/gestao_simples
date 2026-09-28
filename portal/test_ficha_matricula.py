@@ -300,6 +300,50 @@ class ImportacaoTests(Cenario):
         self.assertContains(importacao, 'Importação concluída')
         self.assertEqual(Atleta.objects.count(), 1)
 
+    def test_sem_turma_com_modalidade_e_valores_informados(self):
+        from portal.importacao_fichas import CondicoesMatricula
+
+        condicoes = CondicoesMatricula(
+            modalidade=self.modalidade, valor_mensalidade=Decimal('120.00'),
+            valor_apos_vencimento=Decimal('130.00'), dia_vencimento=10,
+        )
+        importar_planilha(
+            self.academia,
+            planilha(resposta('Bia Lima', quando=45000.1),
+                     resposta('Caio Lima', quando=45000.2, telefone='21977776666', vencimento='')),
+            condicoes=condicoes, cobrar_a_partir_de=timezone.localdate(), gravar=True,
+        )
+        bia, caio = Matricula.objects.order_by('atleta__nome')
+        for matricula in (bia, caio):
+            self.assertIsNone(matricula.turma)
+            self.assertTrue(matricula.ativo)
+            self.assertEqual(matricula.modalidade, self.modalidade)
+            self.assertEqual((matricula.valor_mensalidade, matricula.valor_apos_vencimento), (Decimal('120.00'), Decimal('130.00')))
+        # Quem escolheu na ficha mantém; quem não escolheu, o dia informado.
+        self.assertEqual((bia.dia_vencimento, caio.dia_vencimento), (5, 10))
+        mensalidade = Mensalidade.objects.filter(matricula=bia).get()
+        self.assertEqual((mensalidade.valor, mensalidade.valor_apos_vencimento), (Decimal('120.00'), Decimal('130.00')))
+
+    def test_tela_sem_turma_exige_modalidade_e_valor(self):
+        self.client.force_login(self.admin)
+        hoje = timezone.localdate().isoformat()
+
+        def enviar(**campos):
+            arquivo = SimpleUploadedFile('respostas.xlsx', planilha(resposta('Bia Lima')).read())
+            return self.client.post('/matriculas/importar/', {
+                'arquivo': arquivo, 'turma': '', 'cobrar_a_partir_de': hoje, 'acao': 'importar', **campos,
+            })
+
+        resp = enviar()
+        self.assertIn('modalidade', resp.context['form'].errors)
+        self.assertIn('valor_mensalidade', resp.context['form'].errors)
+        self.assertFalse(Atleta.objects.exists())
+
+        enviar(modalidade=self.modalidade.pk, valor_mensalidade='120', valor_apos_vencimento='130', dia_vencimento='10')
+        matricula = Matricula.objects.get()
+        self.assertIsNone(matricula.turma)
+        self.assertEqual(matricula.valor_apos_vencimento, Decimal('130.00'))
+
     def test_tela_recusa_data_no_passado(self):
         self.client.force_login(self.admin)
         arquivo = SimpleUploadedFile('respostas.xlsx', planilha(resposta('Bia Lima')).read())

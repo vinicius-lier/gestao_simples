@@ -112,8 +112,9 @@ class ConviteMatriculaForm(forms.ModelForm):
 
 
 class ImportacaoFichasForm(forms.Form):
-    """Planilha de respostas do formulário antigo + a turma e a data em que a
-    cobrança dos alunos novos começa."""
+    """Planilha de respostas do formulário antigo + com o que os alunos novos
+    são matriculados (uma turma, ou sem turma com modalidade e valores) e a
+    data em que a cobrança deles começa."""
 
     TAMANHO_MAXIMO = 5 * 1024 * 1024
 
@@ -121,7 +122,24 @@ class ImportacaoFichasForm(forms.Form):
         label='Planilha de respostas (.xlsx)',
         help_text='No Google Forms: Respostas → Ver no Planilhas → Arquivo → Fazer download → Microsoft Excel (.xlsx).',
     )
-    turma = forms.ModelChoiceField(queryset=Turma.objects.none(), label='Turma dos alunos novos')
+    turma = forms.ModelChoiceField(
+        queryset=Turma.objects.none(), label='Turma dos alunos novos', required=False,
+        empty_label='Sem turma (informar modalidade e valores abaixo)',
+        help_text='Com turma, a modalidade, o polo e os valores vêm dela e os campos abaixo são ignorados.',
+    )
+    modalidade = forms.ModelChoiceField(queryset=Modalidade.objects.none(), label='Modalidade', required=False)
+    unidade = forms.ModelChoiceField(queryset=Unidade.objects.none(), label='Polo / unidade', required=False)
+    valor_mensalidade = forms.DecimalField(
+        label='Mensalidade até o vencimento (R$)', max_digits=10, decimal_places=2, min_value=0, required=False,
+    )
+    valor_apos_vencimento = forms.DecimalField(
+        label='Mensalidade após o vencimento (R$)', max_digits=10, decimal_places=2, min_value=0, required=False,
+        help_text='Em branco: o valor não muda depois do vencimento.',
+    )
+    dia_vencimento = forms.IntegerField(
+        label='Dia de vencimento', min_value=1, max_value=31, initial=10, required=False,
+        help_text='Para quem não escolheu na ficha; quem escolheu (5, 10 ou 15) mantém a escolha.',
+    )
     cobrar_a_partir_de = forms.DateField(
         label='Cobrar mensalidades que vencem a partir de',
         widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
@@ -133,6 +151,8 @@ class ImportacaoFichasForm(forms.Form):
         self.fields['turma'].queryset = Turma.objects.filter(
             academia=academia, ativo=True, modalidade__academia=academia,
         ).select_related('modalidade', 'unidade')
+        self.fields['modalidade'].queryset = Modalidade.objects.filter(academia=academia, ativo=True)
+        self.fields['unidade'].queryset = Unidade.objects.filter(academia=academia, ativo=True)
         self.fields['cobrar_a_partir_de'].initial = timezone.localdate()
         _estilo_painel(self)
 
@@ -145,8 +165,8 @@ class ImportacaoFichasForm(forms.Form):
         return arquivo
 
     def clean_turma(self):
-        turma = self.cleaned_data['turma']
-        if turma.valor_mensalidade is None:
+        turma = self.cleaned_data.get('turma')
+        if turma is not None and turma.valor_mensalidade is None:
             raise ValidationError('Esta turma não tem valor de mensalidade definido.')
         return turma
 
@@ -155,6 +175,28 @@ class ImportacaoFichasForm(forms.Form):
         if valor < timezone.localdate():
             raise ValidationError('A data não pode ser anterior a hoje.')
         return valor
+
+    def clean(self):
+        data = super().clean()
+        if 'turma' in data and data['turma'] is None:
+            if not data.get('modalidade'):
+                self.add_error('modalidade', 'Sem turma, informe a modalidade.')
+            if data.get('valor_mensalidade') is None:
+                self.add_error('valor_mensalidade', 'Sem turma, informe o valor da mensalidade.')
+        return data
+
+    def condicoes(self):
+        """Com o que os alunos novos são matriculados."""
+        from .importacao_fichas import CondicoesMatricula
+
+        d = self.cleaned_data
+        if d.get('turma') is not None:
+            return CondicoesMatricula.da_turma(d['turma'])
+        return CondicoesMatricula(
+            modalidade=d['modalidade'], unidade=d.get('unidade'),
+            valor_mensalidade=d['valor_mensalidade'], valor_apos_vencimento=d.get('valor_apos_vencimento'),
+            dia_vencimento=d.get('dia_vencimento') or 10,
+        )
 
 
 class AtivacaoMatriculaForm(forms.Form):

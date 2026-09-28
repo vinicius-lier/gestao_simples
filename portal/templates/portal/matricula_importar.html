@@ -1,7 +1,7 @@
 {% extends 'portal/base.html' %}{% block title %}Importar fichas de matrícula{% endblock %}{% block content %}
 <p><a href="{% url 'portal:matricula_convites' %}">← Convites de matrícula</a></p>
 <h1>Importar fichas de matrícula</h1>
-<p class="text-secondary" style="max-width:760px">Traz para o sistema as respostas do formulário de matrícula que a escola usava. Aluno que ainda não está no sistema é cadastrado com o responsável e a matrícula ativa na turma escolhida, sem taxa de matrícula. Aluno que já está no sistema (mesmo nome) só ganha a ficha — o cadastro não muda. Importar a mesma planilha de novo não duplica nada.</p>
+<p class="text-secondary" style="max-width:760px">Traz para o sistema as respostas do formulário de matrícula que a escola usava. Aluno que ainda não está no sistema é cadastrado com o responsável e a matrícula ativa — na turma escolhida ou sem turma, com a modalidade e os valores informados —, sem taxa de matrícula. Aluno que já está no sistema (mesmo nome) só ganha a ficha — o cadastro não muda. Importar a mesma planilha de novo não duplica nada.</p>
 
 <form method="post" enctype="multipart/form-data" class="card p-4 mb-4" style="max-width:720px">{% csrf_token %}
   {{ form.non_field_errors }}

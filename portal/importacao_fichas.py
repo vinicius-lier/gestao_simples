@@ -3,9 +3,10 @@
 
 Cada linha da planilha vira uma ``FichaMatricula``. Aluno que ainda não
 existe (comparado pelo nome, sem acento/maiúscula) é criado com responsável
-e matrícula ativa na turma escolhida — a cobrança começa no próximo
-vencimento a partir da data escolhida, sem taxa de matrícula. Aluno que já
-existe só ganha a ficha: o cadastro dele não muda.
+e matrícula ativa — numa turma ou sem turma, com a modalidade e os valores
+informados na importação (``CondicoesMatricula``). A cobrança começa no
+próximo vencimento a partir da data escolhida, sem taxa de matrícula. Aluno
+que já existe só ganha a ficha: o cadastro dele não muda.
 
 ``importar_planilha`` sempre roda numa transação; sem ``gravar`` ela é
 desfeita no fim, então a conferência mostra exatamente o que a importação
@@ -216,6 +217,32 @@ def _sim_nao(valor):
     return None
 
 
+# ------------------------------------------------------ condições da matrícula
+@dataclass
+class CondicoesMatricula:
+    """Com o que os alunos novos são matriculados: a turma (de onde vêm
+    modalidade, polo e valores) ou, sem turma, os dados informados na tela.
+    O dia de vencimento escolhido na ficha (5, 10 ou 15) vale sobre
+    ``dia_vencimento``."""
+
+    modalidade: object
+    valor_mensalidade: Decimal
+    valor_apos_vencimento: Decimal | None = None
+    dia_vencimento: int = 10
+    unidade: object = None
+    turma: object = None
+
+    @classmethod
+    def da_turma(cls, turma):
+        if turma.valor_mensalidade is None:
+            raise PlanilhaInvalida("A turma escolhida não tem valor de mensalidade definido.")
+        return cls(
+            modalidade=turma.modalidade, unidade=turma.unidade, turma=turma,
+            valor_mensalidade=turma.valor_mensalidade, valor_apos_vencimento=turma.valor_apos_vencimento,
+            dia_vencimento=turma.dia_vencimento,
+        )
+
+
 # ---------------------------------------------------------------- relatório
 @dataclass
 class LinhaImportada:
@@ -259,12 +286,14 @@ ERRO = "erro"
 
 
 # --------------------------------------------------------------- importação
-def importar_planilha(academia, arquivo, *, turma, cobrar_a_partir_de, gravar=False):
-    """Importa as respostas. Devolve um ``Relatorio``; com ``gravar=False``
-    nada fica no banco. Levanta ``PlanilhaInvalida`` se o arquivo não for a
-    planilha esperada, ou se a turma não tiver valor de mensalidade."""
-    if turma.valor_mensalidade is None:
-        raise PlanilhaInvalida("A turma escolhida não tem valor de mensalidade definido.")
+def importar_planilha(academia, arquivo, *, cobrar_a_partir_de, turma=None, condicoes=None, gravar=False):
+    """Importa as respostas. Os alunos novos são matriculados com
+    ``condicoes`` (ou, sem elas, na ``turma``). Devolve um ``Relatorio``; com
+    ``gravar=False`` nada fica no banco. Levanta ``PlanilhaInvalida`` se o
+    arquivo não for a planilha esperada, ou se a turma não tiver valor de
+    mensalidade."""
+    if condicoes is None:
+        condicoes = CondicoesMatricula.da_turma(turma)
     linhas = ler_xlsx(arquivo)
     if len(linhas) < 2:
         raise PlanilhaInvalida("A planilha não tem respostas.")
@@ -302,14 +331,14 @@ def importar_planilha(academia, arquivo, *, turma, cobrar_a_partir_de, gravar=Fa
             relatorio.linhas.append(resultado)
             _importar_linha(
                 academia, resultado, respondida_em, lambda campo: valor(linha, campo), textos,
-                alunos, turma, cobrar_a_partir_de,
+                alunos, condicoes, cobrar_a_partir_de,
             )
         if not gravar:
             transaction.set_rollback(True)
     return relatorio
 
 
-def _importar_linha(academia, resultado, respondida_em, valor, textos, alunos, turma, cobrar_a_partir_de):
+def _importar_linha(academia, resultado, respondida_em, valor, textos, alunos, condicoes, cobrar_a_partir_de):
     from financeiro.services import iniciar_cobranca, proximo_vencimento
 
     if not resultado.nome:
@@ -366,10 +395,10 @@ def _importar_linha(academia, resultado, respondida_em, valor, textos, alunos, t
         )
         alunos.setdefault(normalizar(resultado.nome), []).append(aluno)
         matricula = Matricula(
-            academia=academia, atleta=aluno, unidade=turma.unidade, modalidade=turma.modalidade,
-            turma=turma, valor_mensalidade=turma.valor_mensalidade,
-            valor_apos_vencimento=turma.valor_apos_vencimento,
-            dia_vencimento=dia or turma.dia_vencimento,
+            academia=academia, atleta=aluno, unidade=condicoes.unidade, modalidade=condicoes.modalidade,
+            turma=condicoes.turma, valor_mensalidade=condicoes.valor_mensalidade,
+            valor_apos_vencimento=condicoes.valor_apos_vencimento,
+            dia_vencimento=dia or condicoes.dia_vencimento,
             data_inicio=timezone.localdate(), ativo=True,
         )
         matricula.save()

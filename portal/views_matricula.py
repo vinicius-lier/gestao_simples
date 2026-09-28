@@ -47,7 +47,7 @@ def importar_fichas(request):
         try:
             relatorio = importar_planilha(
                 request.academia, form.cleaned_data['arquivo'],
-                turma=form.cleaned_data['turma'],
+                condicoes=form.condicoes(),
                 cobrar_a_partir_de=form.cleaned_data['cobrar_a_partir_de'],
                 gravar=gravar,
             )
