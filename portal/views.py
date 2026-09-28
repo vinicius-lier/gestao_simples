@@ -293,7 +293,9 @@ def cadastros(request, tipo, pk=None, novo=False, excluir=False, detalhe=False):
             'iniciais': ''.join(p[0] for p in (partes[:1] + partes[1:][-1:])).upper() or '?',
             'alunos_ativos': ativas.values('atleta').distinct().count(),
             'matriculas_ativas': (
-                ativas.select_related('atleta').order_by('atleta__nome') if tipo == 'turmas' else None
+                # Um aluno com duas matrículas ativas na turma aparece uma vez.
+                list({m.atleta_id: m for m in ativas.select_related('atleta').order_by('atleta__nome', '-pk')}.values())
+                if tipo == 'turmas' else None
             ),
         })
     if not request.administrador_academia:

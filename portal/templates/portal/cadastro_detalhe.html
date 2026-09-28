@@ -90,21 +90,11 @@
       <h2 class="h5 mb-3">{% if tipo == 'professores' %}Turmas que leciona{% elif tipo == 'unidades' %}Turmas neste polo{% else %}Turmas{% endif %}</h2>
       <div class="card">
         {% if obj.turmas.all %}
-        <div class="table-responsive">
-          <table class="table align-middle mb-0">
-            <thead><tr><th>Turma</th><th>{% if tipo == 'modalidades' %}Polo{% else %}Modalidade{% endif %}</th><th>Horário</th><th>Mensalidade</th></tr></thead>
-            <tbody>
-              {% for t in obj.turmas.all %}
-              <tr>
-                <td><a href="/turmas/{{ t.pk }}/">{{ t.nome }}</a></td>
-                <td>{% if tipo == 'modalidades' %}{{ t.unidade.nome|default:'—' }}{% else %}{{ t.modalidade.nome }}{% if tipo == 'professores' and t.unidade %} · {{ t.unidade.nome }}{% endif %}{% endif %}</td>
-                <td>{{ t.horario|time:'H:i'|default:'—' }}</td>
-                <td>{% if t.valor_mensalidade is not None %}R$ {{ t.valor_mensalidade }}{% else %}—{% endif %}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+        <ul class="list-unstyled mb-0">
+          {% for t in obj.turmas.all %}
+          <li><a class="recent-row" href="/turmas/{{ t.pk }}/"><span class="person-cell"><span class="avatar">{{ t.nome|first|upper }}</span><span><strong>{{ t.nome }}</strong><span class="d-block small text-secondary">{% if tipo == 'modalidades' %}{{ t.unidade.nome|default:'Sem polo' }}{% else %}{{ t.modalidade.nome }}{% if tipo == 'professores' and t.unidade %} · {{ t.unidade.nome }}{% endif %}{% endif %}{% if t.horario %} · {{ t.horario|time:'H:i' }}{% endif %}</span></span></span><span class="small text-nowrap">{% if t.valor_mensalidade is not None %}R$ {{ t.valor_mensalidade }}{% endif %}</span></a></li>
+          {% endfor %}
+        </ul>
         {% else %}
         <p class="text-secondary p-4 mb-0">Nenhuma turma.</p>
         {% endif %}

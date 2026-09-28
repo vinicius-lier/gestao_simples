@@ -115,22 +115,7 @@
       </div>
       <div class="card">
         {% if cobrancas_recentes %}
-        <div class="table-responsive">
-          <table class="table align-middle mb-0">
-            <thead><tr><th>Cobrança</th><th>Vencimento</th><th>Valor</th><th>Situação</th><th></th></tr></thead>
-            <tbody>
-              {% for c in cobrancas_recentes %}
-              <tr>
-                <td>{{ c.descricao }}</td>
-                <td>{{ c.vencimento|date:'d/m/Y' }}</td>
-                <td>R$ {{ c.valor_atual }}{% if c.muda_apos_vencimento %}<br><span class="small text-secondary">após o venc.: R$ {{ c.valor_apos_vencimento }}</span>{% endif %}</td>
-                <td><span class="status-badge status-{{ c.status }}">{{ c.get_status_display }}</span></td>
-                <td class="text-end">{% if c.status == 'paga' %}<a class="btn btn-outline-primary btn-sm" href="{% url 'portal:financeiro_recibo' c.pk %}">Recibo</a>{% endif %}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+        {% include 'portal/partials/cobrancas.html' with cobrancas=cobrancas_recentes %}
         {% else %}
         <p class="text-secondary p-4 mb-0">Nenhuma mensalidade gerada ainda.</p>
         {% endif %}

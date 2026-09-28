@@ -1,1 +1,53 @@
-{% extends 'portal/base.html' %}{% load portal_extras %}{% block title %}Pagamento{% endblock %}{% block content %}<a href="{% url 'portal:responsavel_painel' %}" class="back-link">← Voltar</a>{% if not request.responsavel.tem_senha %}<div class="alert alert-info mt-3 mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2" role="alert"><span><strong>Crie sua senha</strong> para entrar no portal quando quiser, com seu CPF ou WhatsApp.</span><a class="btn btn-primary btn-sm" href="{% url 'portal:responsavel_senha' %}">Criar senha</a></div>{% endif %}<div class="hero-dashboard mt-3"><div><p class="eyebrow">Pagamento</p><h1>{{ mensalidade.matricula.atleta.nome }}</h1><p class="text-secondary mb-0">Mensalidade de {{ mensalidade.matricula.modalidade.nome }}{% if mensalidade.matricula.unidade %} · {{ mensalidade.matricula.unidade.nome }}{% endif %} — {% if mensalidade.eh_taxa_matricula %}taxa de matrícula{% else %}competência {{ mensalidade.competencia|date:'m/Y' }}{% endif %}</p><p class="text-secondary mb-0">Valor: <strong>R$ {{ mensalidade.valor_atual }}</strong>{% if mensalidade.muda_apos_vencimento %} (após o vencimento: R$ {{ mensalidade.valor_apos_vencimento }}){% endif %} · Vencimento: {{ mensalidade.vencimento|date:'d/m/Y' }}</p></div></div>{% if mensalidade.status == 'paga' %}<div class="card p-4 d-flex flex-row justify-content-between align-items-center flex-wrap gap-2"><p class="mb-0">Esta mensalidade já está paga{% if mensalidade.pago_em %} desde {{ mensalidade.pago_em|date:'d/m/Y' }}{% endif %}.</p><a class="btn btn-outline-primary btn-sm" href="{% url 'portal:responsavel_recibo' mensalidade.pk %}">Baixar recibo</a></div>{% elif mensalidade.status == 'cancelada' %}<div class="card p-4"><p class="mb-0">Esta mensalidade foi cancelada.</p></div>{% elif mensalidade.status == 'isenta' %}<div class="card p-4"><p class="mb-0">Esta mensalidade é isenta — nada a pagar.</p></div>{% elif erro %}<div class="card p-4"><p class="mb-0">{{ erro }}</p></div>{% elif cobranca %}<div class="card p-4 pix-card">{% pix_qrcode cobranca.br_code %}<div class="pix-copia"><label for="pix-payload" class="visually-hidden">Código Pix copia e cola</label><textarea id="pix-payload" class="form-control" readonly rows="4">{{ cobranca.br_code }}</textarea><button type="button" class="btn btn-outline-primary" data-copy="{{ cobranca.br_code }}">Copiar código Pix</button><p class="small text-secondary mb-0 mt-2">Pague pelo app do seu banco lendo o QR Code ou colando o código. A confirmação é automática.</p></div></div>{% endif %}{% endblock %}
+{% extends 'portal/base.html' %}{% load portal_extras %}{% block title %}Pagamento{% endblock %}{% block content %}
+<a href="{% url 'portal:responsavel_painel' %}" class="back-link">← Voltar</a>
+{% if not request.responsavel.tem_senha %}
+<div class="alert alert-info mt-3 mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2" role="alert">
+  <span><strong>Crie sua senha</strong> para entrar no portal quando quiser, com seu CPF ou WhatsApp.</span>
+  <a class="btn btn-primary btn-sm" href="{% url 'portal:responsavel_senha' %}">Criar senha</a>
+</div>
+{% endif %}
+
+<section class="card perfil-topo mt-3">
+  <p class="eyebrow mb-1">Pagamento</p>
+  <h1 class="perfil-nome">{{ mensalidade.descricao }}</h1>
+  <p class="perfil-resumo">
+    <span>{{ mensalidade.matricula.atleta.nome }}</span>
+    <span>{{ mensalidade.matricula.turma|default:mensalidade.matricula.modalidade.nome }}{% if mensalidade.matricula.unidade %} · {{ mensalidade.matricula.unidade.nome }}{% endif %}</span>
+  </p>
+  <dl class="perfil-numeros">
+    <div><dt>Valor</dt><dd>R$ {{ mensalidade.valor_atual }}</dd></div>
+    <div><dt>Vencimento</dt><dd>{{ mensalidade.vencimento|date:'d/m/Y' }}</dd></div>
+    {% if mensalidade.muda_apos_vencimento %}<div><dt>Depois do vencimento</dt><dd>R$ {{ mensalidade.valor_apos_vencimento }}</dd></div>{% endif %}
+    <div><dt>Situação</dt><dd><span class="status-badge status-{{ mensalidade.status }}">{{ mensalidade.get_status_display }}</span></dd></div>
+  </dl>
+</section>
+
+<div class="mt-3">
+{% if mensalidade.status == 'paga' %}
+  <section class="card p-4 d-flex flex-row justify-content-between align-items-center flex-wrap gap-3">
+    <p class="mb-0">Esta cobrança já está paga{% if mensalidade.pago_em %} desde {{ mensalidade.pago_em|date:'d/m/Y' }}{% endif %}. Obrigado!</p>
+    <a class="btn btn-outline-primary" href="{% url 'portal:responsavel_recibo' mensalidade.pk %}">Baixar recibo</a>
+  </section>
+{% elif mensalidade.status == 'cancelada' %}
+  <section class="card p-4"><p class="mb-0">Esta cobrança foi cancelada — nada a pagar.</p></section>
+{% elif mensalidade.status == 'isenta' %}
+  <section class="card p-4"><p class="mb-0">Esta cobrança é isenta — nada a pagar.</p></section>
+{% elif erro %}
+  <section class="card p-4"><p class="mb-0">{{ erro }}</p></section>
+{% elif cobranca %}
+  <section class="card p-4">
+    <h2 class="perfil-titulo">Pague com Pix</h2>
+    <div class="pix-card">
+      {% pix_qrcode cobranca.br_code %}
+      <div class="pix-copia">
+        <label for="pix-payload" class="visually-hidden">Código Pix copia e cola</label>
+        <textarea id="pix-payload" class="form-control" readonly rows="4">{{ cobranca.br_code }}</textarea>
+        <button type="button" class="btn btn-primary" data-copy="{{ cobranca.br_code }}">Copiar código Pix</button>
+        <p class="small text-secondary mb-0">Leia o QR Code no app do seu banco ou copie o código e cole em "Pix copia e cola". A confirmação é automática.</p>
+        {% if mensalidade.muda_apos_vencimento %}<p class="small text-secondary mb-0">Este Pix vale até o fim do dia {{ mensalidade.vencimento|date:'d/m' }}. Depois, o valor passa a R$ {{ mensalidade.valor_apos_vencimento }}.</p>{% endif %}
+      </div>
+    </div>
+  </section>
+{% endif %}
+</div>
+{% endblock %}
