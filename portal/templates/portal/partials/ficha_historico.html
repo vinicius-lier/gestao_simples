@@ -1,0 +1,59 @@
+{# Aba "Ficha e histórico" do perfil do aluno: as respostas da ficha de matrícula (colunas G em diante do formulário da escola). Recebe `ficha`. O dia preferido de vencimento fica na aba Cadastro. #}
+<section class="perfil-secao">
+  <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2 mb-3">
+    <h2 class="h5 mb-0">Ficha de matrícula</h2>
+    <span class="small text-secondary">{{ ficha.get_origem_display }} · respondida em {{ ficha.respondida_em|date:'d/m/Y H:i' }}</span>
+  </div>
+  {% with alertas=ficha.alertas_saude %}{% if alertas %}
+  <div class="alert alert-warning" role="alert">
+    <strong>Atenção à saúde:</strong>
+    <ul class="mb-0">{% for r in alertas %}<li>{{ r.pergunta }}{% if r.detalhe %} <strong>{{ r.detalhe }}</strong>{% endif %}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}{% endwith %}
+  <div class="row g-4">
+    <div class="col-lg-5">
+      <section class="card p-4 mb-4">
+        <h3 class="perfil-titulo">Quem está autorizado a buscar o aluno</h3>
+        <p class="mb-0">{{ ficha.autorizados_buscar|linebreaksbr|default:'—' }}</p>
+      </section>
+      <section class="card p-4 mb-4">
+        <h3 class="perfil-titulo">Termos e declaração</h3>
+        <p class="mb-1"><strong>Termos da matrícula:</strong> {% if ficha.aceitou_termos %}aceitos{% else %}não registrados{% endif %}</p>
+        <p class="mb-0"><strong>Declaração do responsável:</strong> {% if ficha.aceitou_declaracao %}aceita{% else %}não registrada{% endif %}</p>
+        {% if ficha.termos_aceitos or ficha.declaracao_aceita %}
+        <details class="mt-2 small">
+          <summary>Ver os textos aceitos</summary>
+          {% if ficha.termos_aceitos %}<p class="text-secondary mt-2">{{ ficha.termos_aceitos|linebreaksbr }}</p>{% endif %}
+          {% if ficha.declaracao_aceita %}<p class="text-secondary mb-0">{{ ficha.declaracao_aceita|linebreaksbr }}</p>{% endif %}
+        </details>
+        {% endif %}
+      </section>
+      <section class="card p-4">
+        <details class="small">
+          <summary class="fw-semibold">Dados como foram respondidos na ficha</summary>
+          <dl class="perfil-dados mt-2">
+            <dt>Nome</dt><dd>{{ ficha.nome_aluno }}</dd>
+            <dt>Data de nascimento</dt><dd>{{ ficha.data_nascimento_informada|default:'—' }}</dd>
+            {% if ficha.responsavel_nome %}<dt>Responsável</dt><dd>{{ ficha.responsavel_nome }}</dd>{% endif %}
+            <dt>Telefone para contato</dt><dd>{{ ficha.telefone_contato|default:'—' }}</dd>
+            <dt>E-mail para contato</dt><dd>{{ ficha.email_contato|default:'—' }}</dd>
+          </dl>
+        </details>
+      </section>
+    </div>
+    <div class="col-lg-7">
+      <section class="card p-4">
+        <h3 class="perfil-titulo">Questionário de saúde</h3>
+        <ol class="respostas-saude">
+          {% for r in ficha.respostas_saude %}
+          <li>
+            <span class="respostas-saude-pergunta">{{ r.pergunta }}</span>
+            <span class="status-badge {% if r.resposta %}status-atrasada{% elif r.resposta is None %}status-cancelada{% else %}status-ativo{% endif %}">{% if r.resposta %}Sim{% elif r.resposta is None %}Sem resposta{% else %}Não{% endif %}</span>
+            {% if r.detalhe %}<span class="respostas-saude-detalhe">{{ r.detalhe }}</span>{% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+      </section>
+    </div>
+  </div>
+</section>

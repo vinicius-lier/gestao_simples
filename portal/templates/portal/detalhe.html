@@ -29,14 +29,26 @@
   </dl>
 </section>
 
-{% if alertas_saude %}
+{% if alertas_saude and aba == 'cadastro' %}
 <div class="alert alert-warning mt-3 mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2" role="alert">
   <span><strong>Atenção à saúde:</strong> {{ alertas_saude|length }} resposta{{ alertas_saude|length|pluralize }} "Sim" no questionário da ficha de matrícula.</span>
-  <a href="#ficha" class="alert-link">Ver ficha</a>
+  <a href="?aba=ficha" class="alert-link">Ver ficha</a>
 </div>
 {% endif %}
 
-<div class="row g-4 mt-1">
+<nav class="perfil-abas perfil-abas-principais mt-3" aria-label="Abas do cadastro">
+  <a href="?aba=cadastro"{% if aba == 'cadastro' %} class="ativa" aria-current="page"{% endif %}>Cadastro</a>
+  <a href="?aba=ficha"{% if aba == 'ficha' %} class="ativa" aria-current="page"{% endif %}>Ficha e histórico{% if fichas %} ({{ fichas|length }}){% endif %}</a>
+</nav>
+
+{% if aba == 'ficha' %}
+{% for ficha in fichas %}
+{% include 'portal/partials/ficha_historico.html' %}
+{% empty %}
+<div class="card p-4 text-secondary">Este aluno ainda não tem ficha de matrícula. Ela é criada quando a família preenche o convite de matrícula ou quando a planilha do formulário é importada.</div>
+{% endfor %}
+{% else %}
+<div class="row g-4">
   <aside class="col-lg-4">
     <section class="card p-4 mb-4">
       <h2 class="perfil-titulo">Dados do aluno</h2>
@@ -45,6 +57,7 @@
         <dt>CPF</dt><dd>{{ aluno.cpf|default:'—' }}</dd>
         <dt>Telefone / WhatsApp</dt><dd>{{ aluno.telefone|default:'—' }}</dd>
         <dt>Faixa</dt><dd>{{ aluno.faixa|default:'—' }}</dd>
+        <dt>Dia preferido de vencimento</dt><dd>{% if ficha_recente.vencimento_preferido %}Dia {{ ficha_recente.vencimento_preferido }}{% else %}—{% endif %}</dd>
         <dt>Cadastrado em</dt><dd>{{ aluno.criado_em|date:'d/m/Y' }}</dd>
         <dt>Observações</dt><dd>{{ aluno.observacoes|linebreaksbr|default:'—' }}</dd>
       </dl>
@@ -70,12 +83,6 @@
   </aside>
 
   <div class="col-lg-8">
-    <nav class="perfil-abas" aria-label="Seções do perfil">
-      <a href="#matriculas">Matrículas</a>
-      <a href="#financeiro">Financeiro</a>
-      {% if fichas %}<a href="#ficha">Ficha de matrícula</a>{% endif %}
-    </nav>
-
     <section id="matriculas" class="perfil-secao">
       <h2 class="h5 mb-3">Matrículas</h2>
       {% for m in matriculas %}
@@ -122,11 +129,7 @@
       </div>
     </section>
 
-    {% if fichas %}
-    <section id="ficha" class="perfil-secao">
-      {% for ficha in fichas %}{% include 'portal/partials/ficha_matricula.html' %}{% endfor %}
-    </section>
-    {% endif %}
   </div>
 </div>
+{% endif %}
 {% endblock %}

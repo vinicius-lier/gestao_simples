@@ -131,6 +131,7 @@ def detalhe(request, pk):
     em_aberto = list(cobrancas.em_aberto().order_by('vencimento'))
     hoje = timezone.localdate()
     fichas = list(aluno.fichas_matricula.filter(academia=request.academia))
+    aba = request.GET.get('aba') if request.GET.get('aba') in ('cadastro', 'ficha') else 'cadastro'
     partes = aluno.nome.split()
     return render(request, 'portal/detalhe.html', {
         'aluno': aluno,
@@ -140,6 +141,8 @@ def detalhe(request, pk):
         'matriculas': matriculas,
         'ativas': [m for m in matriculas if m.ativo],
         'fichas': fichas,
+        'ficha_recente': fichas[0] if fichas else None,
+        'aba': aba,
         'alertas_saude': fichas[0].alertas_saude if fichas else [],
         'idade': _idade(aluno.data_nascimento, hoje),
         'cobrancas_recentes': cobrancas.select_related('matricula__modalidade').order_by('-vencimento', '-pk')[:8],

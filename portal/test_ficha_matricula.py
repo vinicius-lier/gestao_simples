@@ -123,10 +123,25 @@ class FichaNoConviteTests(Cenario):
         self.assertContains(revisao, 'Ficha de matrícula')
         self.assertContains(revisao, 'Atenção à saúde')
 
+        # Aba Cadastro: dados do aluno, com o dia preferido de vencimento;
+        # as respostas da ficha ficam na aba "Ficha e histórico".
         cadastro = self.client.get(f'/alunos/{aluno.pk}/')
-        self.assertContains(cadastro, 'Ficha de matrícula')
-        self.assertContains(cadastro, 'Maria (mãe)')
-        self.assertContains(cadastro, 'tontura')
+        self.assertContains(cadastro, 'Dia preferido de vencimento')
+        self.assertContains(cadastro, 'Dia 15')
+        self.assertContains(cadastro, 'Atenção à saúde')
+        self.assertNotContains(cadastro, 'Maria (mãe)')
+
+        historico = self.client.get(f'/alunos/{aluno.pk}/?aba=ficha')
+        self.assertContains(historico, 'Ficha de matrícula')
+        self.assertContains(historico, 'Maria (mãe)')
+        self.assertContains(historico, 'tontura')
+        self.assertContains(historico, 'Questionário de saúde')
+        self.assertNotContains(historico, 'Dia preferido de vencimento')
+
+    def test_aluno_sem_ficha_explica_na_aba_de_historico(self):
+        aluno = Atleta.objects.create(academia=self.academia, nome='Sem Ficha')
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(f'/alunos/{aluno.pk}/?aba=ficha'), 'ainda não tem ficha de matrícula')
 
 
 # ------------------------------------------------------------ importação
@@ -323,6 +338,24 @@ class ImportacaoTests(Cenario):
         self.assertEqual((bia.dia_vencimento, caio.dia_vencimento), (5, 10))
         mensalidade = Mensalidade.objects.filter(matricula=bia).get()
         self.assertEqual((mensalidade.valor, mensalidade.valor_apos_vencimento), (Decimal('120.00'), Decimal('130.00')))
+
+    def test_todos_vencem_no_dia_informado_e_a_escolha_fica_no_historico(self):
+        from portal.importacao_fichas import CondicoesMatricula
+
+        condicoes = CondicoesMatricula(
+            modalidade=self.modalidade, valor_mensalidade=Decimal('120.00'),
+            valor_apos_vencimento=Decimal('130.00'), dia_vencimento=15, usar_dia_da_ficha=False,
+        )
+        importar_planilha(
+            self.academia,
+            planilha(resposta('Bia Lima', quando=45000.1, vencimento='Até o dia 05 de cada mês'),
+                     resposta('Caio Lima', quando=45000.2, telefone='21977776666', vencimento='')),
+            condicoes=condicoes, cobrar_a_partir_de=timezone.localdate(), gravar=True,
+        )
+        self.assertEqual(set(Matricula.objects.values_list('dia_vencimento', flat=True)), {15})
+        self.assertEqual(FichaMatricula.objects.get(nome_aluno='Bia Lima').vencimento_preferido, 5)
+        for mensalidade in Mensalidade.objects.all():
+            self.assertEqual(mensalidade.vencimento.day, 15)
 
     def test_tela_sem_turma_exige_modalidade_e_valor(self):
         self.client.force_login(self.admin)

@@ -222,24 +222,26 @@ def _sim_nao(valor):
 class CondicoesMatricula:
     """Com o que os alunos novos são matriculados: a turma (de onde vêm
     modalidade, polo e valores) ou, sem turma, os dados informados na tela.
-    O dia de vencimento escolhido na ficha (5, 10 ou 15) vale sobre
-    ``dia_vencimento``."""
+    Com ``usar_dia_da_ficha``, o dia escolhido na ficha (5, 10 ou 15) vale
+    sobre ``dia_vencimento``; sem ele, todos vencem em ``dia_vencimento`` (a
+    escolha continua guardada na ficha, como histórico)."""
 
     modalidade: object
     valor_mensalidade: Decimal
     valor_apos_vencimento: Decimal | None = None
     dia_vencimento: int = 10
+    usar_dia_da_ficha: bool = True
     unidade: object = None
     turma: object = None
 
     @classmethod
-    def da_turma(cls, turma):
+    def da_turma(cls, turma, dia_vencimento=None, usar_dia_da_ficha=True):
         if turma.valor_mensalidade is None:
             raise PlanilhaInvalida("A turma escolhida não tem valor de mensalidade definido.")
         return cls(
             modalidade=turma.modalidade, unidade=turma.unidade, turma=turma,
             valor_mensalidade=turma.valor_mensalidade, valor_apos_vencimento=turma.valor_apos_vencimento,
-            dia_vencimento=turma.dia_vencimento,
+            dia_vencimento=dia_vencimento or turma.dia_vencimento, usar_dia_da_ficha=usar_dia_da_ficha,
         )
 
 
@@ -398,7 +400,7 @@ def _importar_linha(academia, resultado, respondida_em, valor, textos, alunos, c
             academia=academia, atleta=aluno, unidade=condicoes.unidade, modalidade=condicoes.modalidade,
             turma=condicoes.turma, valor_mensalidade=condicoes.valor_mensalidade,
             valor_apos_vencimento=condicoes.valor_apos_vencimento,
-            dia_vencimento=dia or condicoes.dia_vencimento,
+            dia_vencimento=(dia if condicoes.usar_dia_da_ficha and dia else condicoes.dia_vencimento),
             data_inicio=timezone.localdate(), ativo=True,
         )
         matricula.save()

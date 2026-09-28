@@ -137,8 +137,12 @@ class ImportacaoFichasForm(forms.Form):
         help_text='Em branco: o valor não muda depois do vencimento.',
     )
     dia_vencimento = forms.IntegerField(
-        label='Dia de vencimento', min_value=1, max_value=31, initial=10, required=False,
-        help_text='Para quem não escolheu na ficha; quem escolheu (5, 10 ou 15) mantém a escolha.',
+        label='Dia de vencimento', min_value=1, max_value=31, required=False,
+        help_text='O dia em que todos os alunos novos vencem. Em branco: o da turma (ou dia 10, sem turma).',
+    )
+    usar_dia_da_ficha = forms.BooleanField(
+        label='Usar o dia escolhido na ficha (5, 10 ou 15) quando houver', required=False,
+        help_text='Desmarcado: todos vencem no dia acima. A escolha da ficha fica guardada no histórico do aluno.',
     )
     cobrar_a_partir_de = forms.DateField(
         label='Cobrar mensalidades que vencem a partir de',
@@ -190,12 +194,13 @@ class ImportacaoFichasForm(forms.Form):
         from .importacao_fichas import CondicoesMatricula
 
         d = self.cleaned_data
+        dia, usar_ficha = d.get('dia_vencimento'), bool(d.get('usar_dia_da_ficha'))
         if d.get('turma') is not None:
-            return CondicoesMatricula.da_turma(d['turma'])
+            return CondicoesMatricula.da_turma(d['turma'], dia_vencimento=dia, usar_dia_da_ficha=usar_ficha)
         return CondicoesMatricula(
             modalidade=d['modalidade'], unidade=d.get('unidade'),
             valor_mensalidade=d['valor_mensalidade'], valor_apos_vencimento=d.get('valor_apos_vencimento'),
-            dia_vencimento=d.get('dia_vencimento') or 10,
+            dia_vencimento=dia or 10, usar_dia_da_ficha=usar_ficha,
         )
 
 

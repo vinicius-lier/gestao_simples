@@ -135,3 +135,12 @@
 .detalhe-fechar button:hover{color:var(--green);background:#faf0f1}
 @media(max-width:767px){.detalhe-dialog:has(.perfil-topo){padding:16px;max-height:92vh}}
 .status-atrasada{background:#fdecea;color:#c0392b}.status-assinatura-ativa{background:#eafbf1;color:#1f9d55}.status-assinatura-suspensa{background:#fdecea;color:#c0392b}.status-assinatura-cancelada{background:#f1f1f3;color:#888892}
+/* Abas do cadastro do aluno e questionário de saúde */
+.perfil-abas-principais{margin-bottom:22px}
+.perfil-abas-principais a{font-size:13px;padding:9px 16px}
+.perfil-abas a.ativa{background:var(--green);border-color:var(--green);color:#fff}
+.respostas-saude{margin:0;padding-left:20px}
+.respostas-saude li{padding:10px 0;border-bottom:1px solid var(--line)}
+.respostas-saude li:last-child{border-bottom:0;padding-bottom:0}
+.respostas-saude-pergunta{display:block;font-size:14px;margin-bottom:6px}
+.respostas-saude-detalhe{display:block;font-size:13px;font-weight:600;margin-top:6px}
