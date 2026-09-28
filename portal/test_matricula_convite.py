@@ -12,7 +12,8 @@ from financeiro.models import Mensalidade
 from integracoes.whatsapp.base import WhatsAppProviderError
 from matriculas.models import Matricula
 from modalidades.models import Modalidade, Turma
-from portal.models import AcessoAcademia, ConviteMatricula
+from portal.models import AcessoAcademia, ConviteMatricula, FichaMatricula
+from portal.models_matricula import PERGUNTAS_SAUDE
 
 
 class BaseConvite(TestCase):
@@ -39,7 +40,14 @@ class BaseConvite(TestCase):
         return ConviteMatricula.gerar(**base)
 
     def dados_familia(self, **kw):
-        base = dict(nome='Aluno Teste', responsavel_nome='Mãe Teste', responsavel_whatsapp='21999998888')
+        """Ficha completa, como a família envia (sem termos: a academia A
+        não tem texto de termos cadastrado)."""
+        base = dict(
+            nome='Aluno Teste', data_nascimento='2015-05-04', responsavel_nome='Mãe Teste',
+            telefone='(21) 99999-8888', email='mae@teste.com', autorizados_buscar='Mãe e avó',
+            vencimento_preferido='10',
+        )
+        base.update({campo: 'nao' for campo, *_ in PERGUNTAS_SAUDE})
         base.update(kw)
         return base
 
@@ -85,42 +93,37 @@ class FormularioPublico(BaseConvite):
 
     def test_familia_preenche_e_cria_registros_pendentes(self):
         c = self.convite()
-        resp = self.client.post(f'/matricula/{c.token}/', self.dados_familia(
-            data_nascimento='2015-05-04', responsavel_cpf='12345678909',
-        ), follow=True)
+        resp = self.client.post(f'/matricula/{c.token}/', self.dados_familia(), follow=True)
         self.assertEqual(resp.status_code, 200)
 
         atleta = Atleta.objects.get()
         self.assertEqual(atleta.academia, self.a)
-        self.assertEqual(Responsavel.objects.filter(academia=self.a, nome='Mãe Teste').count(), 1)
+        responsavel = Responsavel.objects.get(academia=self.a, nome='Mãe Teste')
+        self.assertEqual((responsavel.whatsapp, responsavel.email), ('21999998888', 'mae@teste.com'))
         mat = Matricula.objects.get()
         self.assertFalse(mat.ativo)
         self.assertEqual((mat.modalidade, mat.turma, mat.valor_mensalidade), (self.mod, self.turma, Decimal('150.00')))
+        self.assertTrue(FichaMatricula.objects.filter(atleta=atleta, convite=c).exists())
 
         c.refresh_from_db()
         self.assertEqual(c.status, ConviteMatricula.PREENCHIDO)
         self.assertEqual((c.atleta, c.matricula), (atleta, mat))
         self.assertIsNotNone(c.preenchido_em)
 
-    def test_proprio_responsavel(self):
+    def test_sem_nome_do_responsavel_e_recusado(self):
         c = self.convite()
-        self.client.post(f'/matricula/{c.token}/', {
-            'nome': 'Adulto Solo', 'cpf': '12345678909',
-            'proprio_responsavel': 'on', 'responsavel_whatsapp': '21988887777',
-        })
-        atleta = Atleta.objects.get()
-        self.assertTrue(atleta.proprio_responsavel)
-        self.assertEqual(atleta.responsavel_financeiro.nome, 'Adulto Solo')
-        self.assertEqual(atleta.responsavel_financeiro.cpf, '12345678909')
-        # É o próprio responsável: o WhatsApp informado também é o telefone dele.
-        self.assertEqual(atleta.telefone, '21988887777')
-
-    def test_menor_sem_responsavel_e_recusado(self):
-        c = self.convite()
-        resp = self.client.post(f'/matricula/{c.token}/', {'nome': 'Sem Resp', 'responsavel_whatsapp': '21999998888'})
+        resp = self.client.post(f'/matricula/{c.token}/', self.dados_familia(responsavel_nome=''))
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(Atleta.objects.count(), 0)
-        self.assertContains(resp, 'nome do responsável')
+        self.assertIn('responsavel_nome', resp.context['form'].errors)
+
+    def test_pergunta_de_saude_sem_resposta_e_recusada(self):
+        c = self.convite()
+        dados = self.dados_familia()
+        del dados['saude_tontura']
+        resp = self.client.post(f'/matricula/{c.token}/', dados)
+        self.assertEqual(Atleta.objects.count(), 0)
+        self.assertIn('saude_tontura', resp.context['form'].errors)
 
     def test_link_uso_unico(self):
         c = self.convite()

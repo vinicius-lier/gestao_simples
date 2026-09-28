@@ -4,8 +4,11 @@ from django.utils import timezone
 
 from academias.models import Unidade
 from modalidades.models import Modalidade, Turma
-from .forms import cpf_valido, digits
+from .forms import _nao_negativo, digits
 from .models import ConviteMatricula
+from .models_matricula import (
+    ACEITE_DECLARACAO, ACEITE_TERMOS, PERGUNTAS_SAUDE, VENCIMENTOS_FICHA,
+)
 
 
 def _estilo_painel(form):
@@ -24,7 +27,8 @@ class ConviteMatriculaForm(forms.ModelForm):
     class Meta:
         model = ConviteMatricula
         fields = ['unidade', 'modalidade', 'turma', 'convidado_nome', 'convidado_whatsapp',
-                  'observacao_interna', 'valor_mensalidade', 'dia_vencimento']
+                  'observacao_interna', 'valor_mensalidade', 'valor_apos_vencimento', 'taxa_matricula',
+                  'dia_vencimento']
 
     def __init__(self, *args, academia, **kwargs):
         super().__init__(*args, **kwargs)
@@ -40,7 +44,11 @@ class ConviteMatriculaForm(forms.ModelForm):
         self.fields['valor_mensalidade'].required = False
         self.fields['dia_vencimento'].required = False
         self.fields['valor_mensalidade'].help_text = 'Em branco: usa o valor da turma.'
-        self.fields['dia_vencimento'].help_text = 'Em branco: usa o vencimento da turma.'
+        self.fields['valor_apos_vencimento'].help_text = 'Em branco: usa o da turma.'
+        self.fields['taxa_matricula'].help_text = 'Gerada quando a matrícula é ativada. Em branco: usa a da turma; 0 para não cobrar.'
+        self.fields['dia_vencimento'].help_text = (
+            'Em branco: a família escolhe na ficha (dia 5, 10 ou 15) ou vale o vencimento da turma.'
+        )
         self.fields['convidado_whatsapp'].help_text = (
             'Com DDD. Informe para poder enviar o link direto pelo WhatsApp, sem sair do app.'
         )
@@ -63,6 +71,12 @@ class ConviteMatriculaForm(forms.ModelForm):
         if valor is not None and valor < 0:
             raise ValidationError('O valor não pode ser negativo.')
         return valor
+
+    def clean_valor_apos_vencimento(self):
+        return _nao_negativo(self.cleaned_data.get('valor_apos_vencimento'))
+
+    def clean_taxa_matricula(self):
+        return _nao_negativo(self.cleaned_data.get('taxa_matricula'))
 
     def clean(self):
         data = super().clean()
@@ -90,9 +104,57 @@ class ConviteMatriculaForm(forms.ModelForm):
             convidado_whatsapp=d.get('convidado_whatsapp', ''),
             observacao_interna=d.get('observacao_interna', ''),
             valor_mensalidade=d.get('valor_mensalidade'),
+            valor_apos_vencimento=d.get('valor_apos_vencimento'),
+            taxa_matricula=d.get('taxa_matricula'),
             dia_vencimento=d.get('dia_vencimento'),
             validade_dias=d['validade_dias'],
         )
+
+
+class ImportacaoFichasForm(forms.Form):
+    """Planilha de respostas do formulário antigo + a turma e a data em que a
+    cobrança dos alunos novos começa."""
+
+    TAMANHO_MAXIMO = 5 * 1024 * 1024
+
+    arquivo = forms.FileField(
+        label='Planilha de respostas (.xlsx)',
+        help_text='No Google Forms: Respostas → Ver no Planilhas → Arquivo → Fazer download → Microsoft Excel (.xlsx).',
+    )
+    turma = forms.ModelChoiceField(queryset=Turma.objects.none(), label='Turma dos alunos novos')
+    cobrar_a_partir_de = forms.DateField(
+        label='Cobrar mensalidades que vencem a partir de',
+        widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
+        help_text='A 1ª mensalidade de cada aluno novo é a do primeiro dia de vencimento a partir desta data.',
+    )
+
+    def __init__(self, *args, academia, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['turma'].queryset = Turma.objects.filter(
+            academia=academia, ativo=True, modalidade__academia=academia,
+        ).select_related('modalidade', 'unidade')
+        self.fields['cobrar_a_partir_de'].initial = timezone.localdate()
+        _estilo_painel(self)
+
+    def clean_arquivo(self):
+        arquivo = self.cleaned_data['arquivo']
+        if not arquivo.name.lower().endswith('.xlsx'):
+            raise ValidationError('Envie a planilha em formato .xlsx.')
+        if arquivo.size > self.TAMANHO_MAXIMO:
+            raise ValidationError('A planilha passa de 5 MB.')
+        return arquivo
+
+    def clean_turma(self):
+        turma = self.cleaned_data['turma']
+        if turma.valor_mensalidade is None:
+            raise ValidationError('Esta turma não tem valor de mensalidade definido.')
+        return turma
+
+    def clean_cobrar_a_partir_de(self):
+        valor = self.cleaned_data['cobrar_a_partir_de']
+        if valor < timezone.localdate():
+            raise ValidationError('A data não pode ser anterior a hoje.')
+        return valor
 
 
 class AtivacaoMatriculaForm(forms.Form):
@@ -124,24 +186,71 @@ class AtivacaoMatriculaForm(forms.Form):
         return valor
 
 
+SIM_NAO = [('sim', 'Sim'), ('nao', 'Não')]
+
+
 class MatriculaPublicaForm(forms.Form):
-    nome = forms.CharField(label='Nome completo do aluno', max_length=150)
+    """Ficha de matrícula que a família preenche pelo link do convite — as
+    mesmas perguntas, na mesma ordem, do formulário que a escola usava. A
+    única pergunta a mais é o nome do responsável, que recebe as cobranças.
+
+    Os termos e a declaração vêm da academia (``termos_matricula`` e
+    ``declaracao_matricula``); sem texto cadastrado, o aceite não aparece."""
+
+    aceite_termos = forms.BooleanField(label=ACEITE_TERMOS)
+    nome = forms.CharField(label='Nome completo do (a) aluno (a):', max_length=150)
     data_nascimento = forms.DateField(
-        label='Data de nascimento', required=False,
+        label='Data de nascimento do (a) aluno (a)',
         widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
     )
-    cpf = forms.CharField(label='CPF do aluno', max_length=14, required=False)
-    faixa = forms.CharField(label='Faixa / graduação atual', max_length=50, required=False)
-    observacoes = forms.CharField(label='Observações (saúde, restrições, etc.)', required=False, widget=forms.Textarea(attrs={'rows': 3}))
+    responsavel_nome = forms.CharField(label='Nome do (a) responsável', max_length=150)
+    telefone = forms.CharField(
+        label='Telefone para contato', max_length=20,
+        help_text='WhatsApp com DDD. As cobranças das mensalidades chegam por ele.',
+    )
+    email = forms.EmailField(label='E-mail para contato')
+    autorizados_buscar = forms.CharField(
+        label='Quem está autorizado (a) a buscar o (a) aluno (a)?',
+        widget=forms.Textarea(attrs={'rows': 2}),
+    )
+    vencimento_preferido = forms.TypedChoiceField(
+        label='Qual é a melhor data para o vencimento da mensalidade?',
+        choices=VENCIMENTOS_FICHA, coerce=int, widget=forms.RadioSelect,
+    )
+    aceite_declaracao = forms.BooleanField(label=ACEITE_DECLARACAO)
 
-    proprio_responsavel = forms.BooleanField(label='O próprio aluno é o responsável financeiro', required=False)
-    responsavel_nome = forms.CharField(label='Nome do responsável', max_length=150, required=False)
-    responsavel_cpf = forms.CharField(label='CPF do responsável', max_length=14, required=False)
-    responsavel_whatsapp = forms.CharField(label='WhatsApp para contato (com DDD)', max_length=20, required=False)
-    responsavel_email = forms.EmailField(label='E-mail', required=False)
+    def __init__(self, *args, academia=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.termos = (academia.termos_matricula if academia else '').strip()
+        self.declaracao = (academia.declaracao_matricula if academia else '').strip()
+        if not self.termos:
+            del self.fields['aceite_termos']
+        if not self.declaracao:
+            del self.fields['aceite_declaracao']
+        # Perguntas de saúde: Sim/Não obrigatório; o detalhe, quando a
+        # resposta é Sim, fica opcional como no formulário original.
+        for campo, pergunta, campo_detalhe, pergunta_detalhe in PERGUNTAS_SAUDE:
+            self.fields[campo] = forms.ChoiceField(label=pergunta, choices=SIM_NAO, widget=forms.RadioSelect)
+            if campo_detalhe:
+                self.fields[campo_detalhe] = forms.CharField(
+                    label=pergunta_detalhe, required=False, widget=forms.Textarea(attrs={'rows': 2}),
+                )
+        if 'aceite_declaracao' in self.fields:
+            # A declaração fecha a ficha, depois das perguntas de saúde.
+            self.fields['aceite_declaracao'] = self.fields.pop('aceite_declaracao')
+
+    def campos_saude(self):
+        """Pares (pergunta, detalhe) para o template, na ordem do formulário."""
+        return [
+            (self[campo], self[campo_detalhe] if campo_detalhe else None)
+            for campo, _pergunta, campo_detalhe, _detalhe in PERGUNTAS_SAUDE
+        ]
 
     def clean_nome(self):
         return ' '.join(self.cleaned_data['nome'].split())
+
+    def clean_responsavel_nome(self):
+        return ' '.join(self.cleaned_data['responsavel_nome'].split())
 
     def clean_data_nascimento(self):
         value = self.cleaned_data.get('data_nascimento')
@@ -149,32 +258,15 @@ class MatriculaPublicaForm(forms.Form):
             raise ValidationError('A data de nascimento não pode estar no futuro.')
         return value
 
-    def clean_cpf(self):
-        value = self.cleaned_data.get('cpf', '')
-        if value and not cpf_valido(value):
-            raise ValidationError('CPF inválido. Confira os números digitados.')
-        return value
-
-    def clean_responsavel_cpf(self):
-        value = self.cleaned_data.get('responsavel_cpf', '')
-        if value and not cpf_valido(value):
-            raise ValidationError('CPF inválido. Confira os números digitados.')
-        return value
-
-    def clean_responsavel_whatsapp(self):
-        value = self.cleaned_data.get('responsavel_whatsapp', '')
-        if value and not 10 <= len(digits(value)) <= 13:
+    def clean_telefone(self):
+        value = self.cleaned_data.get('telefone', '')
+        if not 10 <= len(digits(value)) <= 13:
             raise ValidationError('Informe um WhatsApp válido com DDD.')
         return value
 
     def clean(self):
         data = super().clean()
-        proprio = data.get('proprio_responsavel')
-        if not digits(data.get('responsavel_whatsapp', '')):
-            self.add_error('responsavel_whatsapp', 'Informe um WhatsApp para contato.')
-        if proprio:
-            if not self.errors.get('cpf') and not digits(data.get('cpf', '')):
-                self.add_error('cpf', 'Informe o CPF do aluno (ele será o responsável financeiro).')
-        elif not data.get('responsavel_nome'):
-            self.add_error('responsavel_nome', 'Informe o nome do responsável.')
+        for campo, *_resto in PERGUNTAS_SAUDE:
+            if campo in data:
+                data[campo] = data[campo] == 'sim'
         return data

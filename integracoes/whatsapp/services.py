@@ -48,8 +48,8 @@ def enviar_cobranca_responsavel(responsavel, mensalidade, link):
         nome_template=template,
         parametros=[
             responsavel.nome,
-            f"{mensalidade.competencia:%m/%Y}",
-            f"R$ {mensalidade.valor}",
+            mensalidade.referencia,
+            f"R$ {mensalidade.valor_devido()}",
             f"{mensalidade.vencimento:%d/%m/%Y}",
             link,
         ],

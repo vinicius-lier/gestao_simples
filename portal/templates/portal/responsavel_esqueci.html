@@ -1,0 +1,7 @@
+{% extends 'portal/base.html' %}{% block title %}Criar ou recuperar senha{% endblock %}{% block content %}<div class="login-layout">
+  <section class="login-story"><div><span class="eyebrow">Portal da família</span><h1>Crie ou recupere sua senha.</h1><p>Enviamos um link para o WhatsApp cadastrado na escola. Pelo link você entra e cria uma senha nova.</p></div></section>
+  <section class="login-panel">{% if enviado %}<span class="eyebrow mb-3">Link enviado</span><h2>Confira seu WhatsApp.</h2><p class="text-secondary">Se o CPF ou WhatsApp estiver cadastrado, você recebe o link em instantes. Ele vale por 1 hora e para um único acesso. Se não chegar, fale com a secretaria da escola.</p><p class="login-note"><a href="{% url 'portal:responsavel_login' %}">← Voltar para o login</a></p>{% else %}<span class="eyebrow mb-3">Primeiro acesso ou senha esquecida</span><h2>Receber link no WhatsApp.</h2><p class="text-secondary">Informe o CPF ou o WhatsApp cadastrado na escola.</p>
+    <form method="post">{% csrf_token %}{% for field in form %}<div class="mb-3"><label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% for e in field.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>{% endfor %}<button type="submit" class="btn btn-primary w-100">Enviar link</button></form>
+    <p class="login-note"><a href="{% url 'portal:responsavel_login' %}">← Voltar para o login</a></p>{% endif %}
+  </section>
+</div>{% endblock %}

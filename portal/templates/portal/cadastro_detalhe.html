@@ -1,11 +1,106 @@
-{% extends 'portal/base.html' %}{% block content %}<div id="detalhe-conteudo"><a href="/{{ tipo }}/" class="back-link">← {{ titulo }}</a><div class="hero-dashboard mt-3"><div><p class="eyebrow">{{ titulo }}</p><h1>{{ obj.nome }}</h1><p class="text-secondary mb-0">{% if obj.ativo %}Ativo{% else %}Inativo{% endif %}</p></div>{% if request.administrador_academia %}<a class="btn btn-outline-primary" href="/{{ tipo }}/{{ obj.pk }}/editar/">Editar ↗</a>{% endif %}</div><div class="card p-4"><dl>
-{% if tipo == 'unidades' %}
-<dt>Endereço</dt><dd>{{ obj.endereco|default:'—' }}</dd><dt>Telefone</dt><dd>{{ obj.telefone|default:'—' }}</dd><dt>Turmas neste polo</dt><dd>{% for t in obj.turmas.all %}{{ t.nome }} — {{ t.modalidade.nome }}{% if t.horario %} · {{ t.horario|time:'H:i' }}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}Nenhuma turma.{% endfor %}</dd>
-{% elif tipo == 'professores' %}
-<dt>E-mail</dt><dd>{{ obj.email|default:'—' }}</dd><dt>Telefone</dt><dd>{{ obj.telefone|default:'—' }}</dd><dt>Faixa / graduação</dt><dd>{{ obj.faixa|default:obj.graduacao|default:'—' }}</dd><dt>Turmas que leciona</dt><dd>{% for t in obj.turmas.all %}{{ t.nome }} — {{ t.modalidade.nome }}{% if t.unidade %} · {{ t.unidade.nome }}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}Nenhuma turma.{% endfor %}</dd>
-{% elif tipo == 'turmas' %}
-<dt>Modalidade</dt><dd>{{ obj.modalidade.nome }}</dd><dt>Polo / unidade</dt><dd>{{ obj.unidade.nome|default:'Não informado' }}</dd><dt>Professor responsável</dt><dd>{{ obj.docente.nome|default:obj.professor|default:'—' }}</dd><dt>Dias da semana</dt><dd>{{ obj.dias_semana|default:'—' }}</dd><dt>Horário</dt><dd>{{ obj.horario|time:'H:i'|default:'—' }}</dd><dt>Local</dt><dd>{{ obj.local|default:'—' }}</dd><dt>Valor de referência</dt><dd>{% if obj.valor_mensalidade is not None %}R$ {{ obj.valor_mensalidade }}{% else %}—{% endif %}</dd><dt>Dia de vencimento</dt><dd>{{ obj.dia_vencimento }}</dd>
-{% elif tipo == 'modalidades' %}
-<dt>Descrição</dt><dd>{{ obj.descricao|linebreaksbr|default:'—' }}</dd><dt>Graduações / faixas</dt><dd>{% for f in obj.graduacoes.all %}{{ f.ordem }}. {{ f.nome }}{% if not f.ativo %} (inativa){% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}Nenhuma faixa cadastrada.{% endfor %}</dd><dt>Turmas</dt><dd>{% for t in obj.turmas.all %}{{ t.nome }}{% if t.unidade %} · {{ t.unidade.nome }}{% endif %}{% if t.horario %} · {{ t.horario|time:'H:i' }}{% endif %}{% if t.valor_mensalidade is not None %} · R$ {{ t.valor_mensalidade }}{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}Nenhuma turma.{% endfor %}</dd>
-{% endif %}
-</dl></div></div>{% endblock %}
+{% extends 'portal/base.html' %}{% block title %}{{ obj.nome }}{% endblock %}{% block content %}<div id="detalhe-conteudo">
+<a href="/{{ tipo }}/" class="back-link">← {{ titulo }}</a>
+
+<section class="card perfil-topo mt-3">
+  <div class="perfil-linha">
+    <div class="perfil-identidade">
+      <span class="perfil-avatar" aria-hidden="true">{{ iniciais }}</span>
+      <div class="min-w-0">
+        <p class="eyebrow mb-1">{{ titulo }}</p>
+        <h1 class="perfil-nome">{{ obj.nome }}</h1>
+        <p class="perfil-resumo">
+          <span class="status-badge {% if obj.ativo %}status-ativo{% else %}status-inativo{% endif %}">{% if obj.ativo %}Ativo{% else %}Inativo{% endif %}</span>
+          {% if tipo == 'turmas' %}<span>{{ obj.modalidade.nome }}</span>{% if obj.unidade %}<span>{{ obj.unidade.nome }}</span>{% endif %}{% if obj.horario %}<span>{{ obj.dias_semana|default:'' }} {{ obj.horario|time:'H:i' }}</span>{% endif %}
+          {% elif tipo == 'unidades' %}{% if obj.endereco %}<span>{{ obj.endereco }}</span>{% endif %}
+          {% elif tipo == 'professores' %}{% if obj.faixa or obj.graduacao %}<span>{{ obj.faixa|default:obj.graduacao }}</span>{% endif %}
+          {% elif tipo == 'modalidades' %}<span>{{ obj.turmas.all|length }} turma{{ obj.turmas.all|length|pluralize }}</span>{% endif %}
+        </p>
+      </div>
+    </div>
+    {% if request.administrador_academia %}<div class="perfil-acoes"><a class="btn btn-primary" href="/{{ tipo }}/{{ obj.pk }}/editar/">Editar</a></div>{% endif %}
+  </div>
+  <dl class="perfil-numeros">
+    <div><dt>Alunos ativos</dt><dd>{{ alunos_ativos }}</dd></div>
+    {% if tipo == 'turmas' %}
+    <div><dt>Mensalidade</dt><dd>{% if obj.valor_mensalidade is not None %}R$ {{ obj.valor_mensalidade }}{% else %}—{% endif %}</dd></div>
+    <div><dt>Após o vencimento</dt><dd>{% if obj.valor_apos_vencimento is not None %}R$ {{ obj.valor_apos_vencimento }}{% else %}—{% endif %}</dd></div>
+    <div><dt>Taxa de matrícula</dt><dd>{% if obj.taxa_matricula is not None %}R$ {{ obj.taxa_matricula }}{% else %}—{% endif %}</dd></div>
+    {% elif tipo == 'modalidades' %}
+    <div><dt>Turmas</dt><dd>{{ obj.turmas.all|length }}</dd></div>
+    <div><dt>Faixas</dt><dd>{{ obj.graduacoes.all|length }}</dd></div>
+    {% else %}
+    <div><dt>Turmas</dt><dd>{{ obj.turmas.all|length }}</dd></div>
+    {% endif %}
+  </dl>
+</section>
+
+<div class="row g-4 mt-1">
+  <aside class="col-lg-4">
+    <section class="card p-4">
+      <h2 class="perfil-titulo">Dados</h2>
+      <dl class="perfil-dados">
+        {% if tipo == 'unidades' %}
+        <dt>Endereço</dt><dd>{{ obj.endereco|default:'—' }}</dd>
+        <dt>Telefone</dt><dd>{{ obj.telefone|default:'—' }}</dd>
+        {% elif tipo == 'professores' %}
+        <dt>E-mail</dt><dd>{{ obj.email|default:'—' }}</dd>
+        <dt>Telefone</dt><dd>{{ obj.telefone|default:'—' }}</dd>
+        <dt>Faixa / graduação</dt><dd>{{ obj.faixa|default:obj.graduacao|default:'—' }}</dd>
+        {% elif tipo == 'turmas' %}
+        <dt>Modalidade</dt><dd>{{ obj.modalidade.nome }}</dd>
+        <dt>Polo / unidade</dt><dd>{{ obj.unidade.nome|default:'Não informado' }}</dd>
+        <dt>Professor responsável</dt><dd>{{ obj.docente.nome|default:obj.professor|default:'—' }}</dd>
+        <dt>Dias da semana</dt><dd>{{ obj.dias_semana|default:'—' }}</dd>
+        <dt>Horário</dt><dd>{{ obj.horario|time:'H:i'|default:'—' }}</dd>
+        <dt>Local</dt><dd>{{ obj.local|default:'—' }}</dd>
+        <dt>Dia de vencimento</dt><dd>{{ obj.dia_vencimento }}</dd>
+        {% elif tipo == 'modalidades' %}
+        <dt>Descrição</dt><dd>{{ obj.descricao|linebreaksbr|default:'—' }}</dd>
+        {% endif %}
+      </dl>
+    </section>
+  </aside>
+
+  <div class="col-lg-8">
+    {% if tipo == 'turmas' %}
+    <section class="perfil-secao">
+      <h2 class="h5 mb-3">Alunos matriculados</h2>
+      <div class="card">
+        {% if matriculas_ativas %}
+        <ul class="list-unstyled mb-0">
+          {% for m in matriculas_ativas %}
+          <li><a class="recent-row" href="{% url 'portal:detalhe' m.atleta.pk %}"><span class="person-cell"><span class="avatar">{{ m.atleta.nome|first|upper }}</span><strong>{{ m.atleta.nome }}</strong></span><span class="small text-secondary">desde {{ m.data_inicio|date:'d/m/Y' }}</span></a></li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-secondary p-4 mb-0">Nenhum aluno com matrícula ativa nesta turma.</p>
+        {% endif %}
+      </div>
+    </section>
+    {% else %}
+    {% if tipo == 'modalidades' %}
+    <section class="perfil-secao">
+      <h2 class="h5 mb-3">Graduações / faixas</h2>
+      <div class="card p-4">
+        {% for f in obj.graduacoes.all %}<span class="status-badge me-1 mb-1">{{ f.ordem }}. {{ f.nome }}{% if not f.ativo %} (inativa){% endif %}</span>{% empty %}<p class="text-secondary mb-0">Nenhuma faixa cadastrada.</p>{% endfor %}
+      </div>
+    </section>
+    {% endif %}
+    <section class="perfil-secao">
+      <h2 class="h5 mb-3">{% if tipo == 'professores' %}Turmas que leciona{% elif tipo == 'unidades' %}Turmas neste polo{% else %}Turmas{% endif %}</h2>
+      <div class="card">
+        {% if obj.turmas.all %}
+        <ul class="list-unstyled mb-0">
+          {% for t in obj.turmas.all %}
+          <li><a class="recent-row" href="/turmas/{{ t.pk }}/"><span class="person-cell"><span class="avatar">{{ t.nome|first|upper }}</span><span><strong>{{ t.nome }}</strong><span class="d-block small text-secondary">{% if tipo == 'modalidades' %}{{ t.unidade.nome|default:'Sem polo' }}{% else %}{{ t.modalidade.nome }}{% if tipo == 'professores' and t.unidade %} · {{ t.unidade.nome }}{% endif %}{% endif %}{% if t.horario %} · {{ t.horario|time:'H:i' }}{% endif %}</span></span></span><span class="small text-nowrap">{% if t.valor_mensalidade is not None %}R$ {{ t.valor_mensalidade }}{% endif %}</span></a></li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-secondary p-4 mb-0">Nenhuma turma.</p>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+</div>{% endblock %}

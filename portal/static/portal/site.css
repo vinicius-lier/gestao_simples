@@ -28,12 +28,12 @@
 .link-danger-btn:hover{text-decoration:underline}
 
 /* Modal de detalhes do cadastro */
-.detalhe-dialog{border:1px solid var(--line);border-radius:18px;padding:26px;width:min(94vw,620px);max-height:86vh;overflow:auto;box-shadow:0 25px 90px #20202430;color:var(--ink)}
+.detalhe-dialog{border:1px solid var(--line);border-radius:18px;padding:26px;width:fit-content;min-width:min(94vw,420px);max-width:min(96vw,1100px);max-height:92vh;overflow:auto;box-shadow:0 25px 90px #20202430;color:var(--ink)}
 .detalhe-dialog::backdrop{background:#20202455;backdrop-filter:blur(4px)}
 .detalhe-dialog[open]{animation:arrive .2s ease}
 .detalhe-dialog .back-link{display:none}
 .detalhe-dialog .hero-dashboard{margin-bottom:14px}
-.detalhe-dialog .card{border:0;box-shadow:none;padding:0!important}
+.detalhe-dialog:not(:has(.perfil-topo)) .card{border:0;box-shadow:none;padding:0!important}
 .detalhe-dialog dl dt{margin-top:14px}
 
 /* Financeiro */
@@ -81,3 +81,57 @@
 .app-main>#main,.auth-layout>#main{flex:1 0 auto;display:flex;flex-direction:column}
 .auth-layout>.auth-header{width:100%}
 .page-content{flex:1 0 auto}
+
+/* Perfil do aluno */
+.perfil-topo{padding:28px}
+.perfil-linha{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap}
+.perfil-identidade{display:flex;gap:18px;align-items:center;min-width:0}
+.perfil-identidade .min-w-0{min-width:0}
+.perfil-avatar{width:64px;height:64px;border-radius:18px;display:grid;place-items:center;background:#f5ebec;color:#94515a;font-weight:700;font-size:22px;flex-shrink:0}
+.perfil-nome{font-size:26px;margin:0 0 8px;overflow-wrap:anywhere}
+.perfil-resumo{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;margin:0;font-size:13px;color:var(--muted)}
+.perfil-acoes{display:flex;gap:8px;flex-wrap:wrap}
+.card .perfil-numeros{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:24px 0 0;padding-top:20px;border-top:1px solid var(--line)}
+.card .perfil-numeros dt{margin:0;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.card .perfil-numeros dd{margin:4px 0 0;font-size:18px;font-weight:600}
+.card .perfil-numeros .perfil-alerta dd{color:#c0392b}
+.perfil-titulo{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+.card .perfil-dados{margin:0}
+.card .perfil-dados dt:first-child{margin-top:0}
+.card .perfil-dados dd{margin-bottom:0;font-size:14px;overflow-wrap:anywhere}
+.perfil-abas{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px}
+.perfil-abas a{font-size:12px;font-weight:600;text-decoration:none;color:#74747e;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:#fff}
+.perfil-abas a:hover{color:var(--green);background:#faf0f1}
+.perfil-secao{scroll-margin-top:90px;margin-bottom:28px}
+.card .perfil-grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin:18px 0 0}
+.card .perfil-grade dt{margin-top:0}
+.card .perfil-grade dd{margin:2px 0 0;font-size:14px}
+.perfil-ativacao{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:16px;padding:14px;border-radius:12px;background:#faf9fb;border:1px dashed var(--line)}
+.status-inativo{background:#f1f1f3;color:#888892}
+@media(max-width:767px){.perfil-topo{padding:20px!important}.perfil-avatar{width:52px;height:52px;font-size:18px;border-radius:14px}.perfil-nome{font-size:21px}.card .perfil-numeros{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.card .perfil-numeros dd{font-size:16px}.perfil-linha{gap:16px}.perfil-acoes{width:100%}.perfil-acoes>.btn,.perfil-acoes>form{flex:1 1 130px;margin:0}.perfil-acoes .btn{width:100%;padding:9px 12px;font-size:13px}.perfil-abas{flex-wrap:nowrap;overflow-x:auto;margin-left:-4px;margin-right:-4px;padding:0 4px 4px;scrollbar-width:none}.perfil-abas a{white-space:nowrap;flex-shrink:0}}
+
+/* Lista de cobranças: linha no computador, cartão no celular */
+.cobrancas{list-style:none;margin:0;padding:0}
+.cobranca{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) auto minmax(110px,auto);grid-template-areas:"info valor status acao";gap:10px 16px;align-items:center;padding:16px 22px;border-bottom:1px solid var(--line)}
+.cobranca:last-child{border-bottom:0}
+.cobranca-info{grid-area:info;min-width:0}
+.cobranca-info strong{display:block;font-size:14px;font-weight:600}
+.cobranca-info span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.cobranca-valor{grid-area:valor;font-size:15px;font-weight:600;white-space:nowrap}
+.cobranca-valor small{display:block;font-size:11px;font-weight:400;color:var(--muted);white-space:normal}
+.cobranca>.status-badge{grid-area:status;justify-self:start}
+.cobranca-acao{grid-area:acao;text-align:right}
+.cobranca-acao:empty{display:none}
+.cobranca-vencida{box-shadow:inset 3px 0 0 #c0392b}
+@media(max-width:767px){.cobranca{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"info status" "valor acao";padding:16px 18px;gap:12px}.cobranca>.status-badge{justify-self:end;align-self:start}.cobranca-valor{font-size:17px}.cobranca-acao .btn{min-width:120px;padding:9px 14px}}
+
+/* Modal de detalhe: acompanha a largura e a altura do conteúdo, dentro dos limites da tela */
+.detalhe-dialog:has(.perfil-topo){min-width:min(96vw,720px);padding:22px 28px 28px;background:var(--paper)}
+.detalhe-dialog:has(.perfil-topo) .card,.detalhe-dialog:has(.perfil-topo) .card:hover{box-shadow:none}
+.detalhe-dialog:has(.perfil-topo) .perfil-topo{margin-top:0!important}
+.detalhe-dialog:has(.perfil-topo) .perfil-secao{margin-bottom:18px}
+.detalhe-fechar{position:sticky;top:0;z-index:3;display:flex;justify-content:flex-end;height:0}
+.detalhe-fechar button{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:20px;line-height:1;color:#74747e;transform:translate(10px,-8px)}
+.detalhe-fechar button:hover{color:var(--green);background:#faf0f1}
+@media(max-width:767px){.detalhe-dialog:has(.perfil-topo){padding:16px;max-height:92vh}}
+.status-atrasada{background:#fdecea;color:#c0392b}.status-assinatura-ativa{background:#eafbf1;color:#1f9d55}.status-assinatura-suspensa{background:#fdecea;color:#c0392b}.status-assinatura-cancelada{background:#f1f1f3;color:#888892}

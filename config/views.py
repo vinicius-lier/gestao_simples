@@ -3,6 +3,7 @@ import logging
 from django.db import DatabaseError, connection
 from django.http import HttpResponsePermanentRedirect, JsonResponse
 from django.templatetags.static import static
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ def favicon(request):
     return HttpResponsePermanentRedirect(static("portal/logo-fukuda.png"))
 
 
+@never_cache
 @require_http_methods(["GET", "HEAD"])
 def health(request):
     """Health check do contêiner e do Coolify: o processo responde e o banco

@@ -164,6 +164,8 @@ Os alertas vão para um canal do Discord, nunca para o WhatsApp da academia.
   disco): Notifications → Discord, com o mesmo webhook.
 - **Uptime Kuma** (site, DNS, Evolution, WhatsApp da escola conectado):
   serviço do modelo "Uptime Kuma", com notificação Discord.
+  Configuração dos monitores, critérios de sucesso e validação em
+  [UPTIME_KUMA.md](UPTIME_KUMA.md).
 
 ## 4.2 Assinatura do sistema (Minha assinatura)
 

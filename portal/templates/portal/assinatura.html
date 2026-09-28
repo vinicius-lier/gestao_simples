@@ -1,66 +1,85 @@
-{% extends 'portal/base.html' %}{% load portal_extras %}{% block title %}Minha assinatura • Configurações{% endblock %}{% block content %}
-<div class="hero-dashboard mt-3">
-  <div>
-    <p class="eyebrow">Configurações</p>
-    <h1>Minha assinatura<span class="title-dot">.</span></h1>
-    <p class="text-secondary mb-0">A mensalidade que a escola paga pelo uso do sistema.</p>
-  </div>
-</div>
-
+{% extends 'portal/base.html' %}{% block title %}Minha assinatura • Configurações{% endblock %}{% block content %}
 {% if not assinatura %}
-<div class="card p-4 mt-3"><p class="mb-0 text-secondary">Ainda não há uma assinatura cadastrada para a escola. Fale com o suporte do sistema.</p></div>
+<section class="card perfil-topo mt-3">
+  <p class="eyebrow mb-1">Configurações</p>
+  <h1 class="perfil-nome">Minha assinatura</h1>
+  <p class="text-secondary mb-0">A mensalidade que a escola paga pelo uso do sistema. Ainda não há uma assinatura cadastrada para a escola; fale com o suporte do sistema.</p>
+</section>
 {% else %}
-<div class="card p-4 mt-3">
-  <p class="mb-1"><strong>Plano:</strong> {{ assinatura.plano }}</p>
-  <p class="mb-1"><strong>Valor:</strong> R$ {{ assinatura.valor_mensal }} por mês, com vencimento todo dia {{ assinatura.dia_vencimento }}</p>
-  <p class="mb-0"><strong>Situação:</strong>
-    {% if a_pagar and a_pagar.vencida and not a_pagar.pagamento_informado_em %}<span class="badge bg-danger">Fatura vencida</span>
-    {% elif a_pagar %}<span class="badge bg-warning text-dark">Fatura em aberto</span>
-    {% else %}<span class="badge bg-success">Em dia</span>{% endif %}
-  </p>
-</div>
-
-{% if a_pagar %}
-<div class="card p-4 mt-3 pix-card">
-  <h2 class="h5">Fatura de {{ a_pagar.competencia|date:"m/Y" }} — R$ {{ a_pagar.valor }}</h2>
-  <p class="text-secondary">Vencimento: {{ a_pagar.vencimento|date:"d/m/Y" }}{% if a_pagar.vencida %} (vencida){% endif %}</p>
-  {% if a_pagar.pagamento_informado_em %}
-  <p class="mb-0">Você informou o pagamento em {{ a_pagar.pagamento_informado_em|date:"d/m/Y H:i" }}. Assim que a equipe do sistema conferir, esta fatura aparece como paga.</p>
-  {% elif br_code %}
-  {% pix_qrcode br_code %}
-  <ol class="small text-secondary mt-2">
-    <li>No aplicativo do banco, escolha <strong>Pix → Pagar com QR Code</strong> e aponte a câmera, ou use <strong>Pix copia e cola</strong> com o código abaixo.</li>
-    <li>Confira o valor (R$ {{ a_pagar.valor }}){% if recebedor %} e o recebedor ({{ recebedor }}){% endif %} e confirme.</li>
-    <li>Depois de pagar, clique em <strong>Já paguei</strong>.</li>
-  </ol>
-  <div class="pix-copia">
-    <label for="pix-assinatura" class="visually-hidden">Pix copia e cola</label>
-    <textarea id="pix-assinatura" class="form-control" readonly rows="3">{{ br_code }}</textarea>
-    <button type="button" class="btn btn-outline-primary" data-copy="{{ br_code }}">Copiar código</button>
+<section class="card perfil-topo mt-3">
+  <div class="perfil-linha">
+    <div class="perfil-identidade">
+      <span class="perfil-avatar" aria-hidden="true">R$</span>
+      <div class="min-w-0">
+        <p class="eyebrow mb-1">Minha assinatura</p>
+        <h1 class="perfil-nome">Mensalidade do sistema</h1>
+        <p class="perfil-resumo">
+          <span class="status-badge status-assinatura-{{ assinatura.status }}">{{ assinatura.get_status_display }}</span>
+          <span><strong>R$ {{ assinatura.valor_mensal|floatformat:"2g" }}</strong> / mês</span>
+          <span>Pagamento via Pix</span>
+        </p>
+      </div>
+    </div>
+    {% if a_pagar %}
+    <div class="perfil-acoes"><a class="btn btn-primary" href="{% url 'portal:assinatura_pagar' %}">Pagar mensalidade</a></div>
+    {% endif %}
   </div>
-  <form method="post" action="{% url 'portal:assinatura_informar_pagamento' a_pagar.pk %}" class="mt-3">{% csrf_token %}
-    <button class="btn btn-primary">Já paguei</button>
-  </form>
-  {% else %}
-  <p class="mb-0 text-secondary">O pagamento por Pix ainda não está disponível. Fale com o suporte do sistema.</p>
-  {% endif %}
+  <dl class="perfil-numeros">
+    <div><dt>Valor</dt><dd>R$ {{ a_pagar.valor|default:assinatura.valor_mensal|floatformat:"2g" }}</dd></div>
+    <div><dt>Próximo vencimento</dt><dd>{{ proximo_vencimento|date:'d/m/Y' }}</dd></div>
+    <div><dt>Vencimento</dt><dd>Todo dia {{ assinatura.dia_vencimento }}</dd></div>
+    <div{% if atrasada or assinatura.suspensa %} class="perfil-alerta"{% endif %}><dt>Situação</dt><dd>{% if assinatura.suspensa %}Suspensa{% elif atrasada %}Em atraso{% elif a_pagar %}Aguardando pagamento{% else %}Em dia{% endif %}</dd></div>
+  </dl>
+</section>
+
+{% if assinatura.suspensa %}
+<div class="alert alert-danger mt-3 mb-0" role="alert">
+  <strong>Acesso suspenso.</strong> {% if a_pagar %}A {{ a_pagar.referencia|lower }} venceu em {{ a_pagar.vencimento|date:'d/m/Y' }}.{% endif %}
+  Os dados da escola continuam guardados — alunos, turmas, pagamentos e configurações. O acesso volta sozinho assim que o Pix for confirmado.
+</div>
+{% elif atrasada %}
+<div class="alert alert-warning mt-3 mb-0" role="alert">
+  A {{ a_pagar.referencia|lower }} venceu em {{ a_pagar.vencimento|date:'d/m/Y' }}. O acesso continua normal até
+  <strong>{{ a_pagar.fim_da_tolerancia|date:'d/m/Y' }}</strong>; sem pagamento, o painel é suspenso em {{ a_pagar.suspensao_em|date:'d/m/Y' }}.
 </div>
 {% endif %}
 
-<section class="card directory mt-3">
-  <div class="directory-heading"><h2 class="h6 mb-0">Faturas</h2></div>
-  <div class="table-responsive">
-    <table class="table mb-0">
-      <thead><tr><th>Mês</th><th>Vencimento</th><th>Valor</th><th>Situação</th></tr></thead>
-      <tbody>
-        {% for fatura in faturas %}
-        <tr><td>{{ fatura.competencia|date:"m/Y" }}</td><td>{{ fatura.vencimento|date:"d/m/Y" }}</td><td>R$ {{ fatura.valor }}</td><td>{{ fatura.situacao }}</td></tr>
-        {% empty %}
-        <tr><td colspan="4"><div class="empty-state"><p class="mb-0">A primeira fatura aparece aqui no mês do primeiro vencimento.</p></div></td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+<div class="row g-4 mt-1">
+  <aside class="col-lg-4 order-2 order-lg-1">
+    <section class="card p-4">
+      <h2 class="perfil-titulo">Assinatura</h2>
+      <dl class="perfil-dados">
+        <dt>Plano</dt><dd>{{ assinatura.plano }}</dd>
+        <dt>Início do serviço</dt><dd>{{ assinatura.inicio|date:'d/m/Y' }}</dd>
+        <dt>Valor mensal</dt><dd>R$ {{ assinatura.valor_mensal|floatformat:"2g" }}</dd>
+        <dt>Dia de vencimento</dt><dd>Todo dia {{ assinatura.dia_vencimento }}</dd>
+        <dt>Tolerância</dt><dd>{{ assinatura.dias_tolerancia }} dias depois do vencimento</dd>
+        <dt>Forma de pagamento</dt><dd>Pix</dd>
+      </dl>
+    </section>
+  </aside>
+
+  <div class="col-lg-8 order-1 order-lg-2">
+    <section class="perfil-secao">
+      <h2 class="h5 mb-3">Histórico de pagamentos</h2>
+      <div class="card">
+        {% if historico %}
+        <ul class="cobrancas">
+          {% for f in historico %}
+          <li class="cobranca cobranca-{{ f.status }}">
+            <div class="cobranca-info"><strong>{{ f.referencia }}</strong><span>{% if f.tipo == 'mensalidade' %}Vence em {{ f.vencimento|date:'d/m/Y' }}{% else %}Pagamento único{% endif %}</span></div>
+            <div class="cobranca-valor">R$ {{ f.valor|floatformat:"2g" }}</div>
+            <span class="status-badge status-{{ f.status }}">{% if f.status == 'pendente' %}Aguardando{% else %}{{ f.get_status_display }}{% endif %}</span>
+            <div class="cobranca-acao small text-secondary">{% if f.pago_em %}Pago em {{ f.pago_em|date:'d/m/Y' }}{% else %}—{% endif %}</div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-secondary p-4 mb-0">A primeira mensalidade aparece aqui no mês do primeiro vencimento ({{ proximo_vencimento|date:'d/m/Y' }}).</p>
+        {% endif %}
+      </div>
+    </section>
   </div>
-</section>
+</div>
 {% endif %}
 {% endblock %}

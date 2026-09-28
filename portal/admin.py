@@ -82,6 +82,20 @@ class ConviteMatriculaAdmin(AcessoAcademiaAdmin):
         return False
 
 
+from .models import FichaMatricula
+
+
+@admin.register(FichaMatricula)
+class FichaMatriculaAdmin(AcessoAcademiaAdmin):
+    list_display = ('nome_aluno', 'atleta', 'academia', 'origem', 'respondida_em')
+    list_filter = ('origem', 'academia')
+    search_fields = ('nome_aluno', 'atleta__nome', 'telefone_contato', 'email_contato')
+    readonly_fields = ('academia', 'atleta', 'convite', 'origem', 'respondida_em', 'criado_em')
+
+    def has_add_permission(self, request):
+        return False
+
+
 from .models import TokenAcessoResponsavel
 
 

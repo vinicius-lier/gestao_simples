@@ -122,6 +122,46 @@ class NovosCadastrosTests(TestCase):
         r.refresh_from_db()
         self.assertEqual(r.whatsapp, '21911112222')
 
+    def test_proprio_responsavel_com_cpf_de_outra_pessoa_e_recusado(self):
+        # Regressão: o CPF do aluno já estava num responsável de outro nome
+        # (cadastro de teste) e o aluno novo foi vinculado a ele em silêncio.
+        outro = Responsavel.objects.create(academia=self.a, nome='TESTE PIX (apagar depois)', cpf='12345678900', whatsapp='21911112222')
+        resp = self.client.post('/alunos/novo/', self.payload())
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, 'TESTE PIX (apagar depois)')
+        self.assertIn('cpf', resp.context['form'].errors)
+        self.assertFalse(Atleta.objects.exists())
+        self.assertEqual(Responsavel.objects.get(), outro)
+
+    def test_vinculo_antigo_com_responsavel_de_outro_nome_avisa_e_se_corrige_ao_salvar(self):
+        # Estado deixado pelo bug antigo: dois alunos "próprio responsável"
+        # ligados ao mesmo cadastro, que tem o nome de um deles.
+        teste = Responsavel.objects.create(academia=self.a, nome='TESTE PIX (apagar depois)', cpf='12345678900', whatsapp='21911112222')
+        Atleta.objects.create(academia=self.a, nome='TESTE PIX (apagar depois)', cpf='12345678900', proprio_responsavel=True, responsavel_financeiro=teste)
+        aluno = Atleta.objects.create(academia=self.a, nome='Aluno adulto', cpf='12345678900', telefone='21999999999',
+                                      proprio_responsavel=True, responsavel_financeiro=teste)
+
+        perfil = self.client.get(f'/alunos/{aluno.pk}/')
+        self.assertContains(perfil, 'vinculado ao cadastro de outra pessoa')
+        self.assertNotContains(perfil, 'Próprio aluno')
+        edicao = self.client.get(f'/alunos/{aluno.pk}/editar/')
+        self.assertContains(edicao, 'TESTE PIX (apagar depois)')
+        self.assertContains(edicao, 'também é o responsável de')
+
+        dados = {k: v for k, v in self.payload().items() if not k.startswith('matricula-')}
+        self.assertEqual(self.client.post(f'/alunos/{aluno.pk}/editar/', dados).status_code, 302)
+
+        teste.refresh_from_db()
+        self.assertEqual((teste.nome, teste.whatsapp), ('Aluno adulto', '21999999999'))
+        perfil = self.client.get(f'/alunos/{aluno.pk}/')
+        self.assertNotContains(perfil, 'vinculado ao cadastro de outra pessoa')
+        self.assertContains(perfil, 'Próprio aluno')
+
+    def test_proprio_responsavel_mesma_pessoa_com_outra_grafia_reutiliza(self):
+        r = Responsavel.objects.create(academia=self.a, nome='ALUNO  ADULTO', cpf='12345678900', whatsapp='21999999999')
+        self.assertEqual(self.client.post('/alunos/novo/', self.payload()).status_code, 302)
+        self.assertEqual(Atleta.objects.get().responsavel_financeiro, r)
+
     def test_proprio_responsavel_exige_contato_e_cpf(self):
         data=self.payload();data['cpf']='';data['telefone']=''
         self.assertEqual(self.client.post('/alunos/novo/',data).status_code,200)

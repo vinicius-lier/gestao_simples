@@ -65,7 +65,8 @@ class ResponsavelPortalTests(TestCase):
     def test_link_valido_abre_sessao_e_e_consumido(self):
         acesso = TokenAcessoResponsavel.gerar(self.responsavel)
         resposta = self.client.post(f"/responsavel/entrar/{acesso.token}/")
-        self.assertRedirects(resposta, "/responsavel/")
+        # Sem senha ainda: o 1º acesso leva a criar a senha.
+        self.assertRedirects(resposta, "/responsavel/senha/")
         self.assertEqual(self.client.session.get("responsavel_id"), self.responsavel.pk)
         acesso.refresh_from_db()
         self.assertIsNotNone(acesso.usado_em)
@@ -132,7 +133,7 @@ class ResponsavelPortalTests(TestCase):
 
     def test_painel_exige_sessao_valida(self):
         resposta = self.client.get("/responsavel/", follow=True)
-        self.assertRedirects(resposta, "/responsavel/link-expirado/")
+        self.assertRedirects(resposta, "/responsavel/entrar/?next=%2Fresponsavel%2F")
 
     def _logar(self, responsavel):
         acesso = TokenAcessoResponsavel.gerar(responsavel)

@@ -14,3 +14,7 @@ local/
 !.env.example
 !.env.example.local
 !.env.example.production
+
+# Planilhas exportadas (respostas de formulário, dados de alunos): nunca no git.
+*.xlsx
+*.csv

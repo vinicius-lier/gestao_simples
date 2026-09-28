@@ -10,17 +10,23 @@ def alertas_plataforma(request):
 
 
 def assinatura_vencida(request):
-    """Para o administrador da academia: a fatura do sistema vencida e ainda
-    não informada como paga, para a faixa de aviso no topo do portal."""
-    academia = getattr(request, "academia", None)
-    if academia is None or not getattr(request, "administrador_academia", False):
+    """Para o administrador da academia: a faixa no topo do painel quando a
+    mensalidade do sistema está atrasada (dentro da tolerância) ou quando a
+    assinatura está suspensa. A assinatura já vem com as regras do dia
+    aplicadas por ``academia_required``."""
+    assinatura = getattr(request, "assinatura_sistema", None)
+    if assinatura is None or not getattr(request, "administrador_academia", False):
         return {}
+    tela = request.resolver_match.url_name if getattr(request, "resolver_match", None) else ""
+    if tela in ("minha_assinatura", "assinatura_pagar"):
+        return {}  # essas telas já mostram a situação no próprio conteúdo
     from django.utils import timezone
 
     from assinaturas.models import FaturaAssinatura
 
-    fatura = FaturaAssinatura.objects.filter(
-        assinatura__academia=academia, status=FaturaAssinatura.ABERTA,
-        vencimento__lt=timezone.localdate(), pagamento_informado_em__isnull=True,
+    if assinatura.suspensa:
+        return {"aviso_assinatura": {"suspensa": True}}
+    fatura = assinatura.faturas.filter(
+        status__in=FaturaAssinatura.EM_ABERTO, vencimento__lt=timezone.localdate(),
     ).order_by("vencimento").first()
-    return {"fatura_assinatura_vencida": fatura} if fatura else {}
+    return {"aviso_assinatura": {"suspensa": False, "fatura": fatura}} if fatura else {}

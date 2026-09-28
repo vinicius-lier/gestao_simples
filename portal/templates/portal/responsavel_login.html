@@ -1,0 +1,7 @@
+{% extends 'portal/base.html' %}{% block title %}Portal da família{% endblock %}{% block content %}<div class="login-layout">
+  <section class="login-story"><div><span class="eyebrow">Portal da família</span><h1>Mensalidades, Pix e recibos.</h1><p>Acompanhe as mensalidades dos seus filhos, pague por Pix e baixe os recibos quando quiser.</p></div></section>
+  <section class="login-panel"><span class="eyebrow mb-3">Acesso da família</span><h2>Entrar no portal.</h2><p class="text-secondary">Use o CPF ou o WhatsApp cadastrado na escola e a sua senha.</p>
+    <form method="post">{% csrf_token %}{{ form.non_field_errors }}{% for field in form %}<div class="mb-3"><label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% for e in field.errors %}<div class="text-danger small mt-1">{{ e }}</div>{% endfor %}</div>{% endfor %}<button type="submit" class="btn btn-primary w-100">Entrar &nbsp; →</button></form>
+    <p class="login-note">Primeiro acesso ou esqueceu a senha? <a href="{% url 'portal:responsavel_esqueci' %}">Receba um link no WhatsApp</a> para criar uma senha nova.</p>
+  </section>
+</div>{% endblock %}

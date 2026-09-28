@@ -12,7 +12,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from atletas.models import Atleta
 from matriculas.models import Matricula
-from .forms import AlunoForm, MatriculaForm
+from .forms import AlunoForm, MatriculaForm, responsavel_divergente
 from .models import AcessoAcademia, TokenAcessoResponsavel
 
 
@@ -44,6 +44,11 @@ def redirecionamento_seguro(request, padrao):
     return redirect(padrao)
 
 
+# Com a assinatura do sistema suspensa, só estas telas do painel abrem: o
+# administrador vê a cobrança e paga. Nada é apagado.
+TELAS_LIBERADAS_NA_SUSPENSAO = {'minha_assinatura', 'assinatura_pagar', 'assinatura_status'}
+
+
 def academia_required(view):
     @login_required
     @wraps(view)
@@ -53,8 +58,31 @@ def academia_required(view):
             raise PermissionDenied('Solicite ao administrador o vínculo a uma academia ativa.')
         request.academia = acesso.academia
         request.administrador_academia = request.user.is_superuser or acesso.administrador
+        bloqueio = _bloqueio_da_assinatura(request)
+        if bloqueio is not None:
+            return bloqueio
         return view(request, *args, **kwargs)
     return wrapped
+
+
+def _bloqueio_da_assinatura(request):
+    """Aplica as regras do dia na assinatura (atraso, suspensão) e, se ela
+    estiver suspensa, fecha as telas operacionais. A equipe da plataforma
+    (superusuário) continua entrando, com o aviso no topo."""
+    from assinaturas.services import assinatura_da, atualizar_situacao
+
+    assinatura = assinatura_da(request.academia)
+    if assinatura is not None:
+        atualizar_situacao(assinatura)
+    request.assinatura_sistema = assinatura
+    if assinatura is None or not assinatura.suspensa or request.user.is_superuser:
+        return None
+    tela = request.resolver_match.url_name if request.resolver_match else ''
+    if tela in TELAS_LIBERADAS_NA_SUSPENSAO:
+        return None
+    if request.administrador_academia:
+        return redirect('portal:minha_assinatura')
+    return render(request, 'portal/assinatura_suspensa.html', status=403)
 
 
 @academia_required
@@ -90,12 +118,42 @@ def detalhe(request, pk):
     matriculas = aluno.matriculas.filter(academia=request.academia, modalidade__academia=request.academia)
     # Do not expose legacy cross-tenant relationships.
     matriculas = [m for m in matriculas if not m.turma_id or m.turma.academia_id == request.academia.pk]
+    from financeiro.models import Mensalidade
     from .forms_matricula import AtivacaoMatriculaForm
     for matricula in matriculas:
-        matricula.mensalidades_recentes = matricula.mensalidades.filter(academia=request.academia).order_by('-competencia')[:6]
         if not matricula.ativo and request.administrador_academia:
             matricula.ativacao_form = AtivacaoMatriculaForm(matricula=matricula, prefix=f'ativar-{matricula.pk}')
-    return render(request, 'portal/detalhe.html', {'aluno': aluno, 'responsavel': responsavel, 'matriculas': matriculas})
+
+    cobrancas = Mensalidade.objects.filter(
+        academia=request.academia, matricula__in=[m.pk for m in matriculas],
+    )
+    cobrancas.marcar_vencidas()
+    em_aberto = list(cobrancas.em_aberto().order_by('vencimento'))
+    hoje = timezone.localdate()
+    fichas = list(aluno.fichas_matricula.filter(academia=request.academia))
+    partes = aluno.nome.split()
+    return render(request, 'portal/detalhe.html', {
+        'aluno': aluno,
+        'iniciais': ''.join(p[0] for p in (partes[:1] + partes[1:][-1:])).upper() or '?',
+        'responsavel': responsavel,
+        'responsavel_divergente': responsavel_divergente(aluno) if responsavel else None,
+        'matriculas': matriculas,
+        'ativas': [m for m in matriculas if m.ativo],
+        'fichas': fichas,
+        'alertas_saude': fichas[0].alertas_saude if fichas else [],
+        'idade': _idade(aluno.data_nascimento, hoje),
+        'cobrancas_recentes': cobrancas.select_related('matricula__modalidade').order_by('-vencimento', '-pk')[:8],
+        'total_cobrancas': cobrancas.count(),
+        'em_aberto': sum((m.valor_devido(hoje) for m in em_aberto), start=0),
+        'atrasado': sum((m.valor_devido(hoje) for m in em_aberto if m.vencimento < hoje), start=0),
+        'proxima': next((m for m in em_aberto if m.vencimento >= hoje), None),
+    })
+
+
+def _idade(nascimento, hoje):
+    if nascimento is None:
+        return None
+    return hoje.year - nascimento.year - ((hoje.month, hoje.day) < (nascimento.month, nascimento.day))
 
 
 @academia_required
@@ -119,7 +177,8 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
         if matricula_form is not None:
             valid = matricula_form.is_valid() and valid
         if valid:
-            from financeiro.services import iniciar_cobranca
+            from financeiro.services import iniciar_cobranca, primeira_ativacao
+            from .services_matricula import cobrar_taxa_se_primeira
             try:
                 with transaction.atomic():
                     aluno = form.save()
@@ -141,13 +200,82 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
                         for ativa in aluno.matriculas.filter(ativo=True):
                             comecam.setdefault(ativa, None)
                     for inscricao_ativa, primeiro_vencimento in comecam.items():
+                        primeira = primeira_ativacao(inscricao_ativa)
                         iniciar_cobranca(inscricao_ativa, primeiro_vencimento)
+                        cobrar_taxa_se_primeira(inscricao_ativa, primeira)
             except ValidationError as error:
                 form.add_error(None, ValidationError(error.messages))
             else:
                 messages.success(request, 'Cadastro salvo com sucesso.')
                 return redirect('portal:detalhe', pk=aluno.pk)
     return render(request, 'portal/form.html', {'form': form, 'matricula_form': matricula_form, 'aluno': aluno})
+
+
+@academia_required
+@require_http_methods(['GET', 'POST'])
+def aluno_excluir(request, pk):
+    """Apaga o aluno de vez — só sem pagamento registrado e sem Pix gerado,
+    para não sumir com histórico financeiro. Com histórico, a tela oferece
+    inativar (a cobrança para, os dados ficam). O responsável é apagado
+    junto quando não tem outro aluno."""
+    if not request.administrador_academia:
+        raise PermissionDenied('Somente o administrador da academia exclui alunos.')
+    from financeiro.models import CobrancaPix, Mensalidade
+
+    aluno = get_object_or_404(Atleta, pk=pk, academia=request.academia)
+    cobrancas = Mensalidade.objects.filter(matricula__atleta=aluno)
+    pagas = cobrancas.filter(status='paga').count()
+    com_pix = CobrancaPix.objects.filter(mensalidade__matricula__atleta=aluno).exists()
+    responsavel = aluno.responsavel_financeiro
+    if responsavel is not None and responsavel.academia_id != request.academia.pk:
+        responsavel = None
+    responsavel_sai = responsavel is not None and not responsavel.atletas.exclude(pk=aluno.pk).exists()
+
+    if request.method == 'POST':
+        acao = request.POST.get('acao')
+        if acao == 'inativar':
+            aluno.status = 'inativo'
+            aluno.save(update_fields=['status'])
+            messages.success(request, f'{aluno.nome}: aluno inativado. As mensalidades novas deixam de ser geradas.')
+            return redirect('portal:detalhe', pk=aluno.pk)
+        if acao == 'excluir' and not (pagas or com_pix):
+            nome = aluno.nome
+            with transaction.atomic():
+                aluno.delete()
+                if responsavel_sai:
+                    responsavel.delete()
+            messages.success(request, f'{nome}: cadastro excluído.')
+            return redirect('portal:alunos')
+        messages.error(request, 'Este aluno tem pagamento ou Pix registrado e não pode ser excluído. Inative o aluno.')
+        return redirect('portal:excluir_aluno', pk=aluno.pk)
+
+    partes = aluno.nome.split()
+    return render(request, 'portal/aluno_excluir.html', {
+        'aluno': aluno,
+        'iniciais': ''.join(p[0] for p in (partes[:1] + partes[1:][-1:])).upper() or '?',
+        'responsavel': responsavel,
+        'responsavel_sai': responsavel_sai,
+        'matriculas': aluno.matriculas.count(),
+        'cobrancas': cobrancas.count(),
+        'fichas': aluno.fichas_matricula.count(),
+        'pagas': pagas,
+        'com_pix': com_pix,
+        'pode_excluir': not (pagas or com_pix),
+    })
+
+
+@academia_required
+def financeiro_recibo(request, pk):
+    from financeiro.models import Mensalidade
+    from .views_responsavel import resposta_recibo
+
+    mensalidade = get_object_or_404(
+        Mensalidade.objects.select_related(
+            'academia', 'matricula__atleta__responsavel_financeiro', 'matricula__turma', 'matricula__modalidade',
+        ),
+        pk=pk, academia=request.academia, status='paga',
+    )
+    return resposta_recibo(mensalidade)
 
 
 def pagina_publica(request):
@@ -185,7 +313,19 @@ def cadastros(request, tipo, pk=None, novo=False, excluir=False, detalhe=False):
         return render(request, 'portal/cadastros.html', {'objetos': objetos, 'tipo': tipo, 'titulo': titulo})
     if detalhe:
         obj = get_object_or_404(objetos, pk=pk)
-        return render(request, 'portal/cadastro_detalhe.html', {'obj': obj, 'tipo': tipo, 'titulo': titulo, 'singular': singular})
+        campo = {'unidades': 'unidade', 'professores': 'turma__docente', 'turmas': 'turma', 'modalidades': 'modalidade'}[tipo]
+        ativas = Matricula.objects.filter(academia=request.academia, ativo=True, **{campo: obj})
+        partes = obj.nome.split()
+        return render(request, 'portal/cadastro_detalhe.html', {
+            'obj': obj, 'tipo': tipo, 'titulo': titulo, 'singular': singular,
+            'iniciais': ''.join(p[0] for p in (partes[:1] + partes[1:][-1:])).upper() or '?',
+            'alunos_ativos': ativas.values('atleta').distinct().count(),
+            'matriculas_ativas': (
+                # Um aluno com duas matrículas ativas na turma aparece uma vez.
+                list({m.atleta_id: m for m in ativas.select_related('atleta').order_by('atleta__nome', '-pk')}.values())
+                if tipo == 'turmas' else None
+            ),
+        })
     if not request.administrador_academia:
         raise PermissionDenied('Somente o administrador da academia pode alterar estes cadastros.')
     instance = get_object_or_404(objetos, pk=pk) if pk else None
@@ -362,7 +502,7 @@ def financeiro_encerrar_cobranca(request, pk):
     else:
         messages.success(
             request,
-            f'Mensalidade {mensalidade.competencia:%m/%Y} de {mensalidade.matricula.atleta.nome}: '
+            f'{mensalidade.descricao} de {mensalidade.matricula.atleta.nome}: '
             f'{mensalidade.get_status_display().lower()}.',
         )
     return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
@@ -475,11 +615,8 @@ def financeiro_enviar_cobranca(request, pk):
         messages.success(request, f'Cobrança enviada automaticamente para {responsavel.nome} pelo WhatsApp.')
         return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
-    mensagem = (
-        f'Olá, {responsavel.nome}! A mensalidade de {aluno.nome} referente a '
-        f'{mensalidade.competencia:%m/%Y} está no valor de R$ {mensalidade.valor}, com vencimento '
-        f'em {mensalidade.vencimento:%d/%m/%Y}. Pague por aqui: {link}'
-    )
+    from integracoes.whatsapp.evolution import contexto_cobranca
+    mensagem = f'Olá, {responsavel.nome}! {contexto_cobranca(mensalidade)} Pague por aqui: {link}'
     return render(request, 'portal/acesso_responsavel_gerado.html', {
         'aluno': aluno, 'responsavel': responsavel, 'link': link, 'mensagem': mensagem,
     })

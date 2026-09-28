@@ -478,20 +478,6 @@ LOGGING = {
 
 
 # =============================================================================
-# ASSINATURA DO SISTEMA
-#
-# Chave Pix da plataforma, onde as academias pagam a mensalidade do sistema
-# (Configurações > Minha assinatura). Nome até 25 e cidade até 15 caracteres,
-# sem acento (vão no Pix). Formato da chave: CPF/CNPJ só números, e-mail,
-# celular +55DDDNUMERO ou chave aleatória.
-# =============================================================================
-
-PLATAFORMA_PIX_CHAVE = os.getenv("PLATAFORMA_PIX_CHAVE", "")
-PLATAFORMA_PIX_NOME = os.getenv("PLATAFORMA_PIX_NOME", "")
-PLATAFORMA_PIX_CIDADE = os.getenv("PLATAFORMA_PIX_CIDADE", "")
-
-
-# =============================================================================
 # SITE
 # =============================================================================
 

@@ -148,6 +148,8 @@
   const mTurma = document.getElementById('id_matricula-turma');
   const mValor = document.getElementById('id_matricula-valor_mensalidade');
   const mVenc = document.getElementById('id_matricula-dia_vencimento');
+  const mApos = document.getElementById('id_matricula-valor_apos_vencimento');
+  const mTaxa = document.getElementById('id_matricula-taxa_matricula');
   if (mTurma) {
     const options = [...mTurma.options];
     function filterTurmas() {
@@ -166,6 +168,8 @@
       if (!opt || !opt.value) return;
       if (mValor && !mValor.value && opt.dataset.valor) mValor.value = opt.dataset.valor;
       if (mVenc && !mVenc.value && opt.dataset.vencimento) mVenc.value = opt.dataset.vencimento;
+      if (mApos && !mApos.value && opt.dataset.valorApos) mApos.value = opt.dataset.valorApos;
+      if (mTaxa && !mTaxa.value && opt.dataset.taxa) mTaxa.value = opt.dataset.taxa;
     }
     mModalidade?.addEventListener('change', filterTurmas);
     mUnidade?.addEventListener('change', filterTurmas);

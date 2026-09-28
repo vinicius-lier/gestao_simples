@@ -91,6 +91,24 @@ class Turma(models.Model):
         blank=True,
         help_text='Valor de referência da mensalidade desta turma.',
     )
+    # Valor cobrado a partir do dia seguinte ao vencimento. Em branco: não muda.
+    valor_apos_vencimento = models.DecimalField(
+        'valor após o vencimento',
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Cobrado a partir do dia seguinte ao vencimento. Em branco: o valor não muda.',
+    )
+    # Cobrada uma vez, quando a matrícula é ativada no painel. Em branco: sem taxa.
+    taxa_matricula = models.DecimalField(
+        'taxa de matrícula',
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text='Gerada quando a matrícula é ativada. Em branco: sem taxa.',
+    )
     dia_vencimento = models.PositiveSmallIntegerField(default=10)
 
     ativo = models.BooleanField(default=True)
@@ -102,8 +120,9 @@ class Turma(models.Model):
         for campo in ('modalidade', 'unidade', 'docente'):
             if getattr(self, campo + '_id') and self.academia_id and getattr(self, campo).academia_id != self.academia_id:
                 erros[campo] = 'O cadastro pertence a outra academia.'
-        if self.valor_mensalidade is not None and self.valor_mensalidade < 0:
-            erros['valor_mensalidade'] = 'O valor não pode ser negativo.'
+        for campo in ('valor_mensalidade', 'valor_apos_vencimento', 'taxa_matricula'):
+            if getattr(self, campo) is not None and getattr(self, campo) < 0:
+                erros[campo] = 'O valor não pode ser negativo.'
         if not 1 <= self.dia_vencimento <= 31:
             erros['dia_vencimento'] = 'O dia de vencimento deve estar entre 1 e 31.'
         if erros:

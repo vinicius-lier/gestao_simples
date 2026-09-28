@@ -1,0 +1,1 @@
+<fieldset class="opcoes"><legend>{{ campo.label }}</legend>{% for opcao in campo %}<label for="{{ opcao.id_for_label }}">{{ opcao.tag }} {{ opcao.choice_label }}</label>{% endfor %}{% for e in campo.errors %}<span class="errorlist">{{ e }}</span>{% endfor %}</fieldset>

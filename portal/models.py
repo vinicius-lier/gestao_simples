@@ -4,7 +4,7 @@ from .models_experimentais import (
     ConfiguracaoExperimental,
     InscricaoExperimental,
 )
-from .models_matricula import ConviteMatricula
+from .models_matricula import ConviteMatricula, FichaMatricula
 from datetime import timedelta
 
 from django.conf import settings

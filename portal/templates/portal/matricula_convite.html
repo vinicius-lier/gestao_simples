@@ -10,33 +10,34 @@
   <form method="post" class="form-publica">{% csrf_token %}
     {{ form.non_field_errors }}
 
+    {% if form.termos %}
+      <div class="termos">{{ form.termos|linebreaksbr }}</div>
+      {% include 'portal/_aceite_publico.html' with campo=form.aceite_termos %}
+    {% endif %}
+
     <h3>Dados do aluno</h3>
     {% include 'portal/_campo_publico.html' with campo=form.nome %}
     {% include 'portal/_campo_publico.html' with campo=form.data_nascimento %}
-    {% include 'portal/_campo_publico.html' with campo=form.cpf %}
-    {% include 'portal/_campo_publico.html' with campo=form.faixa %}
-    {% include 'portal/_campo_publico.html' with campo=form.observacoes %}
+    {% include 'portal/_campo_publico.html' with campo=form.responsavel_nome %}
+    {% include 'portal/_campo_publico.html' with campo=form.telefone %}
+    {% include 'portal/_campo_publico.html' with campo=form.email %}
+    {% include 'portal/_campo_publico.html' with campo=form.autorizados_buscar %}
+    {% include 'portal/_opcoes_publico.html' with campo=form.vencimento_preferido %}
 
-    <h3>Responsável financeiro</h3>
-    <p class="check"><label for="{{ form.proprio_responsavel.id_for_label }}">{{ form.proprio_responsavel }} {{ form.proprio_responsavel.label }}</label></p>
-    <div id="bloco-responsavel">
-      {% include 'portal/_campo_publico.html' with campo=form.responsavel_nome %}
-      {% include 'portal/_campo_publico.html' with campo=form.responsavel_cpf %}
-      {% include 'portal/_campo_publico.html' with campo=form.responsavel_email %}
-    </div>
-    {% include 'portal/_campo_publico.html' with campo=form.responsavel_whatsapp %}
+    <h3>Saúde</h3>
+    {% for pergunta, detalhe in form.campos_saude %}
+      {% include 'portal/_opcoes_publico.html' with campo=pergunta %}
+      {% if detalhe %}{% include 'portal/_campo_publico.html' with campo=detalhe %}{% endif %}
+    {% endfor %}
+
+    {% if form.declaracao %}
+      <div class="termos">{{ form.declaracao|linebreaksbr }}</div>
+      {% include 'portal/_aceite_publico.html' with campo=form.aceite_declaracao %}
+    {% endif %}
 
     <p class="small">Os dados serão usados para o cadastro do aluno e a cobrança da mensalidade.</p>
     <button class="button red">Enviar matrícula</button>
   </form>
-  <script>
-    (function () {
-      var chk = document.getElementById('{{ form.proprio_responsavel.id_for_label }}');
-      var bloco = document.getElementById('bloco-responsavel');
-      function sync() { bloco.hidden = chk.checked; }
-      chk.addEventListener('change', sync); sync();
-    })();
-  </script>
 {% elif estado == 'expirado' %}
   <h2>Link expirado</h2><p>Este link de matrícula expirou. Peça um novo ao professor.</p>
 {% elif estado == 'usado' %}

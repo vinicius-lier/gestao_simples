@@ -6,6 +6,7 @@ from .models import CobrancaPix, ContaRecebimento, EventoWebhook, LembreteCobran
 class MensalidadeAdmin(admin.ModelAdmin):
     list_display = (
         "matricula",
+        "tipo",
         "competencia",
         "valor",
         "vencimento",
@@ -21,6 +22,7 @@ class MensalidadeAdmin(admin.ModelAdmin):
 
     list_filter = (
         "academia",
+        "tipo",
         "status",
         "competencia",
     )

@@ -32,16 +32,39 @@ def _extrair_message_id(resp):
     return ""
 
 
+# {cobranca}: "mensalidade de Ana (10/2026)" ou "taxa de matrícula de Ana".
 _CONTEXTO_ESTAGIO = {
-    "5_dias": "Faltam 5 dias para o vencimento da mensalidade de {aluno} ({competencia}), "
+    "5_dias": "Faltam 5 dias para o vencimento da {cobranca}, "
               "no valor de R$ {valor}, em {vencimento}.",
-    "1_dia": "A mensalidade de {aluno} ({competencia}), no valor de R$ {valor}, "
+    "1_dia": "A {cobranca}, no valor de R$ {valor}, "
              "vence amanhã ({vencimento}).",
-    "vencimento": "A mensalidade de {aluno} ({competencia}), no valor de R$ {valor}, "
+    "vencimento": "A {cobranca}, no valor de R$ {valor}, "
                   "vence hoje ({vencimento}).",
-    "atrasada": "A mensalidade de {aluno} ({competencia}), no valor de R$ {valor}, "
+    "atrasada": "A {cobranca}, no valor de R$ {valor}, "
                 "venceu em {vencimento} e está em aberto.",
 }
+
+
+def contexto_cobranca(mensalidade, estagio=None):
+    """Frase da cobrança para a mensagem do responsável, com o valor devido
+    hoje e, enquanto em dia, o aviso de que ele muda após o vencimento."""
+    aluno = mensalidade.matricula.atleta.nome
+    if mensalidade.eh_taxa_matricula:
+        cobranca = f"taxa de matrícula de {aluno}"
+    else:
+        cobranca = f"mensalidade de {aluno} ({mensalidade.competencia:%m/%Y})"
+    campos = {
+        "cobranca": cobranca,
+        "valor": mensalidade.valor_devido(),
+        "vencimento": f"{mensalidade.vencimento:%d/%m/%Y}",
+    }
+    molde = _CONTEXTO_ESTAGIO.get(estagio) or (
+        "A {cobranca} está no valor de R$ {valor}, com vencimento em {vencimento}."
+    )
+    texto = molde.format(**campos)
+    if mensalidade.muda_apos_vencimento:
+        texto += f" Após o vencimento, o valor passa a R$ {mensalidade.valor_apos_vencimento}."
+    return texto
 
 
 class EvolutionWhatsAppProvider(WhatsAppProvider):
@@ -116,28 +139,17 @@ class EvolutionWhatsAppProvider(WhatsAppProvider):
     # --------------------------------------------------------------- contrato
     def enviar_cobranca(self, responsavel, mensalidade, link, estagio=None):
         aluno = mensalidade.matricula.atleta.nome
-        campos = {
-            "aluno": aluno,
-            "competencia": f"{mensalidade.competencia:%m/%Y}",
-            "valor": mensalidade.valor,
-            "vencimento": f"{mensalidade.vencimento:%d/%m/%Y}",
-        }
-        molde = _CONTEXTO_ESTAGIO.get(estagio)
-        if molde is None:
-            molde = (
-                "A mensalidade de {aluno} referente a {competencia} está no "
-                "valor de R$ {valor}, com vencimento em {vencimento}."
-            )
-        contexto = molde.format(**campos)
+        contexto = contexto_cobranca(mensalidade, estagio)
+        item = "taxa de matrícula" if mensalidade.eh_taxa_matricula else "mensalidade"
         return self._enviar_com_botao(
             responsavel.whatsapp,
-            titulo=f"Mensalidade de {aluno}",
+            titulo=f"{item.capitalize()} de {aluno}",
             descricao=(
                 f"Olá, {responsavel.nome}! {contexto}\n\n"
-                f"Toque em *Pagar mensalidade* para pagar por Pix. "
+                f"Toque em *Pagar {item}* para pagar por Pix. "
                 f"Se o botão não aparecer, use este link: {link}"
             ),
-            rotulo="Pagar mensalidade",
+            rotulo=f"Pagar {item}",
             link=link,
             texto_simples=f"Olá, {responsavel.nome}! {contexto} Pague por aqui: {link}",
         )
@@ -147,14 +159,16 @@ class EvolutionWhatsAppProvider(WhatsAppProvider):
             responsavel.whatsapp,
             titulo="Portal de pagamentos",
             descricao=(
-                f"Olá, {responsavel.nome}! Acompanhe as mensalidades e pague por Pix.\n\n"
+                f"Olá, {responsavel.nome}! Acompanhe as mensalidades e pague por Pix. "
+                f"No primeiro acesso, crie uma senha para entrar quando quiser.\n\n"
                 f"Se o botão não aparecer, use este link: {link}"
             ),
             rotulo="Abrir portal",
             link=link,
             texto_simples=(
                 f"Olá, {responsavel.nome}! Aqui está o link para acompanhar as "
-                f"mensalidades e pagar: {link}"
+                f"mensalidades e pagar (no primeiro acesso, crie uma senha para "
+                f"entrar quando quiser): {link}"
             ),
         )
 

@@ -1,0 +1,19 @@
+{# Lista de cobranças (mensalidades e taxa de matrícula). No celular cada uma vira um cartão: descrição e situação em cima, valor e ação embaixo. Recebe `cobrancas` e `familia` (portal da família: botões Pagar/Baixar recibo; senão, Recibo do painel). #}
+<ul class="cobrancas">
+  {% for c in cobrancas %}
+  <li class="cobranca cobranca-{{ c.status }}">
+    <div class="cobranca-info">
+      <strong>{{ c.descricao }}</strong>
+      <span>{% if c.status == 'paga' and c.pago_em %}Paga em {{ c.pago_em|date:'d/m/Y' }}{% else %}Vence em {{ c.vencimento|date:'d/m/Y' }}{% endif %}</span>
+    </div>
+    <div class="cobranca-valor">R$ {{ c.valor_atual }}{% if c.muda_apos_vencimento %}<small>Depois do vencimento: R$ {{ c.valor_apos_vencimento }}</small>{% endif %}</div>
+    <span class="status-badge status-{{ c.status }}">{{ c.get_status_display }}</span>
+    <div class="cobranca-acao">
+      {% if familia %}
+        {% if c.status == 'pendente' or c.status == 'vencida' %}<a class="btn btn-primary btn-sm" href="{% url 'portal:responsavel_pagar' c.pk %}">Pagar</a>
+        {% elif c.status == 'paga' %}<a class="btn btn-outline-primary btn-sm" href="{% url 'portal:responsavel_recibo' c.pk %}">Baixar recibo</a>{% endif %}
+      {% elif c.status == 'paga' %}<a class="btn btn-outline-primary btn-sm" href="{% url 'portal:financeiro_recibo' c.pk %}">Recibo</a>{% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
