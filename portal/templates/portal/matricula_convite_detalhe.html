@@ -1,7 +1,7 @@
 {% extends 'portal/base.html' %}{% block title %}Convite de matrícula{% endblock %}{% block content %}
 <p><a href="{% url 'portal:matricula_convites' %}">← Convites de matrícula</a></p>
 <h1>Convite de matrícula</h1>
-<p class="text-secondary">{{ convite.get_status_display }} · criado em {{ convite.criado_em|date:'d/m/Y H:i' }} · expira {{ convite.expira_em|date:'d/m/Y H:i' }}</p>
+<p class="text-secondary">{{ convite.get_status_display }} · criado em {{ convite.criado_em|date:'d/m/Y H:i' }}{% if convite.permanente %} · link permanente do site{% elif convite.link_origem_id %} · enviado pelo <a href="{% url 'portal:matricula_convite_detalhe' convite.link_origem_id %}">link do site</a>{% else %} · expira {{ convite.expira_em|date:'d/m/Y H:i' }}{% endif %}</p>
 
 <article class="card p-3 mb-3">
   <p class="mb-1"><strong>Turma:</strong> {{ convite.turma|default:convite.modalidade }}{% if convite.turma.unidade %} — {{ convite.turma.unidade }}{% endif %}</p>
@@ -10,7 +10,15 @@
   {% if convite.observacao_interna %}<p class="mb-0"><strong>Obs. interna:</strong> {{ convite.observacao_interna }}</p>{% endif %}
 </article>
 
-{% if convite.aberto_para_preenchimento %}
+{% if convite.permanente %}
+<div class="card p-3 mb-3">
+  <label for="link-site" class="form-label"><strong>Link permanente do site</strong></label>
+  <input id="link-site" class="form-control" value="{{ link_site }}" readonly onclick="this.select()">
+  <small class="text-secondary">Mande este link para qualquer interessado ou divulgue nas redes: ele também aparece no site da escola (menu "Matrícula") e não expira. Para fechar as matrículas pelo site, cancele este link.</small>
+  <p class="mb-0 mt-3"><strong>{{ respostas|length }}</strong> ficha{{ respostas|length|pluralize }} recebida{{ respostas|length|pluralize }} por este link{% if respostas %}:{% endif %}</p>
+  {% if respostas %}<ul class="small mb-0 mt-1">{% for r in respostas %}<li><a href="{% url 'portal:matricula_convite_detalhe' r.pk %}">{{ r.atleta.nome|default:'(sem nome)' }}</a> · {{ r.get_status_display }} · {{ r.preenchido_em|date:'d/m/Y H:i'|default:'' }}</li>{% endfor %}</ul>{% endif %}
+</div>
+{% elif convite.aberto_para_preenchimento %}
 <div class="card p-3 mb-3">
   <label for="link" class="form-label"><strong>Link para enviar à família</strong></label>
   <input id="link" class="form-control" value="{{ link }}" readonly onclick="this.select()">

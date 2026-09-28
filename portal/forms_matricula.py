@@ -4,7 +4,7 @@ from django.utils import timezone
 
 from academias.models import Unidade
 from modalidades.models import Modalidade, Turma
-from .forms import _nao_negativo, digits
+from .forms import _nao_negativo, cpf_valido, digits
 from .models import ConviteMatricula
 from .models_matricula import (
     ACEITE_DECLARACAO, ACEITE_TERMOS, PERGUNTAS_SAUDE, VENCIMENTOS_FICHA,
@@ -22,11 +22,14 @@ def _estilo_painel(form):
 
 
 class ConviteMatriculaForm(forms.ModelForm):
-    validade_dias = forms.IntegerField(label='Validade do link (dias)', min_value=1, max_value=60, initial=7)
+    validade_dias = forms.IntegerField(
+        label='Validade do link (dias)', min_value=1, max_value=60, initial=7, required=False,
+        help_text='Não vale para o link permanente, que fica aberto até ser cancelado.',
+    )
 
     class Meta:
         model = ConviteMatricula
-        fields = ['unidade', 'modalidade', 'turma', 'convidado_nome', 'convidado_whatsapp',
+        fields = ['permanente', 'unidade', 'modalidade', 'turma', 'convidado_nome', 'convidado_whatsapp',
                   'observacao_interna', 'valor_mensalidade', 'valor_apos_vencimento', 'taxa_matricula',
                   'dia_vencimento']
 
@@ -40,7 +43,8 @@ class ConviteMatriculaForm(forms.ModelForm):
         self.fields['turma'].queryset = Turma.objects.filter(
             academia=academia, ativo=True, modalidade__academia=academia
         ).select_related('modalidade', 'unidade')
-        self.fields['turma'].required = True
+        self.fields['turma'].required = False
+        self.fields['turma'].empty_label = 'Sem turma (informar o valor abaixo)'
         self.fields['valor_mensalidade'].required = False
         self.fields['dia_vencimento'].required = False
         self.fields['valor_mensalidade'].help_text = 'Em branco: usa o valor da turma.'
@@ -90,6 +94,10 @@ class ConviteMatriculaForm(forms.ModelForm):
                 data['unidade'] = turma.unidade
             if data.get('valor_mensalidade') is None and turma.valor_mensalidade is None:
                 self.add_error('valor_mensalidade', 'A turma não tem valor definido — informe o valor da mensalidade.')
+        elif 'turma' in data and data.get('valor_mensalidade') is None:
+            self.add_error('valor_mensalidade', 'Sem turma, informe o valor da mensalidade.')
+        if not data.get('permanente') and not data.get('validade_dias'):
+            self.add_error('validade_dias', 'Informe por quantos dias o link vale.')
         return data
 
     def save(self, criado_por=None):
@@ -107,7 +115,8 @@ class ConviteMatriculaForm(forms.ModelForm):
             valor_apos_vencimento=d.get('valor_apos_vencimento'),
             taxa_matricula=d.get('taxa_matricula'),
             dia_vencimento=d.get('dia_vencimento'),
-            validade_dias=d['validade_dias'],
+            validade_dias=d.get('validade_dias') or 7,
+            permanente=bool(d.get('permanente')),
         )
 
 
@@ -251,6 +260,11 @@ class MatriculaPublicaForm(forms.Form):
         widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
     )
     responsavel_nome = forms.CharField(label='Nome do (a) responsável', max_length=150)
+    responsavel_cpf = forms.CharField(
+        label='CPF do (a) responsável financeiro', max_length=14,
+        help_text='De quem paga as mensalidades (ou do aluno, se ele mesmo paga). Vai na cobrança do Pix.',
+        widget=forms.TextInput(attrs={'inputmode': 'numeric', 'autocomplete': 'off'}),
+    )
     telefone = forms.CharField(
         label='Telefone para contato', max_length=20,
         help_text='WhatsApp com DDD. As cobranças das mensalidades chegam por ele.',
@@ -304,6 +318,12 @@ class MatriculaPublicaForm(forms.Form):
         if value and value > timezone.localdate():
             raise ValidationError('A data de nascimento não pode estar no futuro.')
         return value
+
+    def clean_responsavel_cpf(self):
+        value = self.cleaned_data.get('responsavel_cpf', '')
+        if not cpf_valido(value):
+            raise ValidationError('CPF inválido. Confira os 11 números.')
+        return digits(value)
 
     def clean_telefone(self):
         value = self.cleaned_data.get('telefone', '')

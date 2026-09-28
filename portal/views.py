@@ -282,11 +282,12 @@ def financeiro_recibo(request, pk):
 
 
 def pagina_publica(request):
-    from .models import PaginaPublica, FotoPublica
+    from .models import ConviteMatricula, FotoPublica, PaginaPublica
     from .views_experimentais import contexto_publico
     return render(request, 'portal/publica.html', {
         **contexto_publico(request),
         'pagina': PaginaPublica.objects.order_by('pk').first(),
+        'link_matricula': ConviteMatricula.link_do_site() is not None,
         'fotos': FotoPublica.objects.filter(publicada=True),
     })
 

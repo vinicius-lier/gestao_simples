@@ -19,6 +19,7 @@
     {% include 'portal/_campo_publico.html' with campo=form.nome %}
     {% include 'portal/_campo_publico.html' with campo=form.data_nascimento %}
     {% include 'portal/_campo_publico.html' with campo=form.responsavel_nome %}
+    {% include 'portal/_campo_publico.html' with campo=form.responsavel_cpf %}
     {% include 'portal/_campo_publico.html' with campo=form.telefone %}
     {% include 'portal/_campo_publico.html' with campo=form.email %}
     {% include 'portal/_campo_publico.html' with campo=form.autorizados_buscar %}
@@ -42,6 +43,8 @@
   <h2>Link expirado</h2><p>Este link de matrícula expirou. Peça um novo ao professor.</p>
 {% elif estado == 'usado' %}
   <h2>Matrícula já enviada</h2><p>Os dados deste link já foram preenchidos. Se precisar corrigir algo, fale com a escola.</p>
+{% elif estado == 'fechada' %}
+  <h2>Matrículas pelo site fechadas</h2><p>No momento as matrículas não estão abertas por aqui. Fale com a escola para saber das turmas e vagas.</p>
 {% else %}
   <h2>Link inválido</h2><p>Não encontramos este convite de matrícula. Confira o endereço com o professor.</p>
 {% endif %}

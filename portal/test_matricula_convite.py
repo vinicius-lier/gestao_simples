@@ -44,6 +44,7 @@ class BaseConvite(TestCase):
         não tem texto de termos cadastrado)."""
         base = dict(
             nome='Aluno Teste', data_nascimento='2015-05-04', responsavel_nome='Mãe Teste',
+            responsavel_cpf='529.982.247-25',
             telefone='(21) 99999-8888', email='mae@teste.com', autorizados_buscar='Mãe e avó',
             vencimento_preferido='10',
         )
@@ -116,6 +117,16 @@ class FormularioPublico(BaseConvite):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(Atleta.objects.count(), 0)
         self.assertIn('responsavel_nome', resp.context['form'].errors)
+
+    def test_cpf_do_responsavel_e_obrigatorio_e_vai_para_o_cadastro(self):
+        c = self.convite()
+        for cpf in ('', '123', '111.111.111-11'):
+            resp = self.client.post(f'/matricula/{c.token}/', self.dados_familia(responsavel_cpf=cpf))
+            self.assertIn('responsavel_cpf', resp.context['form'].errors, cpf)
+        self.assertEqual(Atleta.objects.count(), 0)
+        self.client.post(f'/matricula/{c.token}/', self.dados_familia())
+        self.assertEqual(Responsavel.objects.get().cpf, '52998224725')
+        self.assertEqual(FichaMatricula.objects.get().responsavel_cpf, '52998224725')
 
     def test_pergunta_de_saude_sem_resposta_e_recusada(self):
         c = self.convite()
@@ -249,3 +260,64 @@ class AvisoParaAEscola(BaseConvite):
         self.assertEqual(resp.status_code, 302)
         c.refresh_from_db()
         self.assertEqual(c.status, ConviteMatricula.PREENCHIDO)
+
+
+class LinkPermanenteDoSite(BaseConvite):
+    """A ficha no site (/matricula/): um link que várias famílias usam."""
+
+    def criar_link(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post('/matriculas/convites/', {
+            'permanente': 'on', 'unidade': self.unit.pk, 'modalidade': self.mod.pk, 'turma': '',
+            'valor_mensalidade': '120', 'valor_apos_vencimento': '130', 'dia_vencimento': '15',
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.client.logout()
+        return ConviteMatricula.objects.get(permanente=True)
+
+    def test_sem_link_o_site_diz_que_esta_fechado(self):
+        resp = self.client.get('/matricula/')
+        self.assertContains(resp, 'Matrículas pelo site fechadas')
+        self.assertNotContains(self.client.get('/'), 'Fazer a matrícula')
+
+    def test_varias_familias_pelo_mesmo_link(self):
+        link = self.criar_link()
+        self.assertIsNone(link.turma)
+        self.assertContains(self.client.get('/'), 'Fazer a matrícula')
+        self.assertContains(self.client.get('/matricula/'), 'Ficha de matrícula')
+
+        for nome, telefone, cpf in (('Ana Lima', '21911112222', '11144477735'), ('Beto Souza', '21933334444', '22255588846')):
+            resp = self.client.post('/matricula/', self.dados_familia(nome=nome, telefone=telefone, responsavel_cpf=cpf, responsavel_nome=f'Resp {nome}'))
+            self.assertRedirects(resp, '/matricula/recebido/', fetch_redirect_response=False)
+
+        link.refresh_from_db()
+        self.assertEqual(link.status, ConviteMatricula.PENDENTE)  # continua aberto
+        respostas = ConviteMatricula.objects.filter(link_origem=link)
+        self.assertEqual(respostas.count(), 2)
+        self.assertEqual(set(respostas.values_list('status', flat=True)), {ConviteMatricula.PREENCHIDO})
+        for matricula in Matricula.objects.all():
+            self.assertFalse(matricula.ativo)  # a escola confere e ativa
+            self.assertIsNone(matricula.turma)
+            self.assertEqual((matricula.valor_mensalidade, matricula.valor_apos_vencimento), (Decimal('120.00'), Decimal('130.00')))
+            self.assertEqual(matricula.dia_vencimento, 15)  # o dia do link vale sobre a escolha da família
+        self.assertEqual(FichaMatricula.objects.count(), 2)
+
+        self.client.force_login(self.admin)
+        detalhe = self.client.get(f'/matriculas/convites/{link.pk}/')
+        self.assertContains(detalhe, 'Link permanente do site')
+        self.assertContains(detalhe, 'Ana Lima')
+
+    def test_cancelar_fecha_a_matricula_pelo_site(self):
+        link = self.criar_link()
+        self.client.force_login(self.admin)
+        self.client.post(f'/matriculas/convites/{link.pk}/acao/', {'acao': 'cancelar'})
+        self.client.logout()
+        self.assertContains(self.client.get('/matricula/'), 'Matrículas pelo site fechadas')
+
+    def test_sem_turma_exige_valor(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post('/matriculas/convites/', {
+            'permanente': 'on', 'unidade': self.unit.pk, 'modalidade': self.mod.pk, 'turma': '',
+        })
+        self.assertIn('valor_mensalidade', resp.context['form'].errors)
+        self.assertFalse(ConviteMatricula.objects.exists())

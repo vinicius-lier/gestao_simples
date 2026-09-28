@@ -15,7 +15,7 @@
   <dl class="row mt-3 mb-0 small">
     <dt class="col-sm-4">Nome informado</dt><dd class="col-sm-8">{{ ficha.nome_aluno }}</dd>
     <dt class="col-sm-4">Data de nascimento</dt><dd class="col-sm-8">{{ ficha.data_nascimento_informada|default:'—' }}</dd>
-    {% if ficha.responsavel_nome %}<dt class="col-sm-4">Responsável</dt><dd class="col-sm-8">{{ ficha.responsavel_nome }}</dd>{% endif %}
+    {% if ficha.responsavel_nome %}<dt class="col-sm-4">Responsável</dt><dd class="col-sm-8">{{ ficha.responsavel_nome }}</dd>{% endif %}{% if ficha.responsavel_cpf %}<dt class="col-sm-4">CPF do responsável</dt><dd class="col-sm-8">{{ ficha.responsavel_cpf }}</dd>{% endif %}
     <dt class="col-sm-4">Telefone para contato</dt><dd class="col-sm-8">{{ ficha.telefone_contato|default:'—' }}</dd>
     <dt class="col-sm-4">E-mail para contato</dt><dd class="col-sm-8">{{ ficha.email_contato|default:'—' }}</dd>
     <dt class="col-sm-4">Autorizados a buscar</dt><dd class="col-sm-8">{{ ficha.autorizados_buscar|linebreaksbr|default:'—' }}</dd>

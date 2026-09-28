@@ -13,6 +13,7 @@ urlpatterns = [
     path('agenda/<int:pk>/', views_experimentais.agenda, name='experimental_detalhe'),
     path('agenda/inscricoes/<int:pk>/status/', views_experimentais.status, name='experimental_status'),
     # Convite de matrícula — link que o professor envia para a família preencher.
+    path('matricula/', views_matricula.matricula_site, name='matricula_site'),
     path('matricula/recebido/', views_matricula.matricula_convite_recebido, name='matricula_convite_recebido'),
     path('matricula/<str:token>/', views_matricula.matricula_convite, name='matricula_convite'),
     path('login/', auth_views.LoginView.as_view(template_name='portal/login.html'), name='login'),

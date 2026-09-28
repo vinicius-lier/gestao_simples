@@ -39,6 +39,18 @@ class ConviteMatricula(models.Model):
     taxa_matricula = models.DecimalField('Taxa de matrícula (R$)', max_digits=10, decimal_places=2, null=True, blank=True)
     dia_vencimento = models.PositiveSmallIntegerField('Dia de vencimento', null=True, blank=True)
 
+    # Link permanente do site: várias famílias usam o mesmo link, que não
+    # expira. Cada envio vira um convite próprio (``link_origem``), com as
+    # mesmas condições, e segue a revisão normal no painel.
+    permanente = models.BooleanField(
+        'link permanente do site', default=False,
+        help_text='O mesmo link serve para várias famílias e aparece no site da escola (/matricula/).',
+    )
+    link_origem = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True, related_name='respostas',
+        verbose_name='link permanente de origem',
+    )
+
     convidado_nome = models.CharField('Nome do aluno (referência)', max_length=150, blank=True)
     convidado_whatsapp = models.CharField('WhatsApp da família (opcional)', max_length=20, blank=True)
     observacao_interna = models.CharField('Observação interna', max_length=255, blank=True)
@@ -67,7 +79,7 @@ class ConviteMatricula(models.Model):
     def gerar(cls, *, academia, modalidade, turma=None, unidade=None, criado_por=None,
               convidado_nome='', convidado_whatsapp='', observacao_interna='',
               valor_mensalidade=None, valor_apos_vencimento=None, taxa_matricula=None,
-              dia_vencimento=None, validade_dias=7):
+              dia_vencimento=None, validade_dias=7, permanente=False):
         return cls.objects.create(
             academia=academia,
             unidade=unidade,
@@ -82,7 +94,9 @@ class ConviteMatricula(models.Model):
             taxa_matricula=taxa_matricula,
             dia_vencimento=dia_vencimento,
             token=secrets.token_urlsafe(32),
-            expira_em=timezone.now() + timedelta(days=validade_dias),
+            permanente=permanente,
+            # O permanente não expira (a data só preenche o campo obrigatório).
+            expira_em=timezone.now() + timedelta(days=36500 if permanente else validade_dias),
         )
 
     @property
@@ -91,7 +105,27 @@ class ConviteMatricula(models.Model):
 
     @property
     def aberto_para_preenchimento(self):
+        if self.permanente:
+            return self.status == self.PENDENTE and self.academia.ativo
         return self.status == self.PENDENTE and not self.expirado
+
+    @classmethod
+    def link_do_site(cls):
+        """O link permanente em uso no site (o mais recente ainda aberto)."""
+        return cls.objects.filter(
+            permanente=True, status=cls.PENDENTE, academia__ativo=True,
+        ).select_related('academia', 'modalidade', 'turma', 'turma__unidade', 'unidade').order_by('-criado_em', '-pk').first()
+
+    def nova_resposta(self):
+        """Um convite só para este envio do link permanente, com as mesmas
+        condições; é ele que é preenchido, revisado e ativado."""
+        return ConviteMatricula.objects.create(
+            academia=self.academia, unidade=self.unidade, modalidade=self.modalidade, turma=self.turma,
+            valor_mensalidade=self.valor_mensalidade, valor_apos_vencimento=self.valor_apos_vencimento,
+            taxa_matricula=self.taxa_matricula, dia_vencimento=self.dia_vencimento,
+            criado_por=self.criado_por, observacao_interna=self.observacao_interna,
+            link_origem=self, token=secrets.token_urlsafe(32), expira_em=timezone.now() + timedelta(days=1),
+        )
 
     def url(self):
         return reverse('portal:matricula_convite', args=[self.token])
@@ -193,6 +227,7 @@ class FichaMatricula(models.Model):
     # Como foi respondido (a planilha tem datas digitadas de vários jeitos).
     data_nascimento_informada = models.CharField('data de nascimento', max_length=30, blank=True)
     responsavel_nome = models.CharField('nome do responsável', max_length=150, blank=True)
+    responsavel_cpf = models.CharField('CPF do responsável', max_length=14, blank=True)
     telefone_contato = models.CharField('telefone para contato', max_length=150, blank=True)
     email_contato = models.CharField('e-mail para contato', max_length=254, blank=True)
     autorizados_buscar = models.TextField('quem está autorizado a buscar', blank=True)

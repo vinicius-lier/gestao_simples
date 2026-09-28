@@ -46,6 +46,7 @@ class Cenario(TestCase):
     def ficha(self, **kw):
         dados = dict(
             nome='Ana  Souza', data_nascimento='2016-03-02', responsavel_nome='Maria Souza',
+            responsavel_cpf='529.982.247-25',
             telefone='(21) 98888-7777', email='maria@teste.com', autorizados_buscar='Maria (mãe)',
             vencimento_preferido='15',
         )
@@ -124,7 +125,7 @@ class FichaNoConviteTests(Cenario):
         self.assertContains(revisao, 'Atenção à saúde')
 
         # Aba Cadastro: dados do aluno, com o dia preferido de vencimento;
-        # as respostas da ficha ficam na aba "Ficha e histórico".
+        # as respostas da ficha ficam na aba "Questionário de saúde".
         cadastro = self.client.get(f'/alunos/{aluno.pk}/')
         self.assertContains(cadastro, 'Dia preferido de vencimento')
         self.assertContains(cadastro, 'Dia 15')

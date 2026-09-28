@@ -2,6 +2,7 @@ import logging
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
@@ -25,7 +26,10 @@ def convites(request):
     form = ConviteMatriculaForm(request.POST or None, academia=request.academia)
     if request.method == 'POST' and form.is_valid():
         convite = form.save(criado_por=request.user)
-        messages.success(request, 'Link de matrícula gerado. Copie e envie para a família.')
+        if convite.permanente:
+            messages.success(request, 'Link permanente criado: a ficha já aparece no site da escola, em /matricula/.')
+        else:
+            messages.success(request, 'Link de matrícula gerado. Copie e envie para a família.')
         return redirect('portal:matricula_convite_detalhe', pk=convite.pk)
     return render(request, 'portal/matricula_convites.html', {'form': form, 'convites': lista})
 
@@ -79,6 +83,8 @@ def convite_detalhe(request, pk):
     return render(request, 'portal/matricula_convite_detalhe.html', {
         'convite': convite, 'link': link, 'ativacao_form': ativacao_form,
         'ficha': FichaMatricula.objects.filter(convite=convite).first(),
+        'link_site': request.build_absolute_uri(reverse('portal:matricula_site')),
+        'respostas': list(convite.respostas.select_related('atleta').order_by('-preenchido_em', '-pk')) if convite.permanente else [],
     })
 
 
@@ -142,8 +148,20 @@ def matricula_convite(request, token):
     convite = ConviteMatricula.objects.select_related(
         'academia', 'modalidade', 'turma', 'turma__unidade', 'unidade'
     ).filter(token=token).first()
+    return _ficha_publica(request, convite)
+
+
+@require_http_methods(['GET', 'POST'])
+def matricula_site(request):
+    """A ficha de matrícula no site da escola (/matricula/): o link
+    permanente em uso, para mandar a qualquer interessado."""
+    return _ficha_publica(request, ConviteMatricula.link_do_site(), no_site=True)
+
+
+def _ficha_publica(request, convite, no_site=False):
     if convite is None:
-        return render(request, 'portal/matricula_convite.html', {'estado': 'invalido'}, status=404)
+        estado = 'fechada' if no_site else 'invalido'
+        return render(request, 'portal/matricula_convite.html', {'estado': estado}, status=200 if no_site else 404)
     if not convite.aberto_para_preenchimento:
         expirado = convite.status == ConviteMatricula.PENDENTE and convite.expirado
         return render(request, 'portal/matricula_convite.html',
@@ -152,12 +170,16 @@ def matricula_convite(request, token):
     form = MatriculaPublicaForm(request.POST or None, academia=convite.academia)
     if request.method == 'POST' and form.is_valid():
         try:
-            efetivar_convite(convite, form.cleaned_data)
+            with transaction.atomic():
+                # O link permanente continua aberto: cada família preenche
+                # um convite só dela, com as mesmas condições.
+                preenchido = convite.nova_resposta() if convite.permanente else convite
+                efetivar_convite(preenchido, form.cleaned_data)
         except ValidationError as error:
             form.add_error(None, error)
         else:
-            _avisar_matricula_recebida(request, convite)
-            request.session['matricula_convite_ok'] = str(convite.turma or convite.modalidade)
+            _avisar_matricula_recebida(request, preenchido)
+            request.session['matricula_convite_ok'] = str(preenchido.turma or preenchido.modalidade)
             return redirect('portal:matricula_convite_recebido')
     return render(request, 'portal/matricula_convite.html', {'estado': 'ok', 'convite': convite, 'form': form})
 

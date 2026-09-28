@@ -60,6 +60,7 @@ def registrar_ficha(convite, atleta, dados):
         nome_aluno=dados['nome'],
         data_nascimento_informada=f'{nascimento:%d/%m/%Y}' if nascimento else '',
         responsavel_nome=dados.get('responsavel_nome', ''),
+        responsavel_cpf=dados.get('responsavel_cpf', ''),
         telefone_contato=dados.get('telefone', ''),
         email_contato=dados.get('email', ''),
         autorizados_buscar=dados.get('autorizados_buscar', '').strip(),
@@ -81,7 +82,7 @@ def efetivar_convite(convite, dados):
         raise ValidationError('Este link não está mais disponível.')
 
     responsavel = _achar_ou_criar_responsavel(
-        convite.academia, nome=dados['responsavel_nome'], cpf='',
+        convite.academia, nome=dados['responsavel_nome'], cpf=dados.get('responsavel_cpf', ''),
         whatsapp=dados['telefone'], email=dados.get('email', ''),
     )
 

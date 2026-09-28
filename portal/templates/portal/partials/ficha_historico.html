@@ -1,4 +1,4 @@
-{# Aba "Ficha e histórico" do perfil do aluno: as respostas da ficha de matrícula (colunas G em diante do formulário da escola). Recebe `ficha`. O dia preferido de vencimento fica na aba Cadastro. #}
+{# Aba "Questionário de saúde" do perfil do aluno: as respostas da ficha de matrícula (colunas G em diante do formulário da escola). Recebe `ficha`. O dia preferido de vencimento fica na aba Cadastro. #}
 <section class="perfil-secao">
   <div class="d-flex justify-content-between align-items-baseline flex-wrap gap-2 mb-3">
     <h2 class="h5 mb-0">Ficha de matrícula</h2>
@@ -34,7 +34,7 @@
           <dl class="perfil-dados mt-2">
             <dt>Nome</dt><dd>{{ ficha.nome_aluno }}</dd>
             <dt>Data de nascimento</dt><dd>{{ ficha.data_nascimento_informada|default:'—' }}</dd>
-            {% if ficha.responsavel_nome %}<dt>Responsável</dt><dd>{{ ficha.responsavel_nome }}</dd>{% endif %}
+            {% if ficha.responsavel_nome %}<dt>Responsável</dt><dd>{{ ficha.responsavel_nome }}</dd>{% endif %}{% if ficha.responsavel_cpf %}<dt>CPF do responsável</dt><dd>{{ ficha.responsavel_cpf }}</dd>{% endif %}
             <dt>Telefone para contato</dt><dd>{{ ficha.telefone_contato|default:'—' }}</dd>
             <dt>E-mail para contato</dt><dd>{{ ficha.email_contato|default:'—' }}</dd>
           </dl>

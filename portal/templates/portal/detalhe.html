@@ -32,13 +32,13 @@
 {% if alertas_saude and aba == 'cadastro' %}
 <div class="alert alert-warning mt-3 mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2" role="alert">
   <span><strong>Atenção à saúde:</strong> {{ alertas_saude|length }} resposta{{ alertas_saude|length|pluralize }} "Sim" no questionário da ficha de matrícula.</span>
-  <a href="?aba=ficha" class="alert-link">Ver ficha</a>
+  <a href="?aba=ficha" class="alert-link">Ver questionário</a>
 </div>
 {% endif %}
 
 <nav class="perfil-abas perfil-abas-principais mt-3" aria-label="Abas do cadastro">
   <a href="?aba=cadastro"{% if aba == 'cadastro' %} class="ativa" aria-current="page"{% endif %}>Cadastro</a>
-  <a href="?aba=ficha"{% if aba == 'ficha' %} class="ativa" aria-current="page"{% endif %}>Ficha e histórico{% if fichas %} ({{ fichas|length }}){% endif %}</a>
+  <a href="?aba=ficha"{% if aba == 'ficha' %} class="ativa" aria-current="page"{% endif %}>Questionário de saúde{% if fichas|length > 1 %} ({{ fichas|length }}){% endif %}</a>
 </nav>
 
 {% if aba == 'ficha' %}
