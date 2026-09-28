@@ -66,7 +66,7 @@
     <section class="card p-4">
       <h2 class="perfil-titulo">Responsável financeiro</h2>
       {% if responsavel %}
-      <p class="fw-semibold mb-0">{{ responsavel.nome }}{% if aluno.proprio_responsavel and not responsavel_divergente %} <span class="status-badge">Próprio aluno</span>{% endif %}</p>
+      <p class="fw-semibold mb-0"><a href="{% url 'portal:responsavel_detalhe' responsavel.pk %}">{{ responsavel.nome }}</a>{% if aluno.proprio_responsavel and not responsavel_divergente %} <span class="status-badge">Próprio aluno</span>{% endif %}</p>
       {% if responsavel_divergente %}<div class="alert alert-warning small mt-2 mb-0" role="alert">Este aluno está marcado como o próprio responsável, mas está vinculado ao cadastro de outra pessoa. <a href="{% url 'portal:editar' aluno.pk %}" class="alert-link">Abra Editar aluno e salve</a> para corrigir.</div>{% endif %}
       <dl class="perfil-dados">
         <dt>WhatsApp</dt><dd>{{ responsavel.whatsapp|default:'—' }}</dd>

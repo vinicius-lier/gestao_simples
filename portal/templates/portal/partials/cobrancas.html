@@ -1,10 +1,10 @@
-{# Lista de cobranças (mensalidades e taxa de matrícula). No celular cada uma vira um cartão: descrição e situação em cima, valor e ação embaixo. Recebe `cobrancas` e `familia` (portal da família: botões Pagar/Baixar recibo; senão, Recibo do painel). #}
+{# Lista de cobranças (mensalidades e taxa de matrícula). No celular cada uma vira um cartão: descrição e situação em cima, valor e ação embaixo. Recebe `cobrancas`, `familia` e `com_aluno` (mostra o nome do aluno) (portal da família: botões Pagar/Baixar recibo; senão, Recibo do painel). #}
 <ul class="cobrancas">
   {% for c in cobrancas %}
   <li class="cobranca cobranca-{{ c.status }}">
     <div class="cobranca-info">
       <strong>{{ c.descricao }}</strong>
-      <span>{% if c.status == 'paga' and c.pago_em %}Paga em {{ c.pago_em|date:'d/m/Y' }}{% else %}Vence em {{ c.vencimento|date:'d/m/Y' }}{% endif %}</span>
+      <span>{% if com_aluno %}{{ c.matricula.atleta.nome }} · {% endif %}{% if c.status == 'paga' and c.pago_em %}Paga em {{ c.pago_em|date:'d/m/Y' }}{% else %}Vence em {{ c.vencimento|date:'d/m/Y' }}{% endif %}</span>
     </div>
     <div class="cobranca-valor">R$ {{ c.valor_atual }}{% if c.muda_apos_vencimento %}<small>Depois do vencimento: R$ {{ c.valor_apos_vencimento }}</small>{% endif %}</div>
     <span class="status-badge status-{{ c.status }}">{{ c.get_status_display }}</span>

@@ -48,6 +48,47 @@ def cpf_valido(valor):
     return len(numeros) == 11 and numeros != numeros[0] * 11
 
 
+class ResponsavelForm(forms.ModelForm):
+    """Dados do responsável financeiro (só o administrador edita). O CPF não
+    pode ser o de outro responsável da academia: seriam duas pessoas no
+    mesmo cadastro de cobrança."""
+
+    class Meta:
+        model = Responsavel
+        fields = ('nome', 'cpf', 'whatsapp', 'email')
+        labels = {'cpf': 'CPF', 'whatsapp': 'WhatsApp (com DDD)', 'email': 'E-mail'}
+        help_texts = {'whatsapp': 'É para este número que vão as cobranças e o acesso ao portal da família.'}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs['class'] = 'form-control'
+
+    def clean_nome(self):
+        return ' '.join(self.cleaned_data['nome'].split())
+
+    def clean_cpf(self):
+        cpf = digits(self.cleaned_data.get('cpf', ''))
+        if not cpf:
+            return ''
+        if not cpf_valido(cpf):
+            raise ValidationError('CPF inválido. Confira os 11 números.')
+        outro = next(
+            (r for r in Responsavel.objects.filter(academia=self.instance.academia).exclude(pk=self.instance.pk)
+             if digits(r.cpf) == cpf),
+            None,
+        )
+        if outro is not None:
+            raise ValidationError(f'Este CPF já está no cadastro de "{outro.nome}".')
+        return cpf
+
+    def clean_whatsapp(self):
+        whatsapp = digits(self.cleaned_data.get('whatsapp', ''))
+        if not 10 <= len(whatsapp) <= 13:
+            raise ValidationError('Informe um WhatsApp válido com DDD.')
+        return whatsapp
+
+
 class AlunoForm(forms.ModelForm):
     proprio_responsavel = forms.BooleanField(required=False, label='O próprio aluno é o responsável financeiro')
     aluno_email = forms.EmailField(required=False, label='E-mail do aluno')

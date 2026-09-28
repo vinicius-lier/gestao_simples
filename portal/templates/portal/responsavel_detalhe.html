@@ -1,0 +1,77 @@
+{% extends 'portal/base.html' %}{% block title %}{{ responsavel.nome }}{% endblock %}{% block content %}
+<a href="{% url 'portal:responsaveis' %}" class="back-link">← Responsáveis</a>
+
+<section class="card perfil-topo mt-3">
+  <div class="perfil-linha">
+    <div class="perfil-identidade">
+      <span class="perfil-avatar" aria-hidden="true">{{ iniciais }}</span>
+      <div class="min-w-0">
+        <p class="eyebrow mb-1">Responsável financeiro</p>
+        <h1 class="perfil-nome">{{ responsavel.nome }}</h1>
+        <p class="perfil-resumo">
+          <span>Responde por {{ alunos|length }} aluno{{ alunos|length|pluralize }}</span>
+          {% if responsavel.tem_senha %}<span class="status-badge status-paga">Portal com senha</span>{% else %}<span class="status-badge">Portal sem senha</span>{% endif %}
+        </p>
+      </div>
+    </div>
+    <div class="perfil-acoes">
+      {% if request.administrador_academia %}<a class="btn btn-primary" href="{% url 'portal:responsavel_editar' responsavel.pk %}">Editar responsável</a>{% endif %}
+      <form method="post" action="{% url 'portal:responsavel_enviar_acesso' responsavel.pk %}">{% csrf_token %}<button class="btn btn-outline-primary" type="submit">Enviar acesso ao portal</button></form>
+    </div>
+  </div>
+  <dl class="perfil-numeros">
+    <div><dt>Alunos</dt><dd>{{ alunos|length }}</dd></div>
+    <div><dt>Em aberto</dt><dd>R$ {{ em_aberto|floatformat:2 }}</dd></div>
+    <div{% if atrasado %} class="perfil-alerta"{% endif %}><dt>Em atraso</dt><dd>R$ {{ atrasado|floatformat:2 }}</dd></div>
+    <div><dt>Próximo vencimento</dt><dd>{% if proxima %}{{ proxima.vencimento|date:'d/m' }} · R$ {{ proxima.valor_atual }}{% else %}—{% endif %}</dd></div>
+  </dl>
+</section>
+
+<div class="row g-4 mt-1">
+  <aside class="col-lg-4">
+    <section class="card p-4">
+      <h2 class="perfil-titulo">Dados</h2>
+      <dl class="perfil-dados">
+        <dt>Nome</dt><dd>{{ responsavel.nome }}</dd>
+        <dt>CPF</dt><dd>{{ responsavel.cpf|default:'—' }}</dd>
+        <dt>WhatsApp</dt><dd>{{ responsavel.whatsapp|default:'—' }}</dd>
+        <dt>E-mail</dt><dd>{{ responsavel.email|default:'—' }}</dd>
+        <dt>Cadastrado em</dt><dd>{{ responsavel.criado_em|date:'d/m/Y' }}</dd>
+        <dt>Portal da família</dt><dd>{% if responsavel.tem_senha %}Senha criada em {{ responsavel.senha_definida_em|date:'d/m/Y' }}{% else %}Ainda sem senha{% endif %}</dd>
+      </dl>
+      {% if not responsavel.cpf %}<p class="small text-secondary mt-3 mb-0">Sem CPF: complete o cadastro para a cobrança por Pix sair no nome dele.</p>{% endif %}
+    </section>
+  </aside>
+
+  <div class="col-lg-8">
+    <section class="perfil-secao">
+      <h2 class="h5 mb-3">Responde por</h2>
+      <div class="card">
+        {% if alunos %}
+        <ul class="list-unstyled mb-0">
+          {% for aluno in alunos %}
+          <li><a class="recent-row" href="{% url 'portal:detalhe' aluno.pk %}"><span class="person-cell"><span class="avatar">{{ aluno.nome|first|upper }}</span><span><strong>{{ aluno.nome }}</strong><span class="d-block small text-secondary">{{ aluno.turmas_ativas|join:' · '|default:'Sem matrícula ativa' }}</span></span></span><span class="status-badge status-{{ aluno.status }}">{{ aluno.get_status_display }}</span></a></li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-secondary p-4 mb-0">Nenhum aluno vinculado a este responsável.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="perfil-secao">
+      <div class="d-flex justify-content-between align-items-baseline mb-3">
+        <h2 class="h5 mb-0">Cobranças</h2>
+        {% if total_cobrancas > cobrancas_recentes|length %}<span class="small text-secondary">Últimas {{ cobrancas_recentes|length }} de {{ total_cobrancas }}</span>{% endif %}
+      </div>
+      <div class="card">
+        {% if cobrancas_recentes %}
+        {% include 'portal/partials/cobrancas.html' with cobrancas=cobrancas_recentes com_aluno=True %}
+        {% else %}
+        <p class="text-secondary p-4 mb-0">Nenhuma cobrança gerada ainda.</p>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}
