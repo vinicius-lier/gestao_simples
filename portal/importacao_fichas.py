@@ -13,7 +13,6 @@ vai fazer. O arquivo é lido só com a biblioteca padrão (um .xlsx é um zip de
 XMLs) e com limites de tamanho, porque vem de upload.
 """
 import re
-import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -25,7 +24,7 @@ from django.utils import timezone
 
 from atletas.models import Atleta, Responsavel
 from matriculas.models import Matricula
-from .forms import digits
+from .forms import digits, normalizar
 from .models_matricula import PERGUNTAS_SAUDE, FichaMatricula
 
 TAMANHO_MAXIMO_XML = 20 * 1024 * 1024
@@ -95,13 +94,6 @@ def ler_xlsx(arquivo):
 
 
 # ------------------------------------------------------------ interpretação
-def normalizar(texto):
-    """Sem acento, minúsculo e com espaços simples — para comparar nomes e
-    cabeçalhos."""
-    sem_acento = unicodedata.normalize("NFKD", texto or "").encode("ascii", "ignore").decode()
-    return " ".join(sem_acento.casefold().split())
-
-
 def _mapear_colunas(cabecalho):
     """Índice de cada campo, pelo texto da pergunta no cabeçalho. Os termos e
     a declaração guardam também o próprio texto (é o que a família aceitou)."""

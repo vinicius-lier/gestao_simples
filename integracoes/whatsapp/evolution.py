@@ -159,14 +159,16 @@ class EvolutionWhatsAppProvider(WhatsAppProvider):
             responsavel.whatsapp,
             titulo="Portal de pagamentos",
             descricao=(
-                f"Olá, {responsavel.nome}! Acompanhe as mensalidades e pague por Pix.\n\n"
+                f"Olá, {responsavel.nome}! Acompanhe as mensalidades e pague por Pix. "
+                f"No primeiro acesso, crie uma senha para entrar quando quiser.\n\n"
                 f"Se o botão não aparecer, use este link: {link}"
             ),
             rotulo="Abrir portal",
             link=link,
             texto_simples=(
                 f"Olá, {responsavel.nome}! Aqui está o link para acompanhar as "
-                f"mensalidades e pagar: {link}"
+                f"mensalidades e pagar (no primeiro acesso, crie uma senha para "
+                f"entrar quando quiser): {link}"
             ),
         )
 

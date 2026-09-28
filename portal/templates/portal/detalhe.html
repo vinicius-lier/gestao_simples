@@ -1,1 +1,147 @@
-{% extends 'portal/base.html' %}{% block content %}<a href="{% url 'portal:alunos' %}">← Alunos</a><div class="d-flex justify-content-between mt-3"><h1>{{ aluno.nome }}</h1><a class="btn btn-outline-primary align-self-center" href="{% url 'portal:editar' aluno.pk %}">Editar aluno</a></div><div class="row g-3 my-2"><section class="col-md-6"><div class="card p-4"><h2 class="h5">Dados do aluno</h2><dl><dt>Situação</dt><dd>{{ aluno.get_status_display }}</dd><dt>Nascimento</dt><dd>{{ aluno.data_nascimento|date:'d/m/Y'|default:'—' }}</dd><dt>Faixa</dt><dd>{{ aluno.faixa|default:'—' }}</dd><dt>CPF</dt><dd>{{ aluno.cpf|default:'—' }}</dd><dt>Telefone / WhatsApp</dt><dd>{{ aluno.telefone|default:'—' }}</dd><dt>Observações</dt><dd>{{ aluno.observacoes|linebreaksbr|default:'—' }}</dd></dl></div></section><section class="col-md-6"><div class="card p-4"><h2 class="h5">Responsável financeiro</h2>{% if responsavel %}<p>{{ responsavel.nome }}{% if aluno.proprio_responsavel %} · Próprio aluno{% endif %}</p><p>WhatsApp: {{ responsavel.whatsapp }}</p><p>{{ responsavel.email }}</p><form method="post" action="{% url 'portal:gerar_acesso_responsavel' aluno.pk %}">{% csrf_token %}<button class="btn btn-outline-primary btn-sm" type="submit">Gerar acesso ao portal de pagamentos</button></form>{% else %}<p>Sem responsável vinculado.</p>{% endif %}</div></section></div>{% for ficha in fichas %}{% include 'portal/partials/ficha_matricula.html' %}{% endfor %}<h2 class="h4 mt-4">Matrículas</h2>{% if request.administrador_academia %}<a class="btn btn-primary mb-3" href="{% url 'portal:nova_matricula' aluno.pk %}">＋ Nova matrícula / outro polo</a>{% endif %}{% for m in matriculas %}<article class="card p-3 mb-3"><h3 class="h5">{{ m.modalidade.nome }}</h3><p>Polo: {{ m.unidade|default:"Não informado" }}</p><p>Turma: {{ m.turma|default:'Sem turma' }} • R$ {{ m.valor_mensalidade }}{% if m.valor_apos_vencimento %} (após o vencimento: R$ {{ m.valor_apos_vencimento }}){% endif %} • Vencimento: dia {{ m.dia_vencimento }}{% if m.taxa_matricula and not m.ativo %} • Taxa de matrícula: R$ {{ m.taxa_matricula }}, gerada ao ativar{% endif %}</p><p>Início: {{ m.data_inicio|date:'d/m/Y' }} • {% if m.primeiro_vencimento %}1º vencimento: {{ m.primeiro_vencimento|date:'d/m/Y' }} • {% endif %}{% if m.ativo %}Ativa{% else %}Inativa{% endif %}</p><a href="{% url 'portal:editar_matricula' aluno.pk m.pk %}">Editar matrícula</a>{% if m.ativacao_form %}<form method="post" action="{% url 'portal:ativar_matricula' aluno.pk m.pk %}" class="d-flex gap-2 flex-wrap align-items-end mt-2">{% csrf_token %}{% for field in m.ativacao_form %}<div><label for="{{ field.id_for_label }}" class="form-label small mb-1">{{ field.label }}</label>{{ field }}</div>{% endfor %}<button class="btn btn-primary btn-sm" type="submit">Conferir e ativar matrícula</button></form>{% endif %}<h4 class="h6 mt-3">Financeiro</h4>{% for mensalidade in m.mensalidades_recentes %}<p class="small mb-1">{{ mensalidade.referencia }} — R$ {{ mensalidade.valor_atual }} — <span class="status-badge status-{{ mensalidade.status }}">{{ mensalidade.get_status_display }}</span></p>{% empty %}<p class="small text-secondary mb-0">Nenhuma mensalidade gerada ainda.</p>{% endfor %}{% if m.mensalidades_recentes %}<a class="small" href="{% url 'portal:financeiro_cobrancas' %}?q={{ aluno.nome|urlencode }}">Ver todo o histórico →</a>{% endif %}</article>{% empty %}<p>Nenhuma matrícula cadastrada.</p>{% endfor %}{% endblock %}
+{% extends 'portal/base.html' %}{% block title %}{{ aluno.nome }}{% endblock %}{% block content %}
+<a href="{% url 'portal:alunos' %}" class="back-link">← Alunos</a>
+
+<section class="card perfil-topo mt-3">
+  <div class="perfil-linha">
+    <div class="perfil-identidade">
+      <span class="perfil-avatar" aria-hidden="true">{{ iniciais }}</span>
+      <div class="min-w-0">
+        <h1 class="perfil-nome">{{ aluno.nome }}</h1>
+        <p class="perfil-resumo">
+          <span class="status-badge status-{{ aluno.status }}">{{ aluno.get_status_display }}</span>
+          {% if idade is not None %}<span>{{ idade }} anos</span>{% endif %}
+          {% for m in ativas %}<span>{{ m.turma|default:m.modalidade.nome }}{% if m.unidade %} · {{ m.unidade }}{% endif %}</span>{% endfor %}
+          {% if aluno.faixa %}<span>Faixa {{ aluno.faixa }}</span>{% endif %}
+        </p>
+      </div>
+    </div>
+    <div class="perfil-acoes">
+      <a class="btn btn-primary" href="{% url 'portal:editar' aluno.pk %}">Editar aluno</a>
+      {% if request.administrador_academia %}<a class="btn btn-outline-primary" href="{% url 'portal:nova_matricula' aluno.pk %}">＋ Nova matrícula</a>
+      <a class="btn btn-outline-danger" href="{% url 'portal:excluir_aluno' aluno.pk %}">Excluir aluno</a>{% endif %}
+    </div>
+  </div>
+  <dl class="perfil-numeros">
+    <div><dt>Matrículas ativas</dt><dd>{{ ativas|length }}</dd></div>
+    <div><dt>Em aberto</dt><dd>R$ {{ em_aberto|floatformat:2 }}</dd></div>
+    <div{% if atrasado %} class="perfil-alerta"{% endif %}><dt>Em atraso</dt><dd>R$ {{ atrasado|floatformat:2 }}</dd></div>
+    <div><dt>Próximo vencimento</dt><dd>{% if proxima %}{{ proxima.vencimento|date:'d/m' }} · R$ {{ proxima.valor_atual }}{% else %}—{% endif %}</dd></div>
+  </dl>
+</section>
+
+{% if alertas_saude %}
+<div class="alert alert-warning mt-3 mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2" role="alert">
+  <span><strong>Atenção à saúde:</strong> {{ alertas_saude|length }} resposta{{ alertas_saude|length|pluralize }} "Sim" no questionário da ficha de matrícula.</span>
+  <a href="#ficha" class="alert-link">Ver ficha</a>
+</div>
+{% endif %}
+
+<div class="row g-4 mt-1">
+  <aside class="col-lg-4">
+    <section class="card p-4 mb-4">
+      <h2 class="perfil-titulo">Dados do aluno</h2>
+      <dl class="perfil-dados">
+        <dt>Nascimento</dt><dd>{{ aluno.data_nascimento|date:'d/m/Y'|default:'—' }}</dd>
+        <dt>CPF</dt><dd>{{ aluno.cpf|default:'—' }}</dd>
+        <dt>Telefone / WhatsApp</dt><dd>{{ aluno.telefone|default:'—' }}</dd>
+        <dt>Faixa</dt><dd>{{ aluno.faixa|default:'—' }}</dd>
+        <dt>Cadastrado em</dt><dd>{{ aluno.criado_em|date:'d/m/Y' }}</dd>
+        <dt>Observações</dt><dd>{{ aluno.observacoes|linebreaksbr|default:'—' }}</dd>
+      </dl>
+    </section>
+
+    <section class="card p-4">
+      <h2 class="perfil-titulo">Responsável financeiro</h2>
+      {% if responsavel %}
+      <p class="fw-semibold mb-0">{{ responsavel.nome }}{% if aluno.proprio_responsavel and not responsavel_divergente %} <span class="status-badge">Próprio aluno</span>{% endif %}</p>
+      {% if responsavel_divergente %}<div class="alert alert-warning small mt-2 mb-0" role="alert">Este aluno está marcado como o próprio responsável, mas está vinculado ao cadastro de outra pessoa. <a href="{% url 'portal:editar' aluno.pk %}" class="alert-link">Abra Editar aluno e salve</a> para corrigir.</div>{% endif %}
+      <dl class="perfil-dados">
+        <dt>WhatsApp</dt><dd>{{ responsavel.whatsapp|default:'—' }}</dd>
+        <dt>E-mail</dt><dd>{{ responsavel.email|default:'—' }}</dd>
+        {% if responsavel.cpf %}<dt>CPF</dt><dd>{{ responsavel.cpf }}</dd>{% endif %}
+      </dl>
+      <form method="post" action="{% url 'portal:gerar_acesso_responsavel' aluno.pk %}" class="mt-3">{% csrf_token %}
+        <button class="btn btn-outline-primary btn-sm w-100" type="submit">Gerar acesso ao portal de pagamentos</button>
+      </form>
+      {% else %}
+      <p class="text-secondary mb-0">Sem responsável vinculado. <a href="{% url 'portal:editar' aluno.pk %}">Vincular</a></p>
+      {% endif %}
+    </section>
+  </aside>
+
+  <div class="col-lg-8">
+    <nav class="perfil-abas" aria-label="Seções do perfil">
+      <a href="#matriculas">Matrículas</a>
+      <a href="#financeiro">Financeiro</a>
+      {% if fichas %}<a href="#ficha">Ficha de matrícula</a>{% endif %}
+    </nav>
+
+    <section id="matriculas" class="perfil-secao">
+      <h2 class="h5 mb-3">Matrículas</h2>
+      {% for m in matriculas %}
+      <article class="card p-4 mb-3">
+        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+          <div>
+            <h3 class="h6 mb-1">{{ m.turma|default:m.modalidade.nome }}</h3>
+            <p class="small text-secondary mb-0">{{ m.modalidade.nome }} · Polo: {{ m.unidade|default:'não informado' }}</p>
+          </div>
+          <span class="status-badge {% if m.ativo %}status-ativo{% else %}status-trancado{% endif %}">{% if m.ativo %}Ativa{% else %}Inativa{% endif %}</span>
+        </div>
+        <dl class="perfil-grade">
+          <div><dt>Mensalidade</dt><dd>R$ {{ m.valor_mensalidade }}</dd></div>
+          <div><dt>Após o vencimento</dt><dd>{% if m.valor_apos_vencimento %}R$ {{ m.valor_apos_vencimento }}{% else %}—{% endif %}</dd></div>
+          <div><dt>Vencimento</dt><dd>Dia {{ m.dia_vencimento }}</dd></div>
+          <div><dt>Início</dt><dd>{{ m.data_inicio|date:'d/m/Y' }}</dd></div>
+          {% if m.primeiro_vencimento %}<div><dt>1º vencimento</dt><dd>{{ m.primeiro_vencimento|date:'d/m/Y' }}</dd></div>{% endif %}
+          {% if m.taxa_matricula and not m.ativo %}<div><dt>Taxa de matrícula</dt><dd>R$ {{ m.taxa_matricula }}, gerada ao ativar</dd></div>{% endif %}
+        </dl>
+        {% if m.ativacao_form %}
+        <form method="post" action="{% url 'portal:ativar_matricula' aluno.pk m.pk %}" class="perfil-ativacao">{% csrf_token %}
+          {% for field in m.ativacao_form %}<div><label for="{{ field.id_for_label }}" class="form-label small mb-1">{{ field.label }}</label>{{ field }}</div>{% endfor %}
+          <button class="btn btn-primary btn-sm" type="submit">Conferir e ativar matrícula</button>
+        </form>
+        {% endif %}
+        <a class="small mt-3 d-inline-block" href="{% url 'portal:editar_matricula' aluno.pk m.pk %}">Editar matrícula</a>
+      </article>
+      {% empty %}
+      <div class="card p-4 text-secondary">Nenhuma matrícula cadastrada.</div>
+      {% endfor %}
+    </section>
+
+    <section id="financeiro" class="perfil-secao">
+      <div class="d-flex justify-content-between align-items-baseline mb-3">
+        <h2 class="h5 mb-0">Financeiro</h2>
+        {% if cobrancas_recentes %}<a class="small" href="{% url 'portal:financeiro_cobrancas' %}?q={{ aluno.nome|urlencode }}">Ver todo o histórico ({{ total_cobrancas }}) →</a>{% endif %}
+      </div>
+      <div class="card">
+        {% if cobrancas_recentes %}
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead><tr><th>Cobrança</th><th>Vencimento</th><th>Valor</th><th>Situação</th><th></th></tr></thead>
+            <tbody>
+              {% for c in cobrancas_recentes %}
+              <tr>
+                <td>{{ c.descricao }}</td>
+                <td>{{ c.vencimento|date:'d/m/Y' }}</td>
+                <td>R$ {{ c.valor_atual }}{% if c.muda_apos_vencimento %}<br><span class="small text-secondary">após o venc.: R$ {{ c.valor_apos_vencimento }}</span>{% endif %}</td>
+                <td><span class="status-badge status-{{ c.status }}">{{ c.get_status_display }}</span></td>
+                <td class="text-end">{% if c.status == 'paga' %}<a class="btn btn-outline-primary btn-sm" href="{% url 'portal:financeiro_recibo' c.pk %}">Recibo</a>{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-secondary p-4 mb-0">Nenhuma mensalidade gerada ainda.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    {% if fichas %}
+    <section id="ficha" class="perfil-secao">
+      {% for ficha in fichas %}{% include 'portal/partials/ficha_matricula.html' %}{% endfor %}
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends 'portal/base.html' %}{% block title %}Excluir {{ aluno.nome }}{% endblock %}{% block content %}
+<a href="{% url 'portal:detalhe' aluno.pk %}" class="back-link">← Voltar ao perfil</a>
+
+<section class="card perfil-topo mt-3">
+  <div class="perfil-identidade">
+    <span class="perfil-avatar" aria-hidden="true">{{ iniciais }}</span>
+    <div class="min-w-0">
+      <p class="eyebrow mb-1">{% if pode_excluir %}Excluir aluno{% else %}Exclusão bloqueada{% endif %}</p>
+      <h1 class="perfil-nome">{{ aluno.nome }}</h1>
+      <p class="perfil-resumo"><span class="status-badge status-{{ aluno.status }}">{{ aluno.get_status_display }}</span></p>
+    </div>
+  </div>
+  <dl class="perfil-numeros">
+    <div><dt>Matrículas</dt><dd>{{ matriculas }}</dd></div>
+    <div><dt>Cobranças</dt><dd>{{ cobrancas }}</dd></div>
+    <div{% if pagas %} class="perfil-alerta"{% endif %}><dt>Pagas</dt><dd>{{ pagas }}</dd></div>
+    <div><dt>Fichas de matrícula</dt><dd>{{ fichas }}</dd></div>
+  </dl>
+</section>
+
+<div class="row g-4 mt-1">
+  <div class="col-lg-8">
+    {% if pode_excluir %}
+    <section class="card p-4">
+      <h2 class="h5">Excluir de vez</h2>
+      <p>Esta ação não pode ser desfeita. Serão apagados:</p>
+      <ul>
+        <li>o cadastro de <strong>{{ aluno.nome }}</strong>;</li>
+        {% if matriculas %}<li>{{ matriculas }} matrícula{{ matriculas|pluralize }} e {{ cobrancas }} cobrança{{ cobrancas|pluralize }} sem pagamento;</li>{% endif %}
+        {% if fichas %}<li>{{ fichas }} ficha{{ fichas|pluralize }} de matrícula (respostas do formulário);</li>{% endif %}
+        {% if responsavel_sai %}<li>o responsável <strong>{{ responsavel.nome }}</strong>, que não tem outro aluno;</li>{% elif responsavel %}<li>o responsável <strong>{{ responsavel.nome }}</strong> continua, porque tem outros alunos;</li>{% endif %}
+      </ul>
+      <form method="post" class="d-flex gap-2 flex-wrap" onsubmit="return confirm('Excluir {{ aluno.nome|escapejs }} de vez? Não dá para desfazer.')">{% csrf_token %}
+        <button class="btn btn-danger" name="acao" value="excluir">Excluir aluno</button>
+        <a class="btn btn-outline-secondary" href="{% url 'portal:detalhe' aluno.pk %}">Cancelar</a>
+      </form>
+    </section>
+    {% else %}
+    <section class="card p-4">
+      <h2 class="h5">Este aluno não pode ser excluído</h2>
+      <p>{% if pagas %}Há {{ pagas }} pagamento{{ pagas|pluralize }} registrado{{ pagas|pluralize }}{% if com_pix %} e Pix gerado{% endif %}{% else %}Há Pix gerado para ele{% endif %}. Excluir apagaria esse histórico do financeiro.</p>
+      <p class="mb-3">Para ele sair da rotina, <strong>inative o aluno</strong>: as mensalidades novas deixam de ser geradas e os lembretes param; o histórico continua no perfil e no financeiro.</p>
+      <form method="post" class="d-flex gap-2 flex-wrap">{% csrf_token %}
+        {% if aluno.status != 'inativo' %}<button class="btn btn-primary" name="acao" value="inativar">Inativar aluno</button>{% else %}<span class="text-secondary align-self-center">O aluno já está inativo.</span>{% endif %}
+        <a class="btn btn-outline-secondary" href="{% url 'portal:detalhe' aluno.pk %}">Voltar</a>
+      </form>
+    </section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

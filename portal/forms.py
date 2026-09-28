@@ -1,3 +1,5 @@
+import unicodedata
+
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -10,6 +12,23 @@ from modalidades.models import Modalidade, Turma, Professor, Graduacao
 
 def digits(value):
     return ''.join(c for c in value if c.isdigit())
+
+
+def normalizar(texto):
+    """Sem acento, minúsculo e com espaços simples — para comparar nomes."""
+    sem_acento = unicodedata.normalize('NFKD', texto or '').encode('ascii', 'ignore').decode()
+    return ' '.join(sem_acento.casefold().split())
+
+
+def responsavel_divergente(aluno):
+    """O responsável ligado ao aluno quando o aluno está marcado como o
+    próprio responsável, mas o cadastro é de outro nome; senão None."""
+    responsavel = aluno.responsavel_financeiro
+    if (aluno.proprio_responsavel and responsavel is not None
+            and responsavel.academia_id == aluno.academia_id
+            and normalizar(responsavel.nome) != normalizar(aluno.nome)):
+        return responsavel
+    return None
 
 
 def _nao_negativo(valor):
@@ -60,6 +79,14 @@ class AlunoForm(forms.ModelForm):
                     self.initial['aluno_email'] = r.email
             else:
                 self.initial['responsavel'] = self.instance.responsavel_financeiro_id
+        # Marcado como o próprio responsável, mas ligado ao cadastro de outro
+        # nome (vínculo feito pelo CPF antes da checagem de nome): o
+        # formulário avisa o que o salvamento vai mudar.
+        self.responsavel_divergente = responsavel_divergente(self.instance) if self.instance.pk else None
+        self.alunos_do_responsavel = (
+            list(self.responsavel_divergente.atletas.exclude(pk=self.instance.pk).values_list('nome', flat=True))
+            if self.responsavel_divergente else []
+        )
         for field in self.fields.values():
             field.widget.attrs['class'] = 'form-check-input' if isinstance(field.widget, forms.CheckboxInput) else 'form-select' if isinstance(field.widget, forms.Select) else 'form-control'
 
@@ -93,13 +120,33 @@ class AlunoForm(forms.ModelForm):
             raise ValidationError('Informe um telefone com números.')
         return value
 
+    def _responsavel_com_cpf(self, cpf):
+        """Outro responsável da academia com este CPF (não o atual do aluno)."""
+        atual = self.instance.responsavel_financeiro_id if self.instance.pk else None
+        return next(
+            (r for r in Responsavel.objects.filter(academia=self.academia).exclude(pk=atual)
+             if digits(r.cpf) == cpf),
+            None,
+        )
+
     def clean(self):
         data = super().clean()
         if data.get('proprio_responsavel'):
-            if not self.errors.get('cpf') and not digits(data.get('cpf', '')):
+            cpf = digits(data.get('cpf', ''))
+            if not self.errors.get('cpf') and not cpf:
                 self.add_error('cpf', 'Informe o CPF do aluno responsável financeiro.')
             if not self.errors.get('telefone') and not data.get('telefone'):
                 self.add_error('telefone', 'Informe o WhatsApp do aluno: ele recebe as cobranças.')
+            if cpf and not self.errors.get('cpf'):
+                # O aluno é o próprio responsável: um responsável com este CPF
+                # só pode ser ele mesmo. Com outro nome, é CPF digitado errado
+                # ou cadastro de outra pessoa — nunca vincular em silêncio.
+                existente = self._responsavel_com_cpf(cpf)
+                if existente is not None and normalizar(existente.nome) != normalizar(data.get('nome', '')):
+                    self.add_error('cpf', (
+                        f'Este CPF já está no cadastro do responsável "{existente.nome}". '
+                        'Confira o CPF; se for a mesma pessoa, corrija o nome desse cadastro antes.'
+                    ))
             return data
         if data.get('responsavel'):
             if any(data.get(k) for k in ('responsavel_nome', 'responsavel_cpf', 'responsavel_whatsapp', 'responsavel_email')):

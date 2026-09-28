@@ -1,1 +1,89 @@
-{% extends 'portal/base.html' %}{% block title %}Portal do responsável{% endblock %}{% block content %}<div class="hero-dashboard"><div><p class="eyebrow">Portal do responsável</p><h1>Olá, {{ request.responsavel.nome }}</h1><p class="text-secondary mb-0">{{ request.responsavel.academia.nome }}</p></div><form method="post" action="{% url 'portal:responsavel_sair' %}">{% csrf_token %}<button class="btn btn-outline-secondary">Sair</button></form></div>{% for linha in linhas %}<section class="card p-4 mb-3"><h2 class="h5">{{ linha.aluno.nome }}</h2>{% for m in linha.mensalidades %}<div class="d-flex justify-content-between align-items-center py-2 border-bottom"><span>{{ m.matricula.modalidade.nome }} · {{ m.referencia }} · R$ {{ m.valor_atual }} · vencimento {{ m.vencimento|date:"d/m/Y" }}</span><span class="d-flex align-items-center gap-2"><span class="status-badge status-{{ m.status }}">{{ m.get_status_display }}</span>{% if m.status == 'pendente' or m.status == 'vencida' %}<a class="btn btn-primary btn-sm" href="{% url 'portal:responsavel_pagar' m.pk %}">Pagar</a>{% endif %}</span></div>{% empty %}<p class="text-secondary mb-0">Nenhuma mensalidade gerada ainda.</p>{% endfor %}</section>{% empty %}<div class="empty-state"><p>Nenhum aluno vinculado a este responsável.</p></div>{% endfor %}{% endblock %}
+{% extends 'portal/base.html' %}{% block title %}Portal da família{% endblock %}{% block content %}
+{% with r=request.responsavel %}
+<section class="card perfil-topo">
+  <div class="perfil-linha">
+    <div class="perfil-identidade">
+      <span class="perfil-avatar" aria-hidden="true">{{ iniciais }}</span>
+      <div class="min-w-0">
+        <p class="eyebrow mb-1">Portal da família</p>
+        <h1 class="perfil-nome">Olá, {{ r.nome }}</h1>
+        <p class="perfil-resumo"><span>{{ r.academia.nome_fantasia|default:r.academia.nome }}</span><span>{{ linhas|length }} aluno{{ linhas|length|pluralize }}</span></p>
+      </div>
+    </div>
+    <div class="perfil-acoes">
+      <a class="btn btn-outline-primary" href="{% url 'portal:responsavel_senha' %}">{% if r.tem_senha %}Alterar senha{% else %}Criar senha{% endif %}</a>
+      <form method="post" action="{% url 'portal:responsavel_sair' %}">{% csrf_token %}<button class="btn btn-outline-secondary">Sair</button></form>
+    </div>
+  </div>
+  <dl class="perfil-numeros">
+    <div><dt>Em aberto</dt><dd>R$ {{ em_aberto|floatformat:2 }}</dd></div>
+    <div{% if atrasado %} class="perfil-alerta"{% endif %}><dt>Em atraso</dt><dd>R$ {{ atrasado|floatformat:2 }}</dd></div>
+    <div><dt>Próximo vencimento</dt><dd>{% if proxima %}{{ proxima.vencimento|date:'d/m' }} · R$ {{ proxima.valor_atual }}{% else %}—{% endif %}</dd></div>
+    <div><dt>Alunos</dt><dd>{{ linhas|length }}</dd></div>
+  </dl>
+</section>
+
+{% if not r.tem_senha %}
+<div class="alert alert-info mt-3 mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2" role="alert">
+  <span><strong>Crie sua senha</strong> para entrar no portal quando quiser, com seu CPF ou WhatsApp.</span>
+  <a class="btn btn-primary btn-sm" href="{% url 'portal:responsavel_senha' %}">Criar senha</a>
+</div>
+{% endif %}
+
+<div class="row g-4 mt-1">
+  <aside class="col-lg-4">
+    <section class="card p-4 mb-4">
+      <h2 class="perfil-titulo">Seus dados</h2>
+      <dl class="perfil-dados">
+        <dt>Nome</dt><dd>{{ r.nome }}</dd>
+        <dt>WhatsApp</dt><dd>{{ r.whatsapp|default:'—' }}</dd>
+        <dt>E-mail</dt><dd>{{ r.email|default:'—' }}</dd>
+      </dl>
+      <p class="small text-secondary mt-3 mb-0">Algum dado errado? Fale com a secretaria da escola.</p>
+    </section>
+    <section class="card p-4">
+      <h2 class="perfil-titulo">Como entrar</h2>
+      <p class="small mb-0">Entre em <strong>{{ request.get_host }}{% url 'portal:responsavel_login' %}</strong> com seu CPF ou WhatsApp e sua senha.</p>
+    </section>
+  </aside>
+
+  <div class="col-lg-8">
+    {% if linhas|length > 1 %}
+    <nav class="perfil-abas" aria-label="Alunos">{% for linha in linhas %}<a href="#aluno-{{ linha.aluno.pk }}">{{ linha.aluno.nome }}</a>{% endfor %}</nav>
+    {% endif %}
+    {% for linha in linhas %}
+    <section id="aluno-{{ linha.aluno.pk }}" class="perfil-secao">
+      <div class="mb-3">
+        <h2 class="h5 mb-1">{{ linha.aluno.nome }}</h2>
+        <p class="small text-secondary mb-0">{% for turma in linha.turmas %}{{ turma }}{% if not forloop.last %} · {% endif %}{% empty %}Sem matrícula ativa{% endfor %}</p>
+      </div>
+      <div class="card">
+        {% if linha.mensalidades %}
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead><tr><th>Cobrança</th><th>Vencimento</th><th>Valor</th><th>Situação</th><th></th></tr></thead>
+            <tbody>
+              {% for m in linha.mensalidades %}
+              <tr>
+                <td>{{ m.descricao }}</td>
+                <td>{{ m.vencimento|date:'d/m/Y' }}</td>
+                <td>R$ {{ m.valor_atual }}{% if m.muda_apos_vencimento %}<br><span class="small text-secondary">após o venc.: R$ {{ m.valor_apos_vencimento }}</span>{% endif %}</td>
+                <td><span class="status-badge status-{{ m.status }}">{{ m.get_status_display }}</span></td>
+                <td class="text-end">{% if m.status == 'pendente' or m.status == 'vencida' %}<a class="btn btn-primary btn-sm" href="{% url 'portal:responsavel_pagar' m.pk %}">Pagar</a>{% elif m.status == 'paga' %}<a class="btn btn-outline-primary btn-sm" href="{% url 'portal:responsavel_recibo' m.pk %}">Baixar recibo</a>{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="text-secondary p-4 mb-0">Nenhuma mensalidade gerada ainda.</p>
+        {% endif %}
+      </div>
+    </section>
+    {% empty %}
+    <div class="card p-4 text-secondary">Nenhum aluno vinculado a este responsável.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endwith %}
+{% endblock %}
