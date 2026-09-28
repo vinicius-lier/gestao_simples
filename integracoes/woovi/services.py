@@ -452,7 +452,21 @@ def processar_evento(evento):
 
     dados = evento.payload
     motivo = ""
-    if evento.tipo == EVENTO_PIX_PAGO:
+    if evento.tipo == EVENTO_PIX_PAGO and evento.correlation_id.startswith("assinatura-"):
+        # Mensalidade do sistema paga pela academia à plataforma: fica na
+        # conta da plataforma (sem repasse) e reativa o painel suspenso.
+        from assinaturas.services import fatura_do_correlation_id, registrar_pagamento_pix as pagar_assinatura
+
+        charge = dados.get("charge") or {}
+        if fatura_do_correlation_id(evento.correlation_id) is None:
+            motivo = "fatura da assinatura não encontrada"
+        elif not pagar_assinatura(
+            evento.correlation_id,
+            pago_em=parse_datetime(charge.get("paidAt") or ""),
+            charge_id=charge.get("transactionID") or "",
+        ):
+            motivo = "pagamento já registrado"
+    elif evento.tipo == EVENTO_PIX_PAGO:
         charge = dados.get("charge") or {}
         cobranca = CobrancaPix.objects.filter(correlation_id=evento.correlation_id).first()
         if cobranca is None:

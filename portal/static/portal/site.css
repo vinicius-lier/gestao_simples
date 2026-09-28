@@ -134,3 +134,4 @@
 .detalhe-fechar button{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:#fff;font-size:20px;line-height:1;color:#74747e;transform:translate(10px,-8px)}
 .detalhe-fechar button:hover{color:var(--green);background:#faf0f1}
 @media(max-width:767px){.detalhe-dialog:has(.perfil-topo){padding:16px;max-height:92vh}}
+.status-atrasada{background:#fdecea;color:#c0392b}.status-assinatura-ativa{background:#eafbf1;color:#1f9d55}.status-assinatura-suspensa{background:#fdecea;color:#c0392b}.status-assinatura-cancelada{background:#f1f1f3;color:#888892}

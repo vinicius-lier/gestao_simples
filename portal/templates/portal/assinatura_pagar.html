@@ -1,0 +1,55 @@
+{% extends 'portal/base.html' %}{% load portal_extras %}{% block title %}Pagamento da mensalidade • Minha assinatura{% endblock %}{% block content %}
+<a href="{% url 'portal:minha_assinatura' %}" class="back-link">← Minha assinatura</a>
+
+<section class="card perfil-topo mt-3">
+  <p class="eyebrow mb-1">Pagamento da mensalidade</p>
+  <h1 class="perfil-nome">{{ fatura.referencia }} do sistema</h1>
+  <p class="perfil-resumo"><span>Pagamento via Pix</span></p>
+  <dl class="perfil-numeros">
+    <div><dt>Valor</dt><dd>R$ {{ fatura.valor|floatformat:"2g" }}</dd></div>
+    <div><dt>Vencimento</dt><dd>{{ fatura.vencimento|date:'d/m/Y' }}</dd></div>
+    <div><dt>Status</dt><dd id="status-pagamento" aria-live="polite">{% if fatura.status == 'paga' %}Pago{% else %}Aguardando pagamento…{% endif %}</dd></div>
+  </dl>
+</section>
+
+<div class="mt-3">
+{% if erro %}
+  <section class="card p-4"><p class="mb-0">{{ erro }}</p></section>
+{% else %}
+  <section class="card p-4" id="pix-assinatura" data-status-url="{% url 'portal:assinatura_status' fatura.pk %}" data-voltar-url="{% url 'portal:minha_assinatura' %}">
+    <h2 class="perfil-titulo">Pague com Pix</h2>
+    <div class="pix-card">
+      {% pix_qrcode fatura.br_code %}
+      <div class="pix-copia">
+        <label for="pix-payload" class="visually-hidden">Pix copia e cola</label>
+        <textarea id="pix-payload" class="form-control" readonly rows="4">{{ fatura.br_code }}</textarea>
+        <button type="button" class="btn btn-primary" data-copy="{{ fatura.br_code }}">Copiar código Pix</button>
+        <p class="small text-secondary mb-0">Leia o QR Code no app do banco ou copie o código e cole em "Pix copia e cola". A confirmação é automática: esta tela se atualiza sozinha.</p>
+      </div>
+    </div>
+  </section>
+  <script>
+    (function () {
+      var bloco = document.getElementById('pix-assinatura');
+      var status = document.getElementById('status-pagamento');
+      if (!bloco) return;
+      function conferir() {
+        fetch(bloco.dataset.statusUrl, { credentials: 'same-origin', headers: { 'X-Requested-With': 'fetch' } })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (dados) {
+            if (dados && dados.paga) {
+              status.textContent = 'Pagamento confirmado ✓';
+              bloco.innerHTML = '<p class="mb-0"><strong>Pagamento confirmado.</strong> Obrigado! Voltando para a sua assinatura…</p>';
+              setTimeout(function () { window.location = bloco.dataset.voltarUrl; }, 2500);
+            } else {
+              setTimeout(conferir, 5000);
+            }
+          })
+          .catch(function () { setTimeout(conferir, 10000); });
+      }
+      setTimeout(conferir, 5000);
+    })();
+  </script>
+{% endif %}
+</div>
+{% endblock %}

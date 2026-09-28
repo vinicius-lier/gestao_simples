@@ -44,6 +44,11 @@ def redirecionamento_seguro(request, padrao):
     return redirect(padrao)
 
 
+# Com a assinatura do sistema suspensa, só estas telas do painel abrem: o
+# administrador vê a cobrança e paga. Nada é apagado.
+TELAS_LIBERADAS_NA_SUSPENSAO = {'minha_assinatura', 'assinatura_pagar', 'assinatura_status'}
+
+
 def academia_required(view):
     @login_required
     @wraps(view)
@@ -53,8 +58,31 @@ def academia_required(view):
             raise PermissionDenied('Solicite ao administrador o vínculo a uma academia ativa.')
         request.academia = acesso.academia
         request.administrador_academia = request.user.is_superuser or acesso.administrador
+        bloqueio = _bloqueio_da_assinatura(request)
+        if bloqueio is not None:
+            return bloqueio
         return view(request, *args, **kwargs)
     return wrapped
+
+
+def _bloqueio_da_assinatura(request):
+    """Aplica as regras do dia na assinatura (atraso, suspensão) e, se ela
+    estiver suspensa, fecha as telas operacionais. A equipe da plataforma
+    (superusuário) continua entrando, com o aviso no topo."""
+    from assinaturas.services import assinatura_da, atualizar_situacao
+
+    assinatura = assinatura_da(request.academia)
+    if assinatura is not None:
+        atualizar_situacao(assinatura)
+    request.assinatura_sistema = assinatura
+    if assinatura is None or not assinatura.suspensa or request.user.is_superuser:
+        return None
+    tela = request.resolver_match.url_name if request.resolver_match else ''
+    if tela in TELAS_LIBERADAS_NA_SUSPENSAO:
+        return None
+    if request.administrador_academia:
+        return redirect('portal:minha_assinatura')
+    return render(request, 'portal/assinatura_suspensa.html', status=403)
 
 
 @academia_required

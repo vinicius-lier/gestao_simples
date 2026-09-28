@@ -23,12 +23,11 @@ class Command(BaseCommand):
         enviados = enviar_lembretes()
         self.stdout.write(self.style.SUCCESS(f"{len(enviados)} lembrete(s) enviado(s)."))
 
-        # Assinatura do sistema: fatura do mês de cada academia e aviso das
-        # vencidas para a plataforma (Discord).
-        from assinaturas.services import avisar_faturas_vencidas, gerar_faturas
+        # Assinatura do sistema: fatura do mês (com o Pix), atraso,
+        # suspensão depois da tolerância e aviso para a plataforma (Discord).
+        from assinaturas.services import rotina_diaria
 
-        self.stdout.write(f"{gerar_faturas()} fatura(s) da assinatura do sistema gerada(s).")
-        avisar_faturas_vencidas()
+        self.stdout.write(f"{rotina_diaria()} fatura(s) da assinatura do sistema gerada(s).")
 
         # Rede de segurança dos repasses Pix (o site os processa sozinho
         # quando o Pix entra): pega algum que tenha ficado para trás.
