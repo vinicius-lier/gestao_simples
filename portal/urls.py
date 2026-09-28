@@ -21,6 +21,7 @@ urlpatterns = [
     path('painel/', views.dashboard, name='dashboard'),
     path('alunos/', views.alunos, name='alunos'),
     path('matriculas/convites/', views_matricula.convites, name='matricula_convites'),
+    path('matriculas/importar/', views_matricula.importar_fichas, name='matricula_importar'),
     path('matriculas/convites/<int:pk>/', views_matricula.convite_detalhe, name='matricula_convite_detalhe'),
     path('matriculas/convites/<int:pk>/acao/', views_matricula.convite_acao, name='matricula_convite_acao'),
     path('matriculas/convites/<int:pk>/enviar/', views_matricula.convite_enviar, name='matricula_convite_enviar'),

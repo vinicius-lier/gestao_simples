@@ -42,6 +42,17 @@ class Mensalidade(models.Model):
         ("outro", "Outro"),
     ]
 
+    MENSALIDADE = "mensalidade"
+    TAXA_MATRICULA = "taxa_matricula"
+    TIPOS = [
+        (MENSALIDADE, "Mensalidade"),
+        (TAXA_MATRICULA, "Taxa de matrícula"),
+    ]
+
+    # A taxa de matrícula usa a mesma estrutura (Pix, lembretes, baixa):
+    # uma por matrícula, com a competência do mês em que foi gerada.
+    tipo = models.CharField(max_length=20, choices=TIPOS, default=MENSALIDADE)
+
     academia = models.ForeignKey(
         Academia,
         on_delete=models.CASCADE,
@@ -61,6 +72,15 @@ class Mensalidade(models.Model):
         decimal_places=2,
     )
 
+    # Cobrado a partir do dia seguinte ao vencimento; vazio: o valor não muda.
+    valor_apos_vencimento = models.DecimalField(
+        "valor após o vencimento",
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+
     vencimento = models.DateField()
 
     status = models.CharField(
@@ -70,6 +90,15 @@ class Mensalidade(models.Model):
     )
 
     pago_em = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    # O que foi efetivamente pago (em dia ou com o valor após o vencimento).
+    # Vazio em pagamentos antigos: vale ``valor``.
+    valor_pago = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
         null=True,
         blank=True,
     )
@@ -88,16 +117,67 @@ class Mensalidade(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["matricula", "competencia"],
+                condition=Q(tipo="mensalidade"),
                 name="mensalidade_unica_por_competencia",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["matricula"],
+                condition=Q(tipo="taxa_matricula"),
+                name="uma_taxa_matricula_por_matricula",
+            ),
         ]
 
     def __str__(self):
-        return f"{self.matricula.atleta.nome} - {self.competencia:%m/%Y}"
+        return f"{self.matricula.atleta.nome} - {self.referencia}"
+
+    @property
+    def eh_taxa_matricula(self):
+        return self.tipo == self.TAXA_MATRICULA
+
+    @property
+    def referencia(self):
+        """Como a cobrança aparece nas listas e mensagens: o mês da
+        mensalidade ou "Taxa de matrícula"."""
+        if self.eh_taxa_matricula:
+            return "Taxa de matrícula"
+        return f"{self.competencia:%m/%Y}"
+
+    @property
+    def descricao(self):
+        """"Mensalidade 10/2026" ou "Taxa de matrícula" (Pix e mensagens)."""
+        if self.eh_taxa_matricula:
+            return "Taxa de matrícula"
+        return f"Mensalidade {self.competencia:%m/%Y}"
 
     @property
     def esta_atrasada(self):
         return self.status in ("pendente", "vencida") and self.vencimento < timezone.localdate()
+
+    def valor_devido(self, hoje=None):
+        """O valor a pagar em ``hoje``: até o dia do vencimento, ``valor``;
+        depois, ``valor_apos_vencimento`` (quando definido)."""
+        hoje = hoje or timezone.localdate()
+        if self.valor_apos_vencimento is not None and hoje > self.vencimento:
+            return self.valor_apos_vencimento
+        return self.valor
+
+    @property
+    def valor_atual(self):
+        """Para as telas: o que foi pago, se já está paga; senão, o valor
+        devido hoje."""
+        if self.status == "paga":
+            return self.valor_pago if self.valor_pago is not None else self.valor
+        return self.valor_devido()
+
+    @property
+    def muda_apos_vencimento(self):
+        """Ainda em dia, mas com valor maior depois do vencimento."""
+        return (
+            self.valor_apos_vencimento is not None
+            and self.valor_apos_vencimento != self.valor
+            and self.status in ("pendente", "vencida")
+            and timezone.localdate() <= self.vencimento
+        )
 
     @property
     def cobranca_pix_vigente(self):

@@ -137,50 +137,72 @@ def enviar_lembretes(hoje=None, academia=None):
         if _ja_pago(mensalidade):
             continue
 
-        if lembrete is None:
-            lembrete = LembreteCobranca.objects.create(
-                mensalidade=mensalidade, estagio=estagio
-            )
-
-        # FASE 2 (desligada por padrão): garantir o Pix da Woovi antes do
-        # envio, para o Pix copia-e-cola já existir.
         if gerar_cobranca:
+            # FASE 2 (desligada por padrão): garantir o Pix da Woovi antes
+            # do envio, para o Pix copia-e-cola já existir.
             _garantir_cobranca_silenciosa(mensalidade)
 
-        link = montar_link_pagamento(mensalidade, responsavel)
-
-        lembrete.tentativas += 1
-        try:
-            resultado = _enviar_cobranca_whatsapp(
-                mensalidade.academia, responsavel, mensalidade, link, estagio=estagio
-            )
-        except (ValueError, WhatsAppProviderError) as exc:
-            lembrete.status = LembreteCobranca.ERRO
-            lembrete.ultimo_erro = _sanitizar_erro(exc)
-            lembrete.save(
-                update_fields=["status", "tentativas", "ultimo_erro", "atualizado_em"]
-            )
-            continue
-
-        lembrete.status = LembreteCobranca.ENVIADO
-        lembrete.enviado_em = timezone.now()
-        lembrete.provider = (resultado or {}).get("provider", "")
-        lembrete.provider_message_id = (resultado or {}).get("message_id", "")
-        lembrete.ultimo_erro = ""
-        lembrete.save(
-            update_fields=[
-                "status",
-                "tentativas",
-                "enviado_em",
-                "provider",
-                "provider_message_id",
-                "ultimo_erro",
-                "atualizado_em",
-            ]
-        )
-        enviados.append(mensalidade.pk)
+        if _enviar_estagio(mensalidade, responsavel, estagio, lembrete):
+            enviados.append(mensalidade.pk)
 
     return enviados
+
+
+def _enviar_estagio(mensalidade, responsavel, estagio, lembrete=None):
+    """Registra o estágio (antes da tentativa) e manda a mensagem. Devolve
+    True se foi entregue ao provedor; a falha fica em ``status=erro`` e é
+    retentada na próxima execução da régua."""
+    if lembrete is None:
+        lembrete, _criado = LembreteCobranca.objects.get_or_create(
+            mensalidade=mensalidade, estagio=estagio
+        )
+    if lembrete.status == LembreteCobranca.ENVIADO:
+        return False
+
+    link = montar_link_pagamento(mensalidade, responsavel)
+
+    lembrete.tentativas += 1
+    try:
+        resultado = _enviar_cobranca_whatsapp(
+            mensalidade.academia, responsavel, mensalidade, link, estagio=estagio
+        )
+    except (ValueError, WhatsAppProviderError) as exc:
+        lembrete.status = LembreteCobranca.ERRO
+        lembrete.ultimo_erro = _sanitizar_erro(exc)
+        lembrete.save(
+            update_fields=["status", "tentativas", "ultimo_erro", "atualizado_em"]
+        )
+        return False
+
+    lembrete.status = LembreteCobranca.ENVIADO
+    lembrete.enviado_em = timezone.now()
+    lembrete.provider = (resultado or {}).get("provider", "")
+    lembrete.provider_message_id = (resultado or {}).get("message_id", "")
+    lembrete.ultimo_erro = ""
+    lembrete.save(
+        update_fields=[
+            "status",
+            "tentativas",
+            "enviado_em",
+            "provider",
+            "provider_message_id",
+            "ultimo_erro",
+            "atualizado_em",
+        ]
+    )
+    return True
+
+
+def enviar_cobranca_agora(mensalidade):
+    """Manda já a cobrança do estágio de hoje — usada para a taxa de
+    matrícula, gerada na ativação com vencimento no dia. Fica registrada
+    como o lembrete daquele estágio, então a régua diária não repete a
+    mensagem. Melhor esforço: sem responsável/WhatsApp, não faz nada."""
+    responsavel = mensalidade.matricula.atleta.responsavel_financeiro
+    estagio = calcular_estagio(mensalidade)
+    if responsavel is None or not responsavel.whatsapp or estagio is None:
+        return False
+    return _enviar_estagio(mensalidade, responsavel, estagio)
 
 
 def _garantir_cobranca_silenciosa(mensalidade):

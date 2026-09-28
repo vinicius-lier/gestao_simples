@@ -95,7 +95,10 @@ def detalhe(request, pk):
         matricula.mensalidades_recentes = matricula.mensalidades.filter(academia=request.academia).order_by('-competencia')[:6]
         if not matricula.ativo and request.administrador_academia:
             matricula.ativacao_form = AtivacaoMatriculaForm(matricula=matricula, prefix=f'ativar-{matricula.pk}')
-    return render(request, 'portal/detalhe.html', {'aluno': aluno, 'responsavel': responsavel, 'matriculas': matriculas})
+    fichas = aluno.fichas_matricula.filter(academia=request.academia)
+    return render(request, 'portal/detalhe.html', {
+        'aluno': aluno, 'responsavel': responsavel, 'matriculas': matriculas, 'fichas': fichas,
+    })
 
 
 @academia_required
@@ -119,7 +122,8 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
         if matricula_form is not None:
             valid = matricula_form.is_valid() and valid
         if valid:
-            from financeiro.services import iniciar_cobranca
+            from financeiro.services import iniciar_cobranca, primeira_ativacao
+            from .services_matricula import cobrar_taxa_se_primeira
             try:
                 with transaction.atomic():
                     aluno = form.save()
@@ -141,7 +145,9 @@ def aluno_form(request, pk=None, matricula_pk=None, nova_matricula=False):
                         for ativa in aluno.matriculas.filter(ativo=True):
                             comecam.setdefault(ativa, None)
                     for inscricao_ativa, primeiro_vencimento in comecam.items():
+                        primeira = primeira_ativacao(inscricao_ativa)
                         iniciar_cobranca(inscricao_ativa, primeiro_vencimento)
+                        cobrar_taxa_se_primeira(inscricao_ativa, primeira)
             except ValidationError as error:
                 form.add_error(None, ValidationError(error.messages))
             else:
@@ -362,7 +368,7 @@ def financeiro_encerrar_cobranca(request, pk):
     else:
         messages.success(
             request,
-            f'Mensalidade {mensalidade.competencia:%m/%Y} de {mensalidade.matricula.atleta.nome}: '
+            f'{mensalidade.descricao} de {mensalidade.matricula.atleta.nome}: '
             f'{mensalidade.get_status_display().lower()}.',
         )
     return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
@@ -475,11 +481,8 @@ def financeiro_enviar_cobranca(request, pk):
         messages.success(request, f'Cobrança enviada automaticamente para {responsavel.nome} pelo WhatsApp.')
         return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
 
-    mensagem = (
-        f'Olá, {responsavel.nome}! A mensalidade de {aluno.nome} referente a '
-        f'{mensalidade.competencia:%m/%Y} está no valor de R$ {mensalidade.valor}, com vencimento '
-        f'em {mensalidade.vencimento:%d/%m/%Y}. Pague por aqui: {link}'
-    )
+    from integracoes.whatsapp.evolution import contexto_cobranca
+    mensagem = f'Olá, {responsavel.nome}! {contexto_cobranca(mensalidade)} Pague por aqui: {link}'
     return render(request, 'portal/acesso_responsavel_gerado.html', {
         'aluno': aluno, 'responsavel': responsavel, 'link': link, 'mensagem': mensagem,
     })

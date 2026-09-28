@@ -5,7 +5,8 @@
 
 <article class="card p-3 mb-3">
   <p class="mb-1"><strong>Turma:</strong> {{ convite.turma|default:convite.modalidade }}{% if convite.turma.unidade %} — {{ convite.turma.unidade }}{% endif %}</p>
-  <p class="mb-1"><strong>Mensalidade:</strong> {% if convite.valor_efetivo %}R$ {{ convite.valor_efetivo }}{% else %}—{% endif %} · vencimento dia {{ convite.vencimento_efetivo }}</p>
+  <p class="mb-1"><strong>Mensalidade:</strong> {% if convite.valor_efetivo %}R$ {{ convite.valor_efetivo }}{% else %}—{% endif %}{% with apos=convite.valor_apos_vencimento_efetivo %}{% if apos %} (após o vencimento: R$ {{ apos }}){% endif %}{% endwith %} · vencimento {% if convite.dia_vencimento %}dia {{ convite.dia_vencimento }}{% else %}escolhido pela família (5, 10 ou 15){% endif %}</p>
+  {% with taxa=convite.taxa_matricula_efetiva %}{% if taxa %}<p class="mb-1"><strong>Taxa de matrícula:</strong> R$ {{ taxa }}, gerada ao ativar</p>{% endif %}{% endwith %}
   {% if convite.observacao_interna %}<p class="mb-0"><strong>Obs. interna:</strong> {{ convite.observacao_interna }}</p>{% endif %}
 </article>
 
@@ -27,10 +28,10 @@
 {% if convite.status == 'preenchido' and convite.atleta %}
 <article class="card p-3 mb-3">
   <h2 class="h5">Dados enviados pela família</h2>
-  <p class="mb-1"><strong>Aluno:</strong> {{ convite.atleta.nome }}{% if convite.atleta.data_nascimento %} · nasc. {{ convite.atleta.data_nascimento|date:'d/m/Y' }}{% endif %}{% if convite.atleta.cpf %} · CPF {{ convite.atleta.cpf }}{% endif %}{% if convite.atleta.faixa %} · {{ convite.atleta.faixa }}{% endif %}</p>
-  {% with r=convite.atleta.responsavel_financeiro %}{% if r %}<p class="mb-1"><strong>Responsável:</strong> {{ r.nome }} · {{ r.whatsapp }}{% if r.email %} · {{ r.email }}{% endif %}{% if r.cpf %} · CPF {{ r.cpf }}{% endif %}</p>{% endif %}{% endwith %}
-  {% if convite.atleta.observacoes %}<p class="mb-0"><strong>Observações:</strong> {{ convite.atleta.observacoes }}</p>{% endif %}
+  <p class="mb-1"><strong>Aluno:</strong> {{ convite.atleta.nome }}{% if convite.atleta.data_nascimento %} · nasc. {{ convite.atleta.data_nascimento|date:'d/m/Y' }}{% endif %}</p>
+  {% with r=convite.atleta.responsavel_financeiro %}{% if r %}<p class="mb-0"><strong>Responsável:</strong> {{ r.nome }} · {{ r.whatsapp }}{% if r.email %} · {{ r.email }}{% endif %}{% if r.cpf %} · CPF {{ r.cpf }}{% endif %}</p>{% endif %}{% endwith %}
 </article>
+{% if ficha %}{% include 'portal/partials/ficha_matricula.html' %}{% endif %}
 {% endif %}
 
 {% if convite.status == 'preenchido' %}

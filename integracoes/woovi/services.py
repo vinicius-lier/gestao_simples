@@ -15,7 +15,7 @@ tela: não citam o provedor.
 import logging
 import re
 import uuid
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import IntegrityError, transaction
@@ -147,12 +147,32 @@ def _validar_em_aberto(mensalidade):
         )
 
 
-def _serve(cobranca, conta):
+def _serve(cobranca, conta, valor):
+    """O Pix atual ainda pode ser usado: mesma conta de recebimento, mesmo
+    valor devido hoje (depois do vencimento o valor pode mudar) e longe de
+    expirar."""
     return (
         cobranca is not None
         and cobranca.conta_recebimento_id == conta.pk
+        and cobranca.valor == valor
         and cobranca.expira_em > timezone.now() + MARGEM_RENOVACAO
     )
+
+
+def _validade_em_segundos(mensalidade):
+    """Quanto tempo o Pix aceita pagamento. Se o valor muda depois do
+    vencimento, o Pix em dia expira no fim do dia do vencimento — depois
+    sai um novo, com o valor maior. Com um mínimo de duas margens de
+    renovação, para um Pix gerado perto da meia-noite não ser trocado a
+    cada acesso."""
+    padrao = VALIDADE_COBRANCA_DIAS * 24 * 60 * 60
+    if not mensalidade.muda_apos_vencimento:
+        return padrao
+    fim_do_vencimento = timezone.make_aware(datetime.combine(mensalidade.vencimento, time.max))
+    ate_o_vencimento = int((fim_do_vencimento - timezone.now()).total_seconds())
+    minimo = int((2 * MARGEM_RENOVACAO).total_seconds())
+    return max(minimo, min(padrao, ate_o_vencimento))
+
 
 
 def _dados_cliente(responsavel):
@@ -195,7 +215,7 @@ def garantir_cobranca_pix(mensalidade):
         )
 
     atual = CobrancaPix.objects.filter(mensalidade=mensalidade, status=CobrancaPix.ATIVA).first()
-    if _serve(atual, conta):
+    if _serve(atual, conta, mensalidade.valor_devido()):
         return atual
 
     with transaction.atomic():
@@ -205,26 +225,27 @@ def garantir_cobranca_pix(mensalidade):
             .get(pk=mensalidade.pk)
         )
         _validar_em_aberto(travada)
+        valor = travada.valor_devido()
         atual = (
             CobrancaPix.objects.select_for_update()
             .filter(mensalidade=travada, status=CobrancaPix.ATIVA)
             .first()
         )
-        if _serve(atual, conta):
+        if _serve(atual, conta, valor):
             return atual
 
         client = WooviClient()
         if atual is not None:
             _encerrar_cobranca_substituida(client, atual)
 
-        valor_centavos = valor_em_centavos(travada.valor)
+        validade = _validade_em_segundos(travada)
         aluno = travada.matricula.atleta
         criada = client.criar_cobranca(
             correlation_id=f"mensalidade-{travada.pk}-{uuid.uuid4().hex}",
-            valor_centavos=valor_centavos,
+            valor_centavos=valor_em_centavos(valor),
             # Vai para o infoPagador do Pix (máx. 140 caracteres).
-            comentario=f"Mensalidade {travada.competencia:%m/%Y} - {aluno.nome}"[:140],
-            expira_em_segundos=VALIDADE_COBRANCA_DIAS * 24 * 60 * 60,
+            comentario=f"{travada.descricao} - {aluno.nome}"[:140],
+            expira_em_segundos=validade,
             cliente=_dados_cliente(aluno.responsavel_financeiro),
         )
         if not criada.correlation_id or not criada.br_code:
@@ -235,10 +256,10 @@ def garantir_cobranca_pix(mensalidade):
             conta_recebimento=conta,
             correlation_id=criada.correlation_id,
             transaction_id=criada.transaction_id,
-            valor=travada.valor,
+            valor=valor,
             br_code=criada.br_code,
             link_pagamento=criada.link_pagamento,
-            expira_em=criada.expira_em or timezone.now() + timedelta(days=VALIDADE_COBRANCA_DIAS),
+            expira_em=criada.expira_em or timezone.now() + timedelta(seconds=validade),
         )
 
 
@@ -341,7 +362,12 @@ def registrar_pagamento_pix(cobranca, *, pago_em=None, transaction_id="", taxa_c
                 mensalidade=mensalidade.pk, cobranca=cobranca.correlation_id,
             )
         else:
-            registrar_pagamento(mensalidade, forma_pagamento="pix", quando=cobranca.pago_em)
+            valor_pago = (
+                Decimal(int(valor_pago_centavos)) / 100 if valor_pago_centavos else cobranca.valor
+            )
+            registrar_pagamento(
+                mensalidade, forma_pagamento="pix", quando=cobranca.pago_em, valor_pago=valor_pago,
+            )
 
         solicitar_repasse(cobranca.conta_recebimento)
     return True

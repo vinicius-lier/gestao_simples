@@ -1,5 +1,5 @@
 {% extends 'portal/base.html' %}{% block title %}Convites de matrícula{% endblock %}{% block content %}
-<h1>Convites de matrícula</h1>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2"><h1>Convites de matrícula</h1>{% if request.administrador_academia %}<a class="btn btn-outline-primary" href="{% url 'portal:matricula_importar' %}">Importar planilha do formulário</a>{% endif %}</div>
 <p>Gere um link, escolha a turma e envie para a família preencher. Ao enviarem, os dados ficam salvos e a matrícula entra como <strong>pendente</strong> — você confere e ativa aqui.</p>
 
 <form method="post" class="card p-4" style="max-width:720px">{% csrf_token %}{{ form.non_field_errors }}{{ form.as_p }}

@@ -8,6 +8,18 @@ class Academia(models.Model):
     telefone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
 
+    # Textos da ficha de matrícula (convite): a família marca "Estou ciente"
+    # em cada um. Em branco, o bloco não aparece. A importação da planilha
+    # do formulário preenche os dois a partir dos cabeçalhos, se vazios.
+    termos_matricula = models.TextField(
+        'termos da matrícula', blank=True,
+        help_text='Regras da escola exibidas no início da ficha de matrícula.',
+    )
+    declaracao_matricula = models.TextField(
+        'declaração do responsável', blank=True,
+        help_text='Declaração exibida no fim da ficha de matrícula.',
+    )
+
     ativo = models.BooleanField(default=True)
     criado = models.DateTimeField(auto_now_add=True)
 

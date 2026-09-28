@@ -49,14 +49,19 @@ def proximo_vencimento(matricula, a_partir_de=None):
 def _criar_ou_obter_mensalidade(matricula, ano, mes):
     # Bolsa integral (valor zero) fica registrada como isenta: aparece no
     # histórico do aluno, mas não entra na régua de cobrança nem gera Pix.
+    # O valor após o vencimento é copiado da matrícula: mudar a matrícula
+    # depois não altera mensalidades já criadas (igual ao valor).
+    em_aberto = matricula.valor_mensalidade > 0
     return Mensalidade.objects.get_or_create(
         matricula=matricula,
         competencia=date(ano, mes, 1),
+        tipo=Mensalidade.MENSALIDADE,
         defaults={
             "academia": matricula.academia,
             "valor": matricula.valor_mensalidade,
+            "valor_apos_vencimento": matricula.valor_apos_vencimento if em_aberto else None,
             "vencimento": _vencimento(matricula, ano, mes),
-            "status": "pendente" if matricula.valor_mensalidade > 0 else "isenta",
+            "status": "pendente" if em_aberto else "isenta",
         },
     )
 
@@ -153,10 +158,45 @@ def iniciar_cobranca(matricula, primeiro_vencimento=None):
     return gerar_mensalidade_inicial(matricula)
 
 
-def registrar_pagamento(mensalidade, forma_pagamento="", quando=None):
+def gerar_taxa_matricula(matricula, hoje=None):
+    """Cria a taxa de matrícula, com vencimento no dia — chamada quando a
+    matrícula é ativada pela primeira vez (no painel ou ao ser cadastrada
+    já ativa). Uma por matrícula: chamar de novo devolve a mesma. Sem taxa
+    definida (vazia ou zero), não cria nada e devolve None.
+
+    Reativação (aluno que volta de trancado, matrícula reativada) não passa
+    por aqui, nem a importação da planilha: quem já é aluno não paga taxa."""
+    taxa = matricula.taxa_matricula
+    if taxa is None or taxa <= 0:
+        return None
+    hoje = hoje or timezone.localdate()
+    mensalidade, _criada = Mensalidade.objects.get_or_create(
+        matricula=matricula,
+        tipo=Mensalidade.TAXA_MATRICULA,
+        defaults={
+            "academia": matricula.academia,
+            "competencia": date(hoje.year, hoje.month, 1),
+            "valor": taxa,
+            "vencimento": hoje,
+            "status": "pendente",
+        },
+    )
+    return mensalidade
+
+
+def primeira_ativacao(matricula):
+    """A matrícula nunca gerou cobrança: ativá-la agora é o início dela (e
+    não uma reativação), então cabe a taxa de matrícula."""
+    return not matricula.mensalidades.exists()
+
+
+def registrar_pagamento(mensalidade, forma_pagamento="", quando=None, valor_pago=None):
     """Marca uma mensalidade em aberto como paga manualmente (conferência de
     banco, dinheiro em mãos etc.). O mesmo caminho é usado pelo webhook da
     Woovi quando o pagamento é confirmado automaticamente pelo gateway.
+
+    ``valor_pago`` é o valor do Pix pago; sem ele (baixa manual), vale o
+    valor devido na data do pagamento — em dia ou após o vencimento.
 
     Confere a situação atual no banco, com a linha travada: uma tela
     desatualizada não sobrescreve um pagamento já registrado (por exemplo,
@@ -176,7 +216,10 @@ def registrar_pagamento(mensalidade, forma_pagamento="", quando=None):
         mensalidade.status = "paga"
         mensalidade.forma_pagamento = forma_pagamento
         mensalidade.pago_em = quando or timezone.now()
-        mensalidade.save(update_fields=["status", "forma_pagamento", "pago_em"])
+        if valor_pago is None:
+            valor_pago = mensalidade.valor_devido(timezone.localdate(mensalidade.pago_em))
+        mensalidade.valor_pago = valor_pago
+        mensalidade.save(update_fields=["status", "forma_pagamento", "pago_em", "valor_pago"])
     return mensalidade
 
 
@@ -206,10 +249,12 @@ def resumo_financeiro(academia, competencia):
     do_mes = Mensalidade.objects.filter(academia=academia, competencia=competencia).exclude(
         status__in=("cancelada", "isenta")
     )
+    # Previsto e a receber pelo valor em dia; recebido pelo que foi pago e
+    # atrasado pelo que é devido hoje (com o valor após o vencimento).
     previsto = sum((m.valor for m in do_mes), start=0)
-    recebido = sum((m.valor for m in do_mes if m.status == "paga"), start=0)
-    atrasado = sum((m.valor for m in do_mes if m.status == "vencida"), start=0)
-    a_receber = previsto - recebido - atrasado
+    recebido = sum((m.valor_atual for m in do_mes if m.status == "paga"), start=0)
+    atrasado = sum((m.valor_devido() for m in do_mes if m.status == "vencida"), start=0)
+    a_receber = sum((m.valor for m in do_mes if m.status == "pendente"), start=0)
     inadimplencia = (atrasado / previsto * 100) if previsto else 0
 
     return {

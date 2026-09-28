@@ -6,8 +6,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
 
-from .forms_matricula import AtivacaoMatriculaForm, ConviteMatriculaForm, MatriculaPublicaForm
-from .models import ConviteMatricula
+from .forms_matricula import (
+    AtivacaoMatriculaForm, ConviteMatriculaForm, ImportacaoFichasForm, MatriculaPublicaForm,
+)
+from .models import ConviteMatricula, FichaMatricula
 from .services_matricula import ativar_convite, cancelar_convite, efetivar_convite
 from .views import academia_required
 
@@ -29,6 +31,39 @@ def convites(request):
 
 
 @academia_required
+@require_http_methods(['GET', 'POST'])
+def importar_fichas(request):
+    """Importa a planilha de respostas do formulário antigo. "Conferir" roda
+    a importação inteira e desfaz no fim; "Importar" grava. Só administrador:
+    cria alunos e matrículas ativas de uma vez."""
+    from .importacao_fichas import PlanilhaInvalida, importar_planilha
+
+    if not request.administrador_academia:
+        raise PermissionDenied('Somente o administrador da academia importa alunos.')
+    form = ImportacaoFichasForm(request.POST or None, request.FILES or None, academia=request.academia)
+    relatorio = None
+    if request.method == 'POST' and form.is_valid():
+        gravar = request.POST.get('acao') == 'importar'
+        try:
+            relatorio = importar_planilha(
+                request.academia, form.cleaned_data['arquivo'],
+                turma=form.cleaned_data['turma'],
+                cobrar_a_partir_de=form.cleaned_data['cobrar_a_partir_de'],
+                gravar=gravar,
+            )
+        except PlanilhaInvalida as error:
+            form.add_error('arquivo', str(error))
+        else:
+            if gravar:
+                messages.success(
+                    request,
+                    f'Planilha importada: {relatorio.novos} aluno(s) novo(s) e '
+                    f'{relatorio.existentes} ficha(s) anexada(s) a alunos que já existiam.',
+                )
+    return render(request, 'portal/matricula_importar.html', {'form': form, 'relatorio': relatorio})
+
+
+@academia_required
 def convite_detalhe(request, pk):
     convite = get_object_or_404(
         ConviteMatricula.objects.select_related(
@@ -43,6 +78,7 @@ def convite_detalhe(request, pk):
         ativacao_form = AtivacaoMatriculaForm(matricula=convite.matricula)
     return render(request, 'portal/matricula_convite_detalhe.html', {
         'convite': convite, 'link': link, 'ativacao_form': ativacao_form,
+        'ficha': FichaMatricula.objects.filter(convite=convite).first(),
     })
 
 
@@ -113,7 +149,7 @@ def matricula_convite(request, token):
         return render(request, 'portal/matricula_convite.html',
                       {'estado': 'expirado' if expirado else 'usado', 'convite': convite})
 
-    form = MatriculaPublicaForm(request.POST or None)
+    form = MatriculaPublicaForm(request.POST or None, academia=convite.academia)
     if request.method == 'POST' and form.is_valid():
         try:
             efetivar_convite(convite, form.cleaned_data)

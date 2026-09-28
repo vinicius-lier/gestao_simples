@@ -39,6 +39,26 @@ class Matricula(models.Model):
         decimal_places=2,
     )
 
+    # Valor da mensalidade a partir do dia seguinte ao vencimento (em
+    # branco: não muda). Copiado para cada mensalidade quando ela é criada.
+    valor_apos_vencimento = models.DecimalField(
+        "valor após o vencimento",
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+
+    # Gerada uma única vez, quando a matrícula é ativada pela primeira vez
+    # (ver financeiro.services.gerar_taxa_matricula). Em branco: sem taxa.
+    taxa_matricula = models.DecimalField(
+        "taxa de matrícula",
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+
     dia_vencimento = models.PositiveSmallIntegerField(default=10)
 
     data_inicio = models.DateField()
@@ -108,6 +128,10 @@ class Matricula(models.Model):
             erros["dia_vencimento"] = (
                 "O dia de vencimento deve estar entre 1 e 31."
             )
+
+        for campo in ("valor_apos_vencimento", "taxa_matricula"):
+            if getattr(self, campo) is not None and getattr(self, campo) < 0:
+                erros[campo] = "O valor não pode ser negativo."
 
         if (
             self.data_inicio

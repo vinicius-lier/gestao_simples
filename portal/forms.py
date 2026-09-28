@@ -12,6 +12,12 @@ def digits(value):
     return ''.join(c for c in value if c.isdigit())
 
 
+def _nao_negativo(valor):
+    if valor is not None and valor < 0:
+        raise ValidationError('O valor não pode ser negativo.')
+    return valor
+
+
 def cpf_valido(valor):
     """Checagem propositalmente simples: exige 11 dígitos e rejeita
     sequências óbvias como '11111111111'. Não valida o dígito
@@ -161,6 +167,8 @@ class TurmaSelect(forms.Select):
                 'data-modalidade': turma.modalidade_id,
                 'data-unidade': turma.unidade_id or '',
                 'data-valor': '' if turma.valor_mensalidade is None else turma.valor_mensalidade,
+                'data-valor-apos': '' if turma.valor_apos_vencimento is None else turma.valor_apos_vencimento,
+                'data-taxa': '' if turma.taxa_matricula is None else turma.taxa_matricula,
                 'data-vencimento': turma.dia_vencimento,
             })
         return option
@@ -169,7 +177,8 @@ class TurmaSelect(forms.Select):
 class MatriculaForm(forms.ModelForm):
     class Meta:
         model = Matricula
-        fields = ('unidade', 'modalidade', 'turma', 'valor_mensalidade', 'dia_vencimento', 'primeiro_vencimento', 'data_inicio', 'data_fim', 'ativo')
+        fields = ('unidade', 'modalidade', 'turma', 'valor_mensalidade', 'valor_apos_vencimento', 'taxa_matricula', 'dia_vencimento', 'primeiro_vencimento', 'data_inicio', 'data_fim', 'ativo')
+        labels = {'valor_apos_vencimento': 'Valor após o vencimento (R$)', 'taxa_matricula': 'Taxa de matrícula (R$)'}
         widgets = {key: forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}) for key in ('primeiro_vencimento', 'data_inicio', 'data_fim')}
         widgets['turma'] = TurmaSelect
 
@@ -198,6 +207,13 @@ class MatriculaForm(forms.ModelForm):
         self.fields['dia_vencimento'].required = False
         self.fields['valor_mensalidade'].help_text = 'Em branco: usa o valor da turma.'
         self.fields['dia_vencimento'].help_text = 'Em branco: usa o vencimento da turma.'
+        self.fields['valor_apos_vencimento'].help_text = (
+            'Cobrado a partir do dia seguinte ao vencimento. Em branco: usa o da turma. '
+            'Vale para as mensalidades criadas daqui em diante.'
+        )
+        self.fields['taxa_matricula'].help_text = (
+            'Gerada uma vez, quando a matrícula é ativada. Em branco: usa a da turma; 0 para não cobrar.'
+        )
         for field in self.fields.values():
             field.widget.attrs['class'] = 'form-check-input' if isinstance(field.widget, forms.CheckboxInput) else 'form-select' if isinstance(field.widget, forms.Select) else 'form-control'
 
@@ -207,6 +223,12 @@ class MatriculaForm(forms.ModelForm):
             raise ValidationError('O valor não pode ser negativo.')
         return value
 
+    def clean_valor_apos_vencimento(self):
+        return _nao_negativo(self.cleaned_data.get('valor_apos_vencimento'))
+
+    def clean_taxa_matricula(self):
+        return _nao_negativo(self.cleaned_data.get('taxa_matricula'))
+
     def clean(self):
         data = super().clean()
         turma = data.get('turma')
@@ -215,6 +237,9 @@ class MatriculaForm(forms.ModelForm):
                 data['valor_mensalidade'] = turma.valor_mensalidade
             else:
                 self.add_error('valor_mensalidade', 'Informe o valor ou escolha uma turma com valor definido.')
+        for campo in ('valor_apos_vencimento', 'taxa_matricula'):
+            if data.get(campo) is None and turma is not None:
+                data[campo] = getattr(turma, campo)
         if not data.get('dia_vencimento'):
             data['dia_vencimento'] = turma.dia_vencimento if turma else 10
         primeiro = data.get('primeiro_vencimento')
@@ -266,11 +291,13 @@ class ProfessorForm(CadastroAcademiaForm):
 class TurmaForm(CadastroAcademiaForm):
     class Meta:
         model = Turma
-        fields = ('nome', 'unidade', 'modalidade', 'docente', 'dias_semana', 'horario', 'local', 'valor_mensalidade', 'dia_vencimento', 'ativo')
+        fields = ('nome', 'unidade', 'modalidade', 'docente', 'dias_semana', 'horario', 'local', 'valor_mensalidade', 'valor_apos_vencimento', 'taxa_matricula', 'dia_vencimento', 'ativo')
         labels = {
             'horario': 'Horário',
             'dias_semana': 'Dias da semana',
             'valor_mensalidade': 'Valor da mensalidade (R$)',
+            'valor_apos_vencimento': 'Valor após o vencimento (R$)',
+            'taxa_matricula': 'Taxa de matrícula (R$)',
             'dia_vencimento': 'Dia de vencimento',
         }
         widgets = {'horario': forms.TimeInput(format='%H:%M', attrs={'type': 'time'})}
@@ -285,6 +312,12 @@ class TurmaForm(CadastroAcademiaForm):
         if valor is not None and valor < 0:
             raise ValidationError('O valor não pode ser negativo.')
         return valor
+
+    def clean_valor_apos_vencimento(self):
+        return _nao_negativo(self.cleaned_data.get('valor_apos_vencimento'))
+
+    def clean_taxa_matricula(self):
+        return _nao_negativo(self.cleaned_data.get('taxa_matricula'))
 
     def clean_dia_vencimento(self):
         dia = self.cleaned_data.get('dia_vencimento') or 10
