@@ -42,25 +42,29 @@ HKBAA82Jln+lGwS1MwIDAQAB
 """
 
 
-def _buscar_chaves():
+def _buscar_chaves(base_url=None):
     """Busca na Woovi e guarda no cache. Devolve None se não conseguir."""
     try:
-        pems = WooviClient().chaves_publicas_webhook()
+        pems = WooviClient(contexto="publico", base_url=base_url).chaves_publicas_webhook()
     except WooviError as exc:
         logger.warning("Woovi: não foi possível atualizar as chaves do webhook: %s", exc)
         return None
-    cache.set(CHAVE_CACHE, pems, getattr(settings, "WOOVI_WEBHOOK_CHAVES_TTL", 6 * 60 * 60))
+    cache.set(_cache_key(CHAVE_CACHE, base_url), pems, getattr(settings, "WOOVI_WEBHOOK_CHAVES_TTL", 6 * 60 * 60))
     return pems
 
 
-def _chaves(forcar=False):
+def _cache_key(chave, base_url):
+    return f"{chave}:{base_url}" if base_url else chave
+
+
+def _chaves(forcar=False, base_url=None):
     if not forcar:
-        pems = cache.get(CHAVE_CACHE)
+        pems = cache.get(_cache_key(CHAVE_CACHE, base_url))
         if pems:
             return pems
-    elif not cache.add(CHAVE_CACHE_ATUALIZACAO, True, INTERVALO_MINIMO_ATUALIZACAO):
+    elif not cache.add(_cache_key(CHAVE_CACHE_ATUALIZACAO, base_url), True, INTERVALO_MINIMO_ATUALIZACAO):
         return None  # já atualizou há pouco
-    return _buscar_chaves() or (None if forcar else [CHAVE_DOCUMENTADA])
+    return _buscar_chaves(base_url) or (None if forcar else [CHAVE_DOCUMENTADA])
 
 
 def _confere(pems, corpo, assinatura):
@@ -74,7 +78,7 @@ def _confere(pems, corpo, assinatura):
     return False
 
 
-def assinatura_valida(corpo, assinatura_b64):
+def assinatura_valida(corpo, assinatura_b64, base_url=None):
     """True se ``assinatura_b64`` (header x-webhook-signature) for uma
     assinatura válida da Woovi sobre ``corpo`` (bytes brutos)."""
     if not assinatura_b64:
@@ -84,8 +88,8 @@ def assinatura_valida(corpo, assinatura_b64):
     except (binascii.Error, ValueError):
         return False
 
-    if _confere(_chaves(), corpo, assinatura):
+    if _confere(_chaves(base_url=base_url), corpo, assinatura):
         return True
     # Pode ter havido rotação: busca a lista de novo (com limite de frequência).
-    novas = _chaves(forcar=True)
+    novas = _chaves(forcar=True, base_url=base_url)
     return bool(novas) and _confere(novas, corpo, assinatura)

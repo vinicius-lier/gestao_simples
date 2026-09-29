@@ -5,6 +5,7 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from financeiro.models import CobrancaPix, EventoWebhook, Repasse
+from integracoes.woovi.client import Cobranca
 from tests.test_woovi_assinatura import assinar, gerar_chave
 from tests.woovi_base import CHAVE, CenarioWoovi
 
@@ -35,7 +36,13 @@ class WebhookWooviTests(CenarioWoovi, TestCase):
     def post(self, payload, assinado=True):
         corpo = (payload if isinstance(payload, str) else json.dumps(payload)).encode()
         headers = {"HTTP_X_WEBHOOK_SIGNATURE": assinar(PRIVADA, corpo)} if assinado else {}
-        return self.client.post("/webhooks/woovi/", data=corpo, content_type="application/json", **headers)
+        with patch("integracoes.woovi.views.WooviClient") as origem:
+            charge = payload.get("charge", {}) if isinstance(payload, dict) else {}
+            origem.return_value.obter_cobranca.return_value = Cobranca(
+                charge.get("correlationID", ""), "COMPLETED", charge.get("value", 0),
+                "", "", None, charge.get("transactionID", ""), None, charge.get("fee"),
+            )
+            return self.client.post("/webhooks/woovi/", data=corpo, content_type="application/json", **headers)
 
     # ---------------------------------------------------------- segurança
     def test_sem_assinatura_e_recusado_sem_efeito(self, _chaves):

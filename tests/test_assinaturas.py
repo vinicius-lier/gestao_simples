@@ -159,7 +159,10 @@ class CenarioObrigatorioTests(Cenario):
         self.assertIn("suspensa", self.alerta.call_args.args[0].lower())
 
         # Pagamento confirmado pela Woovi (webhook).
-        with patch("integracoes.woovi.views.assinatura_valida", return_value=True):
+        with patch("integracoes.woovi.views.assinatura_valida", return_value=True), patch("integracoes.woovi.views.WooviClient") as origem:
+            origem.return_value.obter_cobranca.return_value = Cobranca(
+                fatura.correlation_id, "COMPLETED", 15000, "", "", None, "tx-123", None,
+            )
             resp = self.client.post("/webhooks/woovi/", data=json.dumps({
                 "event": "OPENPIX:CHARGE_COMPLETED",
                 "charge": {"correlationID": fatura.correlation_id, "status": "COMPLETED", "value": 15000,
@@ -183,7 +186,10 @@ class CenarioObrigatorioTests(Cenario):
 
 class WebhookTests(Cenario):
     def enviar(self, correlation_id, transacao="tx-1", e2e="E1"):
-        with patch("integracoes.woovi.views.assinatura_valida", return_value=True):
+        with patch("integracoes.woovi.views.assinatura_valida", return_value=True), patch("integracoes.woovi.views.WooviClient") as origem:
+            origem.return_value.obter_cobranca.return_value = Cobranca(
+                correlation_id, "COMPLETED", 15000, "", "", None, transacao, None,
+            )
             return self.client.post("/webhooks/woovi/", data=json.dumps({
                 "event": "OPENPIX:CHARGE_COMPLETED",
                 "charge": {"correlationID": correlation_id, "status": "COMPLETED", "value": 15000,

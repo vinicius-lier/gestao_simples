@@ -26,7 +26,7 @@ def mensagem_erro_pix(error, acao):
     from integracoes.woovi.services import RecebimentoNaoConfigurado
 
     if isinstance(error, RecebimentoNaoConfigurado):
-        return 'Cadastre a chave Pix de recebimento em Configurações → Recebimento.'
+        return 'Configure a conta de recebimento em Configurações → Recebimento.'
     if isinstance(error, WooviError):
         logger.warning('Pix: falha ao %s: %s', acao, error)
         if isinstance(error, WooviConfigError):

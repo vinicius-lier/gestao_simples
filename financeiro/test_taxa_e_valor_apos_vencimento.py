@@ -196,6 +196,7 @@ class TaxaMatriculaTests(Cenario):
 class PixComValorAposVencimentoTests(CenarioWoovi, TestCase):
     def setUp(self):
         self.criar_cenario()
+        self.usar_conta_propria()
 
     def em_aberto(self, vencimento):
         self.mensalidade.vencimento = vencimento

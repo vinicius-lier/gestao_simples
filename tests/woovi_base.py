@@ -39,6 +39,16 @@ class CenarioWoovi:
             valor=Decimal("120.00"), vencimento=competencia.replace(day=10), status=status,
         )
 
+    def usar_conta_propria(self):
+        self.conta.ativa = False
+        self.conta.save(update_fields=["ativa"])
+        self.conta = ContaRecebimento.objects.create(
+            academia=self.academia, modelo_recebimento=ContaRecebimento.CONTA_PROPRIA,
+            status=ContaRecebimento.CONECTADA, credencial_ref=f"WOOVI_ACADEMIA_{self.academia.pk}_APP_ID",
+            provider_account_id="conta-teste", api_base_url="https://api.woovi-sandbox.com",
+        )
+        return self.conta
+
     def cobranca(self, mensalidade=None, conta=None, correlation_id="mensalidade-1-abc", dias=10, **extra):
         return CobrancaPix.objects.create(
             mensalidade=mensalidade or self.mensalidade,

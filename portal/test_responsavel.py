@@ -159,6 +159,7 @@ class ResponsavelPortalTests(TestCase):
 
         ContaRecebimento.objects.create(
             academia=self.a, tipo_chave=ContaRecebimento.EMAIL, pix_key="escola@exemplo.com",
+            modelo_recebimento=ContaRecebimento.CONTA_PROPRIA, status=ContaRecebimento.CONECTADA,
         )
 
     @patch("integracoes.woovi.services.WooviClient")

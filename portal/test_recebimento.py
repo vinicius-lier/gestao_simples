@@ -2,129 +2,125 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from academias.models import Academia
 from financeiro.models import ContaRecebimento, Repasse
 from integracoes.woovi.exceptions import WooviUnavailableError
 from portal.models import AcessoAcademia
-from tests.woovi_base import subconta
+from integracoes.woovi.contas import EXPLICACAO_TAXA, TEXTO_TAXA, preparar_conta
+from integracoes.woovi.exceptions import WooviConfigError
 
-TERMOS_INTERNOS = ("Woovi", "woovi", "OpenPix", "openpix", "subconta", "Subconta", "withdraw", "saque", "saldo")
-
-
+@override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class RecebimentoTests(TestCase):
     def setUp(self):
-        self.a = Academia.objects.create(nome="Keiko", nome_fantasia="Escola de Judô Keiko Fukuda", cnpj="RC1")
-        usuarios = get_user_model().objects
-        self.dona = usuarios.create_user("dona", password="senha123")
+        self.a = Academia.objects.create(nome="Keiko", cnpj="12345678000195")
+        self.dona = get_user_model().objects.create_user("dona", password="senha123")
+        self.operador = get_user_model().objects.create_user("operador", password="senha123")
         AcessoAcademia.objects.create(usuario=self.dona, academia=self.a, administrador=True)
-        self.operador = usuarios.create_user("operador", password="senha123")
         AcessoAcademia.objects.create(usuario=self.operador, academia=self.a)
         self.client.force_login(self.dona)
+        self.url = "/configuracoes/recebimento/"
 
-    def salvar(self, tipo="email", chave="escola@keiko.com.br", confirmacao=True):
-        dados = {"tipo_chave": tipo, "chave": chave}
-        if confirmacao:
-            dados["confirmacao"] = "on"
-        return self.client.post("/configuracoes/recebimento/", dados, follow=True)
+    def salvar(self, acao="ativar", confirmar=True):
+        return self.client.post(self.url, {"acao": acao, **({"confirmacao": "on"} if confirmar else {})}, follow=True)
 
-    def conta(self, **extra):
-        return ContaRecebimento.objects.create(
-            academia=self.a, tipo_chave=ContaRecebimento.EMAIL, pix_key="escola@keiko.com.br", **extra,
-        )
-
-    # ------------------------------------------------------------- acesso
-    def test_so_o_administrador_da_academia_acessa(self):
-        self.assertEqual(self.client.get("/configuracoes/recebimento/").status_code, 200)
+    def test_so_administrador_acessa_e_ve_link_no_menu(self):
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+        self.assertContains(self.client.get("/painel/"), self.url)
         self.client.force_login(self.operador)
-        self.assertEqual(self.client.get("/configuracoes/recebimento/").status_code, 403)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.assertNotContains(self.client.get("/painel/"), self.url)
 
-    def test_link_no_menu_so_para_o_administrador(self):
-        self.assertContains(self.client.get("/painel/"), "/configuracoes/recebimento/")
-        self.client.force_login(self.operador)
-        self.assertNotContains(self.client.get("/painel/"), "/configuracoes/recebimento/")
+    def test_taxa_comercial_visivel_antes_e_depois_conexao(self):
+        resposta = self.client.get(self.url)
+        self.assertContains(resposta, "Não configurada")
+        for texto in (TEXTO_TAXA, EXPLICACAO_TAXA, "Conta Woovi da Academia"):
+            self.assertContains(resposta, texto)
+        conta = preparar_conta(self.a)
+        ContaRecebimento.objects.filter(pk=conta.pk).update(status=ContaRecebimento.CONECTADA, conectada_em=timezone.now())
+        resposta = self.client.get(self.url)
+        self.assertContains(resposta, TEXTO_TAXA)
+        self.assertContains(resposta, EXPLICACAO_TAXA)
+        self.assertContains(resposta, "Conectada")
+        self.assertNotContains(resposta, "Verificar e ativar")
 
-    # ------------------------------------------------------------- cadastro
-    @patch("integracoes.woovi.services.WooviClient")
-    def test_cadastra_a_chave_pix(self, mock_client):
-        mock_client.return_value.criar_ou_obter_subconta.return_value = subconta()
+    def test_todos_os_estados_sao_consultaveis(self):
+        conta = preparar_conta(self.a)
+        for estado, texto in ContaRecebimento.STATUS:
+            ContaRecebimento.objects.filter(pk=conta.pk).update(status=estado)
+            self.assertContains(self.client.get(self.url), texto)
 
-        resposta = self.salvar(chave="Escola@Keiko.com.br")
-
-        self.assertContains(resposta, "Chave Pix de recebimento salva.")
-        conta = ContaRecebimento.ativa_da(self.a)
-        self.assertEqual((conta.pix_key, conta.criada_por), ("escola@keiko.com.br", self.dona))
-
-    @patch("integracoes.woovi.services.WooviClient")
-    def test_chave_invalida_mostra_erro_sem_chamar_o_provedor(self, mock_client):
-        resposta = self.salvar(tipo="cpf", chave="123.456.789-00")
-        self.assertContains(resposta, "CPF inválido")
-        mock_client.assert_not_called()
+    @patch("portal.views_recebimento.ativar_conta")
+    def test_exige_ciencia_da_taxa(self, ativar):
+        resposta = self.salvar(confirmar=False)
+        self.assertContains(resposta, "Confirme a ciência da taxa")
+        ativar.assert_not_called()
         self.assertFalse(ContaRecebimento.objects.exists())
 
-    @patch("integracoes.woovi.services.WooviClient")
-    def test_exige_confirmacao(self, mock_client):
-        self.salvar(confirmacao=False)
-        mock_client.assert_not_called()
-        self.assertFalse(ContaRecebimento.objects.exists())
+    @patch("portal.views_recebimento.ativar_conta")
+    def test_acao_ativar_usa_conta_da_academia(self, ativar):
+        self.salvar()
+        conta = ContaRecebimento.objects.get()
+        self.assertEqual(conta.modelo_recebimento, ContaRecebimento.CONTA_PROPRIA)
+        ativar.assert_called_once_with(conta, self.dona)
 
-    @patch("integracoes.woovi.services.WooviClient")
-    def test_falha_do_provedor_vira_mensagem_generica(self, mock_client):
-        mock_client.return_value.criar_ou_obter_subconta.side_effect = WooviUnavailableError(
-            "A Woovi retornou o status HTTP 502."
-        )
-        with self.assertLogs("portal.views_recebimento", level="WARNING"):
+    @patch("portal.views_recebimento.ativar_conta")
+    def test_erro_externo_e_logs_nao_expoem_token(self, ativar):
+        segredo = "AppID-super-secreto-testando"
+        ativar.side_effect = WooviUnavailableError(segredo)
+        with self.assertLogs("portal.views_recebimento", level="WARNING") as logs:
             resposta = self.salvar()
-        self.assertContains(resposta, "Não foi possível validar esta chave Pix agora")
-        self.assertNotContains(resposta, "Woovi")
-        self.assertNotContains(resposta, "502")
+        self.assertNotContains(resposta, segredo)
+        self.assertNotIn(segredo, " ".join(logs.output))
+        self.assertContains(resposta, "Não foi possível validar a conexão agora")
+        self.assertEqual(ContaRecebimento.objects.get().status, ContaRecebimento.ERRO)
 
-    @patch("integracoes.woovi.services.WooviClient")
-    def test_troca_bloqueada_com_transferencia_em_andamento(self, mock_client):
-        conta = self.conta()
-        Repasse.objects.create(academia=self.a, conta_recebimento=conta, pix_key_destino=conta.pix_key)
-        resposta = self.salvar(chave="nova@keiko.com.br")
-        self.assertContains(resposta, "transferência de valores em andamento")
-        mock_client.assert_not_called()
+    @patch("portal.views_recebimento.ativar_conta", side_effect=WooviConfigError("token-secreto"))
+    def test_credencial_ausente_orienta_suporte_sem_expor(self, ativar):
+        resposta = self.salvar()
+        self.assertContains(resposta, "A conexão precisa ser preparada no servidor")
+        self.assertNotContains(resposta, "token-secreto")
 
-    @patch("integracoes.woovi.services.WooviClient")
-    def test_troca_mostra_a_chave_anterior_no_historico(self, mock_client):
-        self.conta()
-        mock_client.return_value.criar_ou_obter_subconta.return_value = subconta(chave="nova@keiko.com.br")
+    @override_settings(WOOVI_ONBOARDING_APP_ID="onboarding-secreto")
+    @patch("portal.views_recebimento.iniciar_onboarding")
+    def test_inicia_onboarding_pelo_sistema(self, iniciar):
+        self.salvar("iniciar")
+        iniciar.assert_called_once_with(ContaRecebimento.objects.get())
 
-        resposta = self.salvar(chave="nova@keiko.com.br")
+    @patch("portal.views_recebimento.iniciar_onboarding")
+    def test_sem_api_habilitada_mostra_cadastro_oficial(self, iniciar):
+        resposta = self.salvar("iniciar")
+        iniciar.assert_not_called()
+        self.assertContains(resposta, "cadastro oficial")
+        self.assertFalse(ContaRecebimento.objects.get().ativa)
 
-        self.assertContains(resposta, "Chaves anteriores")
-        self.assertContains(resposta, "escola@keiko.com.br")
-        self.assertEqual(ContaRecebimento.ativa_da(self.a).pix_key, "nova@keiko.com.br")
+    def test_link_kyc_falso_nao_aparece_e_resposta_nao_e_cacheada(self):
+        conta = preparar_conta(self.a)
+        conta.onboarding_url = "https://evil.example/onboarding/segredo"
+        conta.save()
+        resposta = self.client.get(self.url)
+        self.assertNotContains(resposta, "evil.example")
+        self.assertNotContains(resposta, conta.credencial_ref)
+        self.assertNotContains(resposta, 'name="app_id"')
+        self.assertIn("no-store", resposta["Cache-Control"])
+        self.assertEqual(resposta["Referrer-Policy"], "no-referrer")
 
-    # --------------------------------------------------------------- status
-    def test_status_simples_sem_termos_internos(self):
-        resposta = self.client.get("/configuracoes/recebimento/")
-        self.assertContains(resposta, "Não configurado")
+    def test_historico_e_ultima_transferencia_permanecem(self):
+        antiga = ContaRecebimento.objects.create(academia=self.a, pix_key="antiga@exemplo.com", tipo_chave="email")
+        Repasse.objects.create(academia=self.a, conta_recebimento=antiga, pix_key_destino=antiga.pix_key,
+                              status=Repasse.CONCLUIDA, valor=Decimal("237.55"), concluido_em=timezone.now())
+        preparar_conta(self.a)
+        resposta = self.client.get(self.url)
+        self.assertContains(resposta, "Recebimentos anteriores")
+        self.assertContains(resposta, antiga.pix_key)
+        self.assertContains(resposta, "R$ 237")
 
-        conta = self.conta()
-        resposta = self.client.get("/configuracoes/recebimento/")
-        self.assertContains(resposta, "Recebimento ativo")
-
-        repasse = Repasse.objects.create(academia=self.a, conta_recebimento=conta, pix_key_destino=conta.pix_key)
-        self.assertContains(self.client.get("/configuracoes/recebimento/"), "Transferência em andamento")
-
-        Repasse.objects.filter(pk=repasse.pk).update(status=Repasse.REQUER_ATENCAO)
-        resposta = self.client.get("/configuracoes/recebimento/")
-        self.assertContains(resposta, "Precisa de atenção")
-        for termo in TERMOS_INTERNOS:
-            self.assertNotContains(resposta, termo)
-
-    def test_mostra_a_ultima_transferencia(self):
-        conta = self.conta()
-        Repasse.objects.create(
-            academia=self.a, conta_recebimento=conta, pix_key_destino=conta.pix_key,
-            status=Repasse.CONCLUIDA, valor=Decimal("237.55"), concluido_em=timezone.now(),
-        )
-        self.assertContains(self.client.get("/configuracoes/recebimento/"), "R$ 237")
+    def test_dados_de_outra_academia_nao_sao_exibidos(self):
+        outra = Academia.objects.create(nome="Outra", cnpj="OUTRA")
+        ContaRecebimento.objects.create(academia=outra, pix_key="privado@outra.com", tipo_chave="email")
+        self.assertNotContains(self.client.get(self.url), "privado@outra.com")
 
 
 class AvisoPlataformaTests(TestCase):

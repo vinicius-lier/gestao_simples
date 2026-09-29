@@ -106,6 +106,7 @@ class FinanceiroPortalTests(TestCase):
     def _conta(self):
         return ContaRecebimento.objects.create(
             academia=self.a, tipo_chave=ContaRecebimento.EMAIL, pix_key="escola@exemplo.com",
+            modelo_recebimento=ContaRecebimento.CONTA_PROPRIA, status=ContaRecebimento.CONECTADA,
         )
 
     def _pix(self, mensalidade=None, dias=10):
@@ -133,7 +134,7 @@ class FinanceiroPortalTests(TestCase):
 
     def test_gerar_pix_sem_chave_de_recebimento_orienta_o_cadastro(self):
         resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/pix/", {}, follow=True)
-        self.assertContains(resposta, "Cadastre a chave Pix de recebimento")
+        self.assertContains(resposta, "Configure a conta de recebimento")
 
     @override_settings(WOOVI_APP_ID="")
     def test_gerar_pix_sem_credencial_mostra_erro_sem_termos_tecnicos(self):

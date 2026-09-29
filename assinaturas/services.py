@@ -19,6 +19,7 @@ from calendar import monthrange
 from datetime import date, timedelta
 
 from django.db import transaction
+from django.conf import settings
 from django.utils import timezone
 
 from monitoramento.alertas import enviar_alerta
@@ -74,6 +75,8 @@ def gerar_faturas(hoje=None, criar_pix=True):
     academia ativa — só a partir do 1º vencimento. Uma por competência (o
     banco garante); o Pix de cada fatura em aberto é criado junto (sem
     duplicar). Devolve quantas faturas foram criadas."""
+    from integracoes.woovi.credenciais import referencia_plataforma
+
     hoje = hoje or timezone.localdate()
     criadas = 0
     assinaturas = Assinatura.objects.exclude(status=Assinatura.CANCELADA).filter(academia__ativo=True)
@@ -85,7 +88,11 @@ def gerar_faturas(hoje=None, criar_pix=True):
             assinatura=assinatura,
             competencia=date(hoje.year, hoje.month, 1),
             tipo=FaturaAssinatura.MENSALIDADE,
-            defaults={"valor": assinatura.valor_mensal, "vencimento": vencimento},
+            defaults={
+                "valor": assinatura.valor_mensal, "vencimento": vencimento,
+                "credencial_ref": referencia_plataforma(),
+                "api_base_url": settings.WOOVI_PLATAFORMA_BASE_URL if referencia_plataforma() == "WOOVI_PLATAFORMA_APP_ID" else settings.WOOVI_BASE_URL,
+            },
         )
         criadas += criada
         if criar_pix and fatura.em_aberto:
@@ -142,7 +149,10 @@ def garantir_pix(fatura):
             cliente["taxID"] = cnpj
         if academia.email:
             cliente["email"] = academia.email
-        criada = WooviClient().criar_cobranca(
+        criada = WooviClient(
+            contexto="plataforma", credencial_ref=travada.credencial_ref,
+            base_url=travada.api_base_url or None,
+        ).criar_cobranca(
             correlation_id=f"{PREFIXO_CORRELATION}{travada.pk}-{tentativa}",
             valor_centavos=valor_em_centavos(travada.valor),
             comentario=f"{travada.referencia} do sistema - {_nome(academia)}"[:140],
@@ -244,7 +254,7 @@ def _remover_pix_silencioso(fatura):
     if not fatura.correlation_id or not fatura.pix_vigente:
         return
     try:
-        WooviClient().remover_cobranca(fatura.correlation_id)
+        WooviClient(contexto="plataforma", credencial_ref=fatura.credencial_ref, base_url=fatura.api_base_url or None).remover_cobranca(fatura.correlation_id)
     except WooviError as erro:
         logger.warning("Pix %s da assinatura não foi removido: %s", fatura.correlation_id, erro)
 
@@ -258,7 +268,7 @@ def conferir_pagamento(fatura):
     if not fatura.em_aberto or not fatura.correlation_id:
         return False
     try:
-        remota = WooviClient().obter_cobranca(fatura.correlation_id)
+        remota = WooviClient(contexto="plataforma", credencial_ref=fatura.credencial_ref, base_url=fatura.api_base_url or None).obter_cobranca(fatura.correlation_id)
     except WooviError as erro:
         logger.warning("Consulta do Pix %s da assinatura falhou: %s", fatura.correlation_id, erro)
         return False

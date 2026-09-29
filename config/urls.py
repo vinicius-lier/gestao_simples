@@ -27,6 +27,7 @@ urlpatterns = [
     path('', include('portal.urls')),
     path('admin/', admin.site.urls),
     path('webhooks/woovi/', webhook_woovi, name='webhook_woovi'),
+    path('webhooks/woovi/contas/<int:conta_id>/', webhook_woovi, name='webhook_woovi_conta'),
     path('webhooks/evolution/', webhook_evolution, name='webhook_evolution'),
     path(
         'webhooks/evolution/<str:instancia>/',

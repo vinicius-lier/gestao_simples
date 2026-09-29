@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Prefetch, Q
 from django.utils import timezone
@@ -273,13 +274,40 @@ class LembreteCobranca(models.Model):
 
 
 class ContaRecebimento(models.Model):
-    """Chave Pix onde a academia recebe as mensalidades.
+    """Origem financeira: subconta legada ou conta própria autenticada.
 
-    No provedor de pagamento cada chave Pix identifica uma subconta: os
-    pagamentos caem nela e são repassados para a chave (ver ``Repasse``). A
-    chave de uma conta nunca é editada — trocar a chave cria outra conta e
-    desativa a anterior, que fica como histórico, com as cobranças e os
-    repasses que já estavam ligados a ela."""
+    A identidade de uma conta com histórico é imutável. Desativar uma
+    conta para novas cobranças preserva seus Pix e repasses anteriores.
+    Credenciais são referências a segredos mantidos somente no servidor.
+    """
+
+    LEGADO_SUBCONTA = "legado_subconta"
+    CONTA_PROPRIA = "conta_propria"
+    MODELOS = [(LEGADO_SUBCONTA, "Subconta legada"), (CONTA_PROPRIA, "Conta própria")]
+    NAO_CONFIGURADA = "nao_configurada"
+    CONFIGURANDO = "configurando"
+    AGUARDANDO = "aguardando"
+    CONECTADA = "conectada"
+    ERRO = "erro"
+    STATUS = [
+        (NAO_CONFIGURADA, "Não configurada"), (CONFIGURANDO, "Configuração em andamento"),
+        (AGUARDANDO, "Aguardando validação"), (CONECTADA, "Conectada"), (ERRO, "Erro"),
+    ]
+
+    # Defaults legados preservam registros existentes. Contas novas do portal
+    # são criadas explicitamente como próprias, inativas até a validação.
+    modelo_recebimento = models.CharField(max_length=20, choices=MODELOS, default=LEGADO_SUBCONTA)
+    provider = models.CharField(max_length=20, default="woovi", editable=False)
+    provider_account_id = models.CharField(max_length=100, blank=True)
+    credencial_ref = models.CharField(max_length=100, default="WOOVI_APP_ID", editable=False)
+    api_base_url = models.URLField(blank=True, editable=False)
+    credencial_fingerprint = models.CharField(max_length=64, blank=True, editable=False)
+    status = models.CharField(max_length=20, choices=STATUS, default=NAO_CONFIGURADA)
+    onboarding_status = models.CharField(max_length=40, blank=True)
+    onboarding_correlation_id = models.CharField(max_length=100, blank=True, editable=False)
+    onboarding_url = models.URLField(max_length=1000, blank=True, editable=False)
+    conectada_em = models.DateTimeField(null=True, blank=True)
+    taxa_ciente_em = models.DateTimeField(null=True, blank=True)
 
     CPF = "cpf"
     CNPJ = "cnpj"
@@ -299,8 +327,8 @@ class ContaRecebimento(models.Model):
         on_delete=models.PROTECT,
         related_name="contas_recebimento",
     )
-    tipo_chave = models.CharField(max_length=10, choices=TIPOS_CHAVE)
-    pix_key = models.CharField("chave Pix", max_length=100)
+    tipo_chave = models.CharField(max_length=10, choices=TIPOS_CHAVE, blank=True)
+    pix_key = models.CharField("chave Pix", max_length=100, blank=True)
     ativa = models.BooleanField(default=True)
     saque_bloqueado = models.BooleanField(
         default=False,
@@ -325,11 +353,30 @@ class ContaRecebimento(models.Model):
                 fields=["academia"],
                 condition=Q(ativa=True),
                 name="uma_conta_recebimento_ativa_por_academia",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["academia"], condition=Q(modelo_recebimento="conta_propria"),
+                name="uma_conta_propria_por_academia",
+            ),
         ]
 
     def __str__(self):
-        return f"{self.academia} — {self.pix_key}"
+        destino = self.pix_key if self.legada else "Conta Woovi da academia"
+        return f"{self.academia} — {destino}"
+
+    @property
+    def legada(self):
+        return self.modelo_recebimento == self.LEGADO_SUBCONTA
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            anterior = type(self).objects.get(pk=self.pk)
+            if anterior.conectada_em or anterior.cobrancas_pix.exists() or anterior.repasses.exists():
+                campos = ("academia_id", "modelo_recebimento", "provider", "provider_account_id",
+                          "credencial_ref", "api_base_url", "credencial_fingerprint", "pix_key")
+                if any(getattr(self, campo) != getattr(anterior, campo) for campo in campos):
+                    raise ValidationError("A origem de uma conta com histórico não pode ser alterada.")
+        return super().save(*args, **kwargs)
 
     @classmethod
     def ativa_da(cls, academia):
@@ -363,6 +410,10 @@ class CobrancaPix(models.Model):
         on_delete=models.PROTECT,
         related_name="cobrancas_pix",
     )
+    modelo_recebimento = models.CharField(
+        max_length=20, choices=ContaRecebimento.MODELOS, default=ContaRecebimento.LEGADO_SUBCONTA,
+        editable=False,
+    )
     correlation_id = models.CharField(max_length=100, unique=True)
     transaction_id = models.CharField(max_length=100, blank=True)
     valor = models.DecimalField(max_digits=10, decimal_places=2)
@@ -371,10 +422,10 @@ class CobrancaPix(models.Model):
     link_pagamento = models.URLField(max_length=500, blank=True)
     expira_em = models.DateTimeField()
     pago_em = models.DateTimeField(null=True, blank=True)
+    valor_pago = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
-    # O Pix é criado sem split (a Woovi não aceita split de 100%): o valor
-    # entra na conta principal e o repasse credita o LÍQUIDO na subconta —
-    # a taxa da Woovi é paga pela academia.
+    # Taxa real retornada pela API, nunca derivada da informação comercial.
+    # Crédito em subconta e repasse aplicam-se apenas ao legado.
     taxa = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
         help_text="Taxa da Woovi sobre este Pix (vem no aviso de pagamento). "
@@ -410,6 +461,19 @@ class CobrancaPix(models.Model):
 
     def __str__(self):
         return f"{self.mensalidade} — {self.get_status_display()}"
+
+    def save(self, *args, **kwargs):
+        if self._state.adding:
+            self.modelo_recebimento = self.conta_recebimento.modelo_recebimento
+            if self.mensalidade.academia_id != self.conta_recebimento.academia_id:
+                raise ValidationError("Cobrança e conta devem pertencer à mesma academia.")
+        else:
+            anterior = type(self).objects.only("conta_recebimento_id", "modelo_recebimento", "mensalidade_id").get(pk=self.pk)
+            if any(getattr(self, c) != getattr(anterior, c) for c in (
+                "conta_recebimento_id", "modelo_recebimento", "mensalidade_id",
+            )):
+                raise ValidationError("A origem da cobrança não pode ser alterada.")
+        return super().save(*args, **kwargs)
 
     @property
     def vigente(self):

@@ -173,21 +173,22 @@ class TrocarChavePixTests(CenarioWoovi, TestCase):
         cobranca.refresh_from_db()
         self.assertEqual(cobranca.status, CobrancaPix.ATIVA)
 
-    def test_depois_da_troca_o_proximo_pix_usa_a_chave_nova(self, mock_client):
+    def test_troca_legada_nao_habilita_nova_cobranca(self, mock_client):
         mock_client.return_value.criar_ou_obter_subconta.return_value = subconta(chave=self.NOVA)
         mock_client.return_value.criar_cobranca.side_effect = cobranca_criada
         self.cobranca()
         self.trocar()
 
-        cobranca = garantir_cobranca_pix(self.mensalidade)
-
-        self.assertEqual(cobranca.conta_recebimento.pix_key, self.NOVA)
+        with self.assertRaises(RecebimentoNaoConfigurado):
+            garantir_cobranca_pix(self.mensalidade)
+        mock_client.return_value.criar_cobranca.assert_not_called()
 
 
 @patch("integracoes.woovi.services.WooviClient")
 class GarantirCobrancaPixTests(CenarioWoovi, TestCase):
     def setUp(self):
         self.criar_cenario()
+        self.usar_conta_propria()
 
     def test_cria_pix_sem_split(self, mock_client):
         mock_client.return_value.criar_cobranca.side_effect = cobranca_criada
@@ -196,8 +197,7 @@ class GarantirCobrancaPixTests(CenarioWoovi, TestCase):
 
         kwargs = mock_client.return_value.criar_cobranca.call_args.kwargs
         self.assertEqual(kwargs["valor_centavos"], 12000)
-        # A Woovi recusa split de 100% (HTTP 400 em produção) e o valor é todo
-        # da academia: o Pix vai sem split e o líquido é creditado depois.
+        # O Pix entra diretamente na conta própria, sem split ou repasse.
         self.assertNotIn("splits", kwargs)
         self.assertTrue(kwargs["correlation_id"].startswith(f"mensalidade-{self.mensalidade.pk}-"))
         self.assertEqual(kwargs["comentario"], "Mensalidade 09/2026 - Ana")

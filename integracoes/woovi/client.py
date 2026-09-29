@@ -15,6 +15,7 @@ from urllib.parse import quote
 import requests
 from django.conf import settings
 from django.utils.dateparse import parse_datetime
+from django.views.decorators.debug import sensitive_variables
 
 from integracoes.woovi.exceptions import (
     WooviAuthError,
@@ -81,13 +82,36 @@ def _centavos(valor):
 
 
 class WooviClient:
-    def __init__(self):
-        self.base_url = (getattr(settings, "WOOVI_BASE_URL", "") or "").rstrip("/")
-        app_id = getattr(settings, "WOOVI_APP_ID", "")
+    @sensitive_variables()
+    def __init__(self, *, conta=None, contexto="legado", credencial_ref=None, base_url=None):
+        from .credenciais import da_conta, referencia_plataforma, resolver
+
+        self.contexto = contexto
+        if conta is not None:
+            self.contexto = "legado" if conta.legada else "academia"
+            app_id = da_conta(conta)
+            base_url = conta.api_base_url or getattr(settings, "WOOVI_BASE_URL", "")
+        elif contexto == "publico":
+            app_id = ""
+        elif contexto == "plataforma":
+            ref = credencial_ref or referencia_plataforma()
+            if ref not in ("WOOVI_APP_ID", "WOOVI_PLATAFORMA_APP_ID"):
+                raise WooviConfigError("Credencial inválida para assinatura da plataforma.")
+            app_id = resolver(ref)
+            if base_url is None and ref == "WOOVI_PLATAFORMA_APP_ID":
+                base_url = getattr(settings, "WOOVI_PLATAFORMA_BASE_URL", "")
+        elif contexto == "onboarding":
+            app_id = resolver("WOOVI_ONBOARDING_APP_ID")
+            base_url = getattr(settings, "WOOVI_ONBOARDING_BASE_URL", "")
+        elif contexto == "legado":
+            app_id = getattr(settings, "WOOVI_APP_ID", "")
+        else:
+            raise WooviConfigError("Contexto da integração inválido.")
+        self.base_url = (base_url if base_url is not None else getattr(settings, "WOOVI_BASE_URL", "")).rstrip("/")
 
         if not self.base_url:
             raise WooviConfigError("WOOVI_BASE_URL não configurada.")
-        if not app_id:
+        if not app_id and contexto != "publico":
             raise WooviConfigError("WOOVI_APP_ID não configurado.")
 
         # A Woovi recebe o AppID cru, sem o prefixo "Bearer". Ele vive só
@@ -100,10 +124,15 @@ class WooviClient:
         self.timeout = getattr(settings, "WOOVI_TIMEOUT", 30)
 
     def __repr__(self):
-        return f"<WooviClient {self.base_url}>"
+        return f"<WooviClient {self.contexto}>"
 
     # ------------------------------------------------------------ transporte
+    @sensitive_variables()
     def _request(self, metodo, caminho, *, autenticar=True, **kwargs):
+        if "/subaccount" in caminho and self.contexto != "legado":
+            raise WooviConfigError("Operação exclusiva do recebimento legado.")
+        if caminho.startswith("/api/v1/charge") and self.contexto not in ("legado", "academia", "plataforma"):
+            raise WooviConfigError("Este contexto não pode operar cobranças.")
         headers = self._headers if autenticar else {"Accept": "application/json"}
         try:
             response = requests.request(
@@ -111,6 +140,7 @@ class WooviClient:
                 f"{self.base_url}{caminho}",
                 headers=headers,
                 timeout=self.timeout,
+                allow_redirects=False,
                 **kwargs,
             )
         except requests.Timeout:
@@ -122,6 +152,8 @@ class WooviClient:
                 "Não foi possível comunicar com a Woovi."
             ) from None
 
+        if 300 <= response.status_code < 400:
+            raise WooviInvalidResponseError("Redirecionamento inesperado do provedor.")
         if response.status_code >= 400:
             raise self._erro_http(response)
 
@@ -132,8 +164,7 @@ class WooviClient:
                 "A Woovi retornou uma resposta inválida.", response.status_code
             ) from None
 
-    @staticmethod
-    def _erro_http(response):
+    def _erro_http(self, response):
         status = response.status_code
         detalhe = ""
         try:
@@ -141,7 +172,12 @@ class WooviClient:
         except ValueError:
             corpo = None
         if isinstance(corpo, dict) and isinstance(corpo.get("error"), str):
-            detalhe = corpo["error"][:200]
+            detalhe = corpo["error"]
+            # Respostas externas podem ecoar cabeçalhos. Nunca propagar isso.
+            for segredo in self._headers.values():
+                if segredo:
+                    detalhe = detalhe.replace(segredo, "[redigido]")
+            detalhe = re.sub(r"https?://\S+", "[url]", detalhe)[:200]
 
         mensagem = f"A Woovi retornou o status HTTP {status}" + (f": {detalhe}" if detalhe else "") + "."
         if status in (401, 403):
@@ -318,3 +354,43 @@ class WooviClient:
         if not pems:
             raise WooviInvalidResponseError("A Woovi não retornou nenhuma chave pública.")
         return pems
+
+    def listar_contas(self):
+        resposta = self._request("GET", "/api/v1/account", params={"limit": 100})
+        contas = resposta.get("accounts") if isinstance(resposta, dict) else None
+        if not isinstance(contas, list):
+            raise WooviInvalidResponseError("Não foi possível identificar a conta de recebimento.")
+        return contas
+
+    def obter_conta(self, account_id):
+        return self._objeto(self._request("GET", f"/api/v1/account/{_caminho(account_id)}"), "account")
+
+    def configurar_webhook(self, url, nome):
+        existentes = self._request("GET", "/api/v1/webhook", params={"url": url})
+        hooks = existentes.get("webhooks") if isinstance(existentes, dict) else None
+        if not isinstance(hooks, list):
+            raise WooviInvalidResponseError("Não foi possível verificar a conexão de notificações.")
+        for hook in hooks:
+            if (isinstance(hook, dict) and hook.get("url") == url
+                    and hook.get("event") == "OPENPIX:CHARGE_COMPLETED"
+                    and hook.get("isActive") is True):
+                return hook
+        resposta = self._request("POST", "/api/v1/webhook", json={"webhook": {
+            "name": nome, "event": "OPENPIX:CHARGE_COMPLETED", "url": url, "isActive": True,
+        }})
+        webhook = self._objeto(resposta, "webhook")
+        if (webhook.get("url") != url or webhook.get("event") != "OPENPIX:CHARGE_COMPLETED"
+                or webhook.get("isActive") is not True):
+            raise WooviInvalidResponseError("O provedor não confirmou a conexão de notificações.")
+        return webhook
+
+    def iniciar_onboarding(self, *, cnpj, correlation_id, nome, redirect_url):
+        # partner=True cria uma empresa afiliada própria, não uma conta BaaS
+        # da plataforma. Requer PARTNER + KYC_ONBOARDING_LINK na Woovi.
+        return self._request("POST", "/api/v1/kyc/onboarding", json={
+            "taxID": cnpj, "correlationID": correlation_id, "partner": True,
+            "company": {"name": nome}, "redirectUrl": redirect_url,
+        })
+
+    def consultar_onboarding(self, correlation_id):
+        return self._request("GET", f"/api/v1/account-register/{_caminho(correlation_id)}")

@@ -473,6 +473,14 @@ GraduacaoFormSet = forms.inlineformset_factory(
 )
 
 
+class ContaWooviForm(forms.Form):
+    confirmacao = forms.BooleanField(
+        label="Estou ciente da taxa de R$ 0,85 por Pix recebido, cobrada pela Woovi.",
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        error_messages={"required": "Confirme a ciência da taxa antes de continuar."},
+    )
+
+
 class ChavePixForm(forms.Form):
     """Chave Pix onde a academia recebe as mensalidades."""
 

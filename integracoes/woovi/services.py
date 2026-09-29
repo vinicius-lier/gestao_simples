@@ -1,13 +1,9 @@
 """Recebimento das mensalidades por Pix via Woovi.
 
-Fluxo: a academia cadastra a chave Pix (``configurar_chave_pix``), que
-identifica uma subconta na Woovi. Cada Pix de mensalidade é criado SEM
-split (``garantir_cobranca_pix``): o valor entra na conta principal. A Woovi
-não aceita split de 100%, e o valor pago é todo da academia — então, quando o
-Pix é pago, o webhook registra o pagamento com a taxa da Woovi e abre um
-repasse (``registrar_pagamento_pix``); logo em seguida, em segundo plano,
-``repasses`` credita na subconta o valor líquido (pago menos a taxa, que é
-paga pela academia) e transfere o saldo da subconta para a chave Pix.
+Novas cobranças usam a conta própria da academia e terminam na baixa.
+Cobranças antigas mantêm sua conta e credencial originais; somente elas
+continuam no ciclo de crédito em subconta e repasse. A configuração antiga
+de chaves permanece como ferramenta de manutenção legada, fora do portal.
 
 Mensagens de erro de negócio (``ValueError`` e subclasses) podem ir para a
 tela: não citam o provedor.
@@ -74,6 +70,8 @@ def configurar_chave_pix(academia, tipo_chave, valor, usuario=None):
     """
     pix_key = normalizar_chave_pix(tipo_chave, valor)
     atual = ContaRecebimento.ativa_da(academia)
+    if atual is not None and not atual.legada:
+        raise ValueError("Uma conta própria não pode ser substituída por uma chave legada.")
     if atual is not None and atual.pix_key == pix_key:
         return atual
 
@@ -125,7 +123,7 @@ def _exigir_sem_repasse_aberto(conta):
 def _cancelar_pix_em_aberto(conta):
     """Tira do ar os Pix ativos da conta. Falha em algum (exceto "não
     encontrado") interrompe a troca de chave — nada é trocado pela metade."""
-    client = WooviClient()
+    client = WooviClient(conta=conta)
     for cobranca in CobrancaPix.objects.filter(conta_recebimento=conta, status=CobrancaPix.ATIVA):
         if cobranca.vigente:
             try:
@@ -153,9 +151,13 @@ def _serve(cobranca, conta, valor):
     expirar."""
     return (
         cobranca is not None
-        and cobranca.conta_recebimento_id == conta.pk
+        # A ativação da conta própria não invalida um Pix antigo já enviado.
+        and (cobranca.modelo_recebimento == ContaRecebimento.LEGADO_SUBCONTA
+             or (conta is not None and cobranca.conta_recebimento_id == conta.pk))
         and cobranca.valor == valor
-        and cobranca.expira_em > timezone.now() + MARGEM_RENOVACAO
+        and cobranca.expira_em > timezone.now() + (
+            timedelta(0) if cobranca.modelo_recebimento == ContaRecebimento.LEGADO_SUBCONTA else MARGEM_RENOVACAO
+        )
     )
 
 
@@ -201,22 +203,26 @@ def garantir_cobranca_pix(mensalidade):
     — pendente ou vencida —, criando um se preciso. Idempotente: com Pix
     vigente para a conta de recebimento ativa, não chama o provedor.
 
-    O Pix é criado sem split: o valor entra na conta principal e só depois
-    do pagamento o líquido é creditado na subconta da conta de recebimento
-    (ver ``repasses``). A cobrança guarda a conta de recebimento vigente.
+    Novos Pix usam exclusivamente a conta própria conectada da academia,
+    sem split, crédito ou repasse. Códigos legados vigentes são preservados
+    com sua conta de origem.
 
     O lock na linha da mensalidade impede que operador e família, clicando
     ao mesmo tempo, gerem dois Pix."""
     _validar_em_aberto(mensalidade)
     conta = ContaRecebimento.ativa_da(mensalidade.academia)
-    if conta is None:
-        raise RecebimentoNaoConfigurado(
-            "A chave Pix de recebimento da academia ainda não foi cadastrada."
-        )
-
     atual = CobrancaPix.objects.filter(mensalidade=mensalidade, status=CobrancaPix.ATIVA).first()
+    # Preserve códigos legados vigentes, inclusive seu valor original. Não
+    # cancelar/reemitir automaticamente por mudança de conta ou de tarifa.
+    if atual is not None and atual.modelo_recebimento == ContaRecebimento.LEGADO_SUBCONTA and atual.vigente:
+        return atual
     if _serve(atual, conta, mensalidade.valor_devido()):
         return atual
+
+    if conta is None or conta.legada or conta.status != ContaRecebimento.CONECTADA:
+        raise RecebimentoNaoConfigurado(
+            "Configure a conta de recebimento da academia antes de gerar novos Pix."
+        )
 
     with transaction.atomic():
         travada = (
@@ -225,6 +231,9 @@ def garantir_cobranca_pix(mensalidade):
             .get(pk=mensalidade.pk)
         )
         _validar_em_aberto(travada)
+        conta = ContaRecebimento.objects.select_for_update().get(pk=conta.pk)
+        if not conta.ativa or conta.legada or conta.status != ContaRecebimento.CONECTADA:
+            raise RecebimentoNaoConfigurado("A conta de recebimento precisa estar conectada.")
         valor = travada.valor_devido()
         atual = (
             CobrancaPix.objects.select_for_update()
@@ -234,9 +243,11 @@ def garantir_cobranca_pix(mensalidade):
         if _serve(atual, conta, valor):
             return atual
 
-        client = WooviClient()
+        if atual is not None and atual.modelo_recebimento == ContaRecebimento.LEGADO_SUBCONTA and atual.vigente:
+            return atual
+        client = WooviClient(conta=conta)
         if atual is not None:
-            _encerrar_cobranca_substituida(client, atual)
+            _encerrar_cobranca_substituida(WooviClient(conta=atual.conta_recebimento), atual)
 
         validade = _validade_em_segundos(travada)
         aluno = travada.matricula.atleta
@@ -287,7 +298,7 @@ def remover_cobranca_pix(mensalidade):
     if cobranca is None:
         return
     try:
-        WooviClient().remover_cobranca(cobranca.correlation_id)
+        WooviClient(conta=cobranca.conta_recebimento).remover_cobranca(cobranca.correlation_id)
     except WooviNotFoundError:
         pass
     CobrancaPix.objects.filter(pk=cobranca.pk, status=CobrancaPix.ATIVA).update(
@@ -299,9 +310,8 @@ def conferir_pagamento_pix(mensalidade):
     """Pergunta ao provedor se algum Pix ativo da mensalidade já foi pago
     (rede de segurança para webhook perdido). Dá baixa e abre o repasse se
     sim. Devolve True se registrou um pagamento."""
-    client = None
     for cobranca in CobrancaPix.objects.filter(mensalidade=mensalidade, status=CobrancaPix.ATIVA):
-        client = client or WooviClient()
+        client = WooviClient(conta=cobranca.conta_recebimento)
         remota = client.obter_cobranca(cobranca.correlation_id)
         if remota.status == "COMPLETED":
             return registrar_pagamento_pix(
@@ -317,17 +327,14 @@ def conferir_pagamento_pix(mensalidade):
 
 # ------------------------------------------------------ pagamento e repasse
 def registrar_pagamento_pix(cobranca, *, pago_em=None, transaction_id="", taxa_centavos=None, valor_pago_centavos=None):
-    """Registra o pagamento de um Pix: marca a cobrança e a mensalidade como
-    pagas, guarda a taxa da Woovi e o líquido (o que será creditado na
-    subconta — a taxa é paga pela academia) e abre um repasse para a conta
-    que recebeu. Idempotente — o mesmo Pix pago duas vezes (webhook
-    repetido) não gera nada de novo. Sem a taxa, o líquido fica vazio e o
-    repasse pede atenção até alguém informá-la.
+    """Baixa idempotente com valor pago, data e taxa real da Woovi.
 
-    O dinheiro caiu na subconta em qualquer caso, então o repasse é aberto
-    mesmo quando a mensalidade já estava paga (pagamento em dobro) ou foi
-    cancelada/isentada — esses casos também geram alerta para a plataforma
-    resolver com a família. Devolve True se registrou agora."""
+    Conta própria encerra o fluxo na baixa. Somente cobranças legadas
+    abrem repasse para crédito e transferência do líquido. Sem fee, taxa
+    e líquido permanecem desconhecidos. Pagamentos duplicados ou de uma
+    mensalidade cancelada geram alerta para conferência operacional.
+    Devolve True se registrou agora.
+    """
     from financeiro.services import registrar_pagamento
 
     with transaction.atomic():
@@ -336,19 +343,26 @@ def registrar_pagamento_pix(cobranca, *, pago_em=None, transaction_id="", taxa_c
             .select_related("conta_recebimento__academia")
             .get(pk=cobranca.pk)
         )
-        if cobranca.status == CobrancaPix.PAGA:
+        ja_paga = cobranca.status == CobrancaPix.PAGA
+        # Uma consulta de contingência pode chegar sem fee. Um webhook
+        # posterior completa os dados sem repetir a baixa ou o repasse.
+        if ja_paga and (cobranca.taxa is not None or taxa_centavos is None):
             return False
 
         cobranca.status = CobrancaPix.PAGA
-        cobranca.pago_em = pago_em or timezone.now()
+        cobranca.pago_em = cobranca.pago_em or pago_em or timezone.now()
         cobranca.transaction_id = transaction_id or cobranca.transaction_id
+        if not ja_paga:
+            cobranca.valor_pago = Decimal(int(valor_pago_centavos)) / 100 if valor_pago_centavos is not None else cobranca.valor
         if taxa_centavos is not None:
-            pago = int(valor_pago_centavos) if valor_pago_centavos else valor_em_centavos(cobranca.valor)
+            pago = valor_em_centavos(cobranca.valor_pago if cobranca.valor_pago is not None else cobranca.valor)
             cobranca.taxa = Decimal(int(taxa_centavos)) / 100
             cobranca.valor_liquido = Decimal(max(0, pago - int(taxa_centavos))) / 100
         cobranca.save(update_fields=[
-            "status", "pago_em", "transaction_id", "taxa", "valor_liquido", "atualizada_em",
+            "status", "pago_em", "transaction_id", "taxa", "valor_liquido", "valor_pago", "atualizada_em",
         ])
+        if ja_paga:
+            return False
 
         mensalidade = Mensalidade.objects.select_for_update().get(pk=cobranca.mensalidade_id)
         if mensalidade.status == "paga":
@@ -363,13 +377,14 @@ def registrar_pagamento_pix(cobranca, *, pago_em=None, transaction_id="", taxa_c
             )
         else:
             valor_pago = (
-                Decimal(int(valor_pago_centavos)) / 100 if valor_pago_centavos else cobranca.valor
+                Decimal(int(valor_pago_centavos)) / 100 if valor_pago_centavos is not None else cobranca.valor
             )
             registrar_pagamento(
                 mensalidade, forma_pagamento="pix", quando=cobranca.pago_em, valor_pago=valor_pago,
             )
 
-        solicitar_repasse(cobranca.conta_recebimento)
+        if cobranca.modelo_recebimento == ContaRecebimento.LEGADO_SUBCONTA:
+            solicitar_repasse(cobranca.conta_recebimento)
     return True
 
 
@@ -382,6 +397,8 @@ def solicitar_repasse(conta):
     repasse é processado em segundo plano."""
     from integracoes.woovi.repasses import acompanhar_repasses
 
+    if not conta.legada:
+        raise ValueError("Contas próprias não possuem repasse pelo sistema.")
     transaction.on_commit(acompanhar_repasses)
     aberto = (
         Repasse.objects.select_for_update()
@@ -468,15 +485,16 @@ def processar_evento(evento):
             motivo = "pagamento já registrado"
     elif evento.tipo == EVENTO_PIX_PAGO:
         charge = dados.get("charge") or {}
+        pix = dados.get("pix") or {}
         cobranca = CobrancaPix.objects.filter(correlation_id=evento.correlation_id).first()
         if cobranca is None:
             motivo = "cobrança não encontrada"
         elif not registrar_pagamento_pix(
             cobranca,
-            pago_em=parse_datetime(charge.get("paidAt") or ""),
+            pago_em=parse_datetime(charge.get("paidAt") or pix.get("time") or ""),
             transaction_id=charge.get("transactionID") or "",
             taxa_centavos=charge.get("fee"),
-            valor_pago_centavos=charge.get("value"),
+            valor_pago_centavos=pix.get("value") if pix.get("value") is not None else charge.get("value"),
         ):
             motivo = "pagamento já registrado"
     else:

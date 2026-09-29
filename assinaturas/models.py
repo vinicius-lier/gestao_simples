@@ -1,11 +1,14 @@
 from datetime import timedelta
 
 from django.core.validators import MaxValueValidator, MinValueValidator
+from django.core.exceptions import ValidationError
+from django.conf import settings
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
 from academias.models import Academia
+from integracoes.woovi.credenciais import referencia_plataforma
 
 
 class Assinatura(models.Model):
@@ -95,6 +98,8 @@ class FaturaAssinatura(models.Model):
     # Cobrança Pix em vigor na Woovi (a interface nunca cita o provedor).
     correlation_id = models.CharField(max_length=100, blank=True, db_index=True)
     woovi_charge_id = models.CharField("id da cobrança na Woovi", max_length=100, blank=True)
+    credencial_ref = models.CharField(max_length=100, default=referencia_plataforma, editable=False)
+    api_base_url = models.URLField(blank=True, editable=False)
     br_code = models.TextField("Pix copia e cola", blank=True)
     pix_expira_em = models.DateTimeField(null=True, blank=True)
 
@@ -114,6 +119,16 @@ class FaturaAssinatura(models.Model):
 
     def __str__(self):
         return f"{self.assinatura.academia} — {self.referencia}"
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and not self.api_base_url:
+            self.api_base_url = (settings.WOOVI_PLATAFORMA_BASE_URL if self.credencial_ref == "WOOVI_PLATAFORMA_APP_ID"
+                                 else settings.WOOVI_BASE_URL).rstrip("/")
+        elif self.pk:
+            anterior = type(self).objects.only("credencial_ref", "api_base_url", "correlation_id").get(pk=self.pk)
+            if anterior.correlation_id and (anterior.credencial_ref != self.credencial_ref or anterior.api_base_url != self.api_base_url):
+                raise ValidationError("A origem de uma fatura com Pix emitido não pode ser alterada.")
+        return super().save(*args, **kwargs)
 
     @property
     def referencia(self):

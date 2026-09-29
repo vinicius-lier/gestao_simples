@@ -325,6 +325,10 @@ MAILERS = {
 # =============================================================================
 
 WOOVI_APP_ID = os.getenv("WOOVI_APP_ID", "")
+# A credencial original permanece reservada ao legado. Nunca colocar aqui
+# o AppID da academia. Contas próprias usam WOOVI_ACADEMIA_<id>_APP_ID.
+WOOVI_PLATAFORMA_APP_ID = os.getenv("WOOVI_PLATAFORMA_APP_ID", "")
+WOOVI_ONBOARDING_APP_ID = os.getenv("WOOVI_ONBOARDING_APP_ID", "")
 
 WOOVI_BASE_URL = os.getenv(
     "WOOVI_BASE_URL",
@@ -332,6 +336,9 @@ WOOVI_BASE_URL = os.getenv(
 )
 
 WOOVI_TIMEOUT = int(os.getenv("WOOVI_TIMEOUT", "30"))
+WOOVI_PLATAFORMA_BASE_URL = os.getenv("WOOVI_PLATAFORMA_BASE_URL", WOOVI_BASE_URL)
+WOOVI_ACADEMIAS_BASE_URL = os.getenv("WOOVI_ACADEMIAS_BASE_URL", WOOVI_BASE_URL)
+WOOVI_ONBOARDING_BASE_URL = os.getenv("WOOVI_ONBOARDING_BASE_URL", WOOVI_BASE_URL)
 
 # Menor saque aceito pela Woovi (R$ 1,01 na documentação). Saldo abaixo
 # disso fica na subconta e sai junto com o próximo repasse.

@@ -1,5 +1,5 @@
-"""Repasse automático: transfere o saldo da subconta para a chave Pix da
-academia depois de cada pagamento.
+"""Manutenção do legado: transfere saldo de subcontas de cobranças antigas.
+Contas próprias nunca entram neste fluxo.
 
 Nunca roda dentro do webhook. O webhook só abre o ``Repasse`` PENDENTE e,
 depois de gravar, chama ``acompanhar_repasses``: uma thread do próprio site
@@ -182,6 +182,7 @@ def _creditar_pagamentos(client, repasse):
         CobrancaPix.objects.filter(
             conta_recebimento_id=repasse.conta_recebimento_id,
             status=CobrancaPix.PAGA,
+            modelo_recebimento=ContaRecebimento.LEGADO_SUBCONTA,
             creditado_em__isnull=True,
         )
         .select_related("conta_recebimento")
@@ -219,6 +220,7 @@ def reivindicar(repasse_id, agora=None):
     return bool(
         Repasse.objects.filter(
             pk=repasse_id,
+            conta_recebimento__modelo_recebimento=ContaRecebimento.LEGADO_SUBCONTA,
             status__in=[Repasse.PENDENTE, Repasse.FALHA],
             proxima_tentativa_em__lte=agora,
         ).update(status=Repasse.PROCESSANDO, tentativas=F("tentativas") + 1, atualizado_em=agora)
@@ -233,7 +235,7 @@ def processar_repasse(repasse_id):
     repasse = Repasse.objects.select_related("conta_recebimento").get(pk=repasse_id)
 
     try:
-        client = WooviClient()
+        client = WooviClient(conta=repasse.conta_recebimento)
 
         if repasse.reconciliar:
             saque, estorno = _saque_no_extrato(client, repasse)
@@ -292,10 +294,10 @@ def conferir_repasse_em_andamento(repasse_id):
     """Repasse PROCESSANDO sem confirmação há muito tempo: decide pelo
     extrato da subconta."""
     repasse = Repasse.objects.select_related("conta_recebimento").get(pk=repasse_id)
-    if repasse.status != Repasse.PROCESSANDO:
+    if not repasse.conta_recebimento.legada or repasse.status != Repasse.PROCESSANDO:
         return repasse
     try:
-        saque, estorno = _saque_no_extrato(WooviClient(), repasse)
+        saque, estorno = _saque_no_extrato(WooviClient(conta=repasse.conta_recebimento), repasse)
     except WooviError as exc:
         logger.warning("Não foi possível conferir o repasse %s no extrato: %s", repasse.pk, exc)
         return repasse
@@ -313,6 +315,7 @@ def processar_repasses(limite=50):
     agora = timezone.now()
     devidos = list(
         Repasse.objects.filter(
+            conta_recebimento__modelo_recebimento=ContaRecebimento.LEGADO_SUBCONTA,
             status__in=[Repasse.PENDENTE, Repasse.FALHA], proxima_tentativa_em__lte=agora,
         ).order_by("proxima_tentativa_em").values_list("pk", flat=True)[:limite]
     )
@@ -320,6 +323,7 @@ def processar_repasses(limite=50):
 
     parados = list(
         Repasse.objects.filter(
+            conta_recebimento__modelo_recebimento=ContaRecebimento.LEGADO_SUBCONTA,
             status=Repasse.PROCESSANDO, processado_em__lte=agora - PRAZO_CONFIRMACAO,
         ).values_list("pk", flat=True)[:limite]
     )
@@ -375,7 +379,10 @@ def _rodada():
     parado sem ninguém olhando — e a plataforma é avisada."""
     try:
         processar_repasses()
-        return Repasse.objects.filter(status__in=Repasse.STATUS_ABERTOS).exists()
+        return Repasse.objects.filter(
+            status__in=Repasse.STATUS_ABERTOS,
+            conta_recebimento__modelo_recebimento=ContaRecebimento.LEGADO_SUBCONTA,
+        ).exists()
     except Exception as exc:
         logger.exception("Acompanhamento dos repasses falhou")
         alertar_plataforma("Acompanhamento dos repasses Pix falhou", _texto_erro(exc))
@@ -384,15 +391,16 @@ def _rodada():
 
 # --------------------------------------------------------------- webhooks
 def _localizar(correlation_id, valor_centavos=None, destino="", end_to_end_id=""):
-    repasse = Repasse.objects.filter(correlation_id=correlation_id).first() if correlation_id else None
+    legados = Repasse.objects.filter(conta_recebimento__modelo_recebimento=ContaRecebimento.LEGADO_SUBCONTA)
+    repasse = legados.filter(correlation_id=correlation_id).first() if correlation_id else None
     if repasse is None and end_to_end_id:
         # Em produção o webhook do saque veio com um correlationID diferente
         # do devolvido pelo /withdraw; o endToEndId é o mesmo nos dois.
-        repasse = Repasse.objects.filter(end_to_end_id=end_to_end_id).first()
+        repasse = legados.filter(end_to_end_id=end_to_end_id).first()
     if repasse is None and valor_centavos is not None and destino:
         # O webhook pode chegar antes de gravarmos o correlationID (ou o
         # pedido ter dado timeout): casa pelo destino e valor em andamento.
-        repasse = Repasse.objects.filter(
+        repasse = legados.filter(
             Q(status=Repasse.PROCESSANDO) | Q(status=Repasse.FALHA, reconciliar=True),
             pix_key_destino=destino,
             valor=Decimal(int(valor_centavos)) / 100,

@@ -43,6 +43,11 @@ class ProjetoTestRunner(DiscoverRunner):
         # Nenhum teste deixa uma thread de repasse rodando por trás.
         settings.REPASSES_EM_SEGUNDO_PLANO = False
         settings.WOOVI_APP_ID = "app-id-somente-para-testes"
+        settings.WOOVI_PLATAFORMA_APP_ID = ""
+        settings.WOOVI_ONBOARDING_APP_ID = ""
+        settings.WOOVI_PLATAFORMA_BASE_URL = "https://woovi.invalid"
+        settings.WOOVI_ACADEMIAS_BASE_URL = "https://api.woovi-sandbox.com"
+        settings.WOOVI_ONBOARDING_BASE_URL = "https://woovi.invalid"
         self._bloqueio_woovi = mock.patch("integracoes.woovi.client.requests", _RequestsSemRede())
         self._bloqueio_woovi.start()
 

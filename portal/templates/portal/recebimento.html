@@ -1,47 +1,75 @@
-{% extends 'portal/base.html' %}{% block title %}Recebimento • Configurações{% endblock %}{% block content %}
+{% extends 'portal/base.html' %}
+{% block title %}Conta Woovi da Academia — Recebimento{% endblock %}
+{% block content %}
 <div class="hero-dashboard mt-3">
   <div>
-    <p class="eyebrow">Configurações</p>
-    <h1>Recebimento<span class="title-dot">.</span></h1>
-    <p class="text-secondary mb-0">Chave Pix onde a escola recebe as mensalidades pagas pelas famílias.</p>
+    <h1>Conta Woovi da Academia<span class="title-dot">.</span></h1>
+    <p class="text-secondary mb-0">Configure a conta Woovi da {{ request.academia.nome_fantasia|default:request.academia.nome }} para receber diretamente os pagamentos dos alunos.</p>
   </div>
 </div>
 
-<div class="card p-4 mt-3">
-  <p class="mb-2">
-    <span class="badge {% if nivel == 'ok' %}bg-success{% elif nivel == 'andamento' %}bg-info text-dark{% elif nivel == 'atencao' %}bg-danger{% else %}bg-secondary{% endif %}">
-      {% if nivel == 'ok' %}Ativo{% elif nivel == 'andamento' %}Transferência em andamento{% elif nivel == 'atencao' %}Precisa de atenção{% else %}Não configurado{% endif %}
-    </span>
-  </p>
-  <p class="mb-3">{{ situacao }}</p>
-  {% if conta %}
-  <p class="mb-1"><strong>Chave Pix:</strong> {{ conta.pix_key }} <span class="text-secondary">({{ conta.get_tipo_chave_display }})</span></p>
-  <p class="small text-secondary mb-0">Cadastrada em {{ conta.criada_em|date:"d/m/Y H:i" }}</p>
+<section class="card p-4 mt-3" aria-labelledby="situacao-conta">
+  <h2 id="situacao-conta" class="h5">Conexão da conta</h2>
+  <p><strong>Situação:</strong> {% if conta %}{{ conta.get_status_display }}{% else %}Não configurada{% endif %}</p>
+  {% if conta.status == 'conectada' %}
+    <p>Mensalidades e taxas de matrícula novas são recebidas diretamente na conta Woovi da academia.</p>
+    <p class="small text-secondary mb-0">Conectada em {{ conta.conectada_em|date:"d/m/Y H:i" }}. A assinatura do sistema continua sendo paga à plataforma, separadamente.</p>
+  {% elif conta.status == 'aguardando' %}
+    <p>O cadastro está em análise ou aguarda a verificação da conexão. A aprovação do cadastro e a ativação do recebimento são etapas separadas.</p>
+  {% elif conta.status == 'erro' %}
+    <p>Não foi possível concluir a conexão. Confira o cadastro na Woovi e tente verificar novamente. Se precisar, fale com o suporte.</p>
+  {% else %}
+    <p>Abra a conta no ambiente seguro da Woovi. Se já possui uma conta, solicite ao suporte a conexão com o sistema e use “Verificar e ativar”.</p>
   {% endif %}
-  {% if ultima_transferencia %}
-  <p class="small text-secondary mb-0 mt-2">Última transferência para a sua conta: R$ {{ ultima_transferencia.valor }} em {{ ultima_transferencia.concluido_em|date:"d/m/Y H:i" }}</p>
-  {% endif %}
-</div>
 
-<div class="card p-4 mt-3">
-  <h2 class="h6">{% if conta %}Trocar a chave Pix{% else %}Cadastrar a chave Pix{% endif %}</h2>
-  {% if conta %}<p class="small text-secondary">Pix que já foram enviados às famílias e ainda não foram pagos são substituídos por novos, com a chave nova. O histórico de recebimentos é mantido.</p>{% endif %}
-  <form method="post" novalidate>{% csrf_token %}
+  <div class="mt-3 pt-3 border-top" id="taxa-pix">
+    <h3 class="h6">{{ taxa_texto }}</h3>
+    <p>{{ taxa_explicacao }}</p>
+    <p class="small text-secondary mb-0">O registro de cada pagamento utiliza a taxa efetivamente informada pela Woovi. Esta informação comercial permanece disponível nesta tela.</p>
+  </div>
+
+  {% if conta.status != 'conectada' %}
+  <form method="post" class="mt-4" novalidate>
+    {% csrf_token %}
     {{ form.non_field_errors }}
-    {% with field=form.tipo_chave %}{% include 'portal/field.html' %}{% endwith %}
-    {% with field=form.chave %}{% include 'portal/field.html' %}{% endwith %}
-    <div class="form-check my-3">{{ form.confirmacao }} <label class="form-check-label" for="{{ form.confirmacao.id_for_label }}">{{ form.confirmacao.label }}</label>{{ form.confirmacao.errors }}</div>
-    <button class="btn btn-primary" type="submit">Salvar chave Pix</button>
+    <div class="form-check mb-3">
+      {{ form.confirmacao }}
+      <label class="form-check-label" for="{{ form.confirmacao.id_for_label }}">{{ form.confirmacao.label }}</label>
+      {{ form.confirmacao.errors }}
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <button class="btn btn-primary" type="submit" name="acao" value="ativar">Verificar e ativar</button>
+      {% if not onboarding_url %}<button class="btn btn-outline-primary" type="submit" name="acao" value="iniciar">Iniciar abertura da conta</button>{% endif %}
+      {% if onboarding_url %}<button class="btn btn-outline-primary" type="submit" name="acao" value="atualizar">Atualizar situação do cadastro</button>{% endif %}
+    </div>
   </form>
-</div>
+  {% endif %}
+</section>
+
+{% if conta.status != 'conectada' %}
+<section class="mt-4" aria-labelledby="cadastro-seguro">
+  <h2 id="cadastro-seguro" class="h5">Cadastro seguro na Woovi</h2>
+  <p>Documentos, identificação e aceite dos termos são feitos diretamente na Woovi.</p>
+  {% if onboarding_url %}
+    <a class="btn btn-outline-primary" href="{{ onboarding_url }}" target="_blank" rel="noopener noreferrer">Continuar cadastro na Woovi</a>
+  {% else %}
+    <a href="{{ cadastro_url }}" target="_blank" rel="noopener noreferrer">Abrir cadastro oficial da Woovi</a>
+  {% endif %}
+</section>
+{% endif %}
 
 {% if anteriores %}
-<section class="card directory mt-3">
-  <div class="directory-heading"><h2 class="h6 mb-0">Chaves anteriores</h2></div>
-  <div class="table-responsive"><table class="table mb-0">
-    <thead><tr><th>Chave Pix</th><th>Usada de</th><th>até</th></tr></thead>
-    <tbody>{% for c in anteriores %}<tr><td>{{ c.pix_key }} <span class="text-secondary small">({{ c.get_tipo_chave_display }})</span></td><td>{{ c.criada_em|date:"d/m/Y" }}</td><td>{{ c.desativada_em|date:"d/m/Y"|default:"—" }}</td></tr>{% endfor %}</tbody>
-  </table></div>
+<section class="mt-4" aria-labelledby="historico-recebimento">
+  <h2 id="historico-recebimento" class="h5">Recebimentos anteriores</h2>
+  <p>Os Pix já emitidos e as transferências anteriores continuam vinculados ao destino original. A ativação da conta própria preserva esse histórico.</p>
+  {% if ultima_transferencia %}<p>Última transferência: R$ {{ ultima_transferencia.valor }} em {{ ultima_transferencia.concluido_em|date:"d/m/Y H:i" }}.</p>{% endif %}
+  <div class="table-responsive">
+    <table class="table">
+      <caption>Destinos usados no modelo de recebimento anterior.</caption>
+      <thead><tr><th scope="col">Chave Pix</th><th scope="col">Cadastrada em</th><th scope="col">Desativada em</th></tr></thead>
+      <tbody>{% for anterior in anteriores %}<tr><td class="text-break">{{ anterior.pix_key }}</td><td>{{ anterior.criada_em|date:"d/m/Y" }}</td><td>{{ anterior.desativada_em|date:"d/m/Y"|default:"—" }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
 </section>
 {% endif %}
 {% endblock %}

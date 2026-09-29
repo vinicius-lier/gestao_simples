@@ -47,10 +47,14 @@ class LembreteCobrancaAdmin(admin.ModelAdmin):
 
 @admin.register(ContaRecebimento)
 class ContaRecebimentoAdmin(admin.ModelAdmin):
-    list_display = ("academia", "pix_key", "tipo_chave", "ativa", "saque_bloqueado", "criada_em", "desativada_em")
-    list_filter = ("ativa", "saque_bloqueado", "academia")
+    list_display = ("academia", "modelo_recebimento", "status", "pix_key", "ativa", "criada_em", "desativada_em")
+    list_filter = ("modelo_recebimento", "status", "ativa", "academia")
     search_fields = ("pix_key", "academia__nome")
-    readonly_fields = ("criada_em", "criada_por", "desativada_em", "desativada_por")
+    readonly_fields = tuple(f.name for f in ContaRecebimento._meta.fields if f.name not in ("id", "credencial_fingerprint", "onboarding_url"))
+    exclude = ("credencial_fingerprint", "onboarding_url")
+
+    def has_add_permission(self, request):
+        return False
 
     def has_delete_permission(self, request, obj=None):
         return False  # histórico financeiro
@@ -59,9 +63,12 @@ class ContaRecebimentoAdmin(admin.ModelAdmin):
 @admin.register(CobrancaPix)
 class CobrancaPixAdmin(admin.ModelAdmin):
     list_display = ("mensalidade", "status", "valor", "conta_recebimento", "expira_em", "pago_em")
-    list_filter = ("status",)
+    list_filter = ("status", "modelo_recebimento")
     search_fields = ("correlation_id", "transaction_id", "mensalidade__matricula__atleta__nome")
-    readonly_fields = ("criada_em", "atualizada_em")
+    readonly_fields = ("mensalidade", "conta_recebimento", "modelo_recebimento", "correlation_id", "criada_em", "atualizada_em")
+
+    def has_add_permission(self, request):
+        return False
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -92,7 +99,7 @@ class RepasseAdmin(admin.ModelAdmin):
         from django.utils import timezone
 
         reabertos = 0
-        for repasse in queryset.filter(status=Repasse.REQUER_ATENCAO):
+        for repasse in queryset.filter(status=Repasse.REQUER_ATENCAO, conta_recebimento__modelo_recebimento=ContaRecebimento.LEGADO_SUBCONTA):
             try:
                 with transaction.atomic():
                     Repasse.objects.filter(pk=repasse.pk).update(
