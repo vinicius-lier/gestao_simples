@@ -31,6 +31,8 @@ O botão **Iniciar abertura da conta** usa `POST /api/v1/kyc/onboarding`, com `p
 
 Documentos, KYC e aceite legal acontecem exclusivamente no domínio seguro da Woovi. O portal guarda o link e o estado, aceita apenas links oficiais HTTPS e não envia esse link como referrer. Se a API de parceiro não estiver habilitada, a tela oferece o cadastro oficial e informa a etapa de conexão pelo suporte.
 
+A página usa `Referrer-Policy: same-origin`: preserva a origem dos formulários internos para a validação CSRF em HTTPS e não envia referência para sites externos. Não usar `no-referrer` na resposta inteira, pois pode provocar 403 nos formulários. Os links externos mantêm `rel="noopener noreferrer"`.
+
 **Aprovação do KYC não entrega automaticamente um AppID utilizável.** Nesta implementação, o provisionamento da credencial exclusiva é feito pelo operador no servidor; o portal inicia, acompanha e ativa a conexão, mas não solicita tokens em formulários. OAuth/distribuição de aplicativo Woovi não foi implementado. O estado “Conectada” depende da verificação da credencial e do webhook, além do cadastro aprovado quando iniciado por API.
 
 ## Taxas e segurança

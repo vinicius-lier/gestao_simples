@@ -74,5 +74,7 @@ def recebimento(request):
             academia=request.academia, status=Repasse.CONCLUIDA, valor__gt=0,
         ).order_by("-concluido_em").first(),
     })
-    response["Referrer-Policy"] = "no-referrer"
+    # Formulários HTTPS precisam preservar a origem para a validação CSRF.
+    # Referências continuam omitidas nas navegações para outros sites.
+    response["Referrer-Policy"] = "same-origin"
     return response

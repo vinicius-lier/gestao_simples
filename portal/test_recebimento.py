@@ -2,7 +2,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import Client, TestCase, override_settings
 from django.utils import timezone
 
 from academias.models import Academia
@@ -105,7 +105,42 @@ class RecebimentoTests(TestCase):
         self.assertNotContains(resposta, conta.credencial_ref)
         self.assertNotContains(resposta, 'name="app_id"')
         self.assertIn("no-store", resposta["Cache-Control"])
-        self.assertEqual(resposta["Referrer-Policy"], "no-referrer")
+        self.assertEqual(resposta["Referrer-Policy"], "same-origin")
+
+    @patch("portal.views_recebimento.ativar_conta")
+    def test_formulario_https_com_csrf_real_preserva_origem(self, ativar):
+        cliente = Client(enforce_csrf_checks=True)
+        cliente.force_login(self.dona)
+        resposta = cliente.get(self.url, secure=True)
+        self.assertEqual(resposta["Referrer-Policy"], "same-origin")
+        token = cliente.cookies["csrftoken"].value
+        resposta = cliente.post(self.url, {
+            "acao": "ativar", "confirmacao": "on", "csrfmiddlewaretoken": token,
+        }, secure=True, HTTP_REFERER="https://testserver" + self.url)
+        self.assertEqual(resposta.status_code, 302)
+        ativar.assert_called_once()
+        resposta = cliente.post(self.url, {
+            "acao": "ativar", "confirmacao": "on", "csrfmiddlewaretoken": token,
+        }, secure=True, HTTP_ORIGIN="https://testserver")
+        self.assertEqual(resposta.status_code, 302)
+        self.assertEqual(ativar.call_count, 2)
+
+    @patch("portal.views_recebimento.ativar_conta")
+    def test_formulario_https_continua_recusando_token_ausente_e_origem_externa(self, ativar):
+        cliente = Client(enforce_csrf_checks=True)
+        cliente.force_login(self.dona)
+        cliente.get(self.url, secure=True)
+        dados = {"acao": "ativar", "confirmacao": "on"}
+        sem_token = cliente.post(self.url, dados, secure=True, HTTP_REFERER="https://testserver" + self.url)
+        self.assertEqual(sem_token.status_code, 403)
+        dados["csrfmiddlewaretoken"] = cliente.cookies["csrftoken"].value
+        origem_externa = cliente.post(self.url, dados, secure=True, HTTP_ORIGIN="https://outra.example")
+        self.assertEqual(origem_externa.status_code, 403)
+        origem_nula = cliente.post(self.url, dados, secure=True, HTTP_ORIGIN="null")
+        self.assertEqual(origem_nula.status_code, 403)
+        sem_origem = cliente.post(self.url, dados, secure=True)
+        self.assertEqual(sem_origem.status_code, 403)
+        ativar.assert_not_called()
 
     def test_historico_e_ultima_transferencia_permanecem(self):
         antiga = ContaRecebimento.objects.create(academia=self.a, pix_key="antiga@exemplo.com", tipo_chave="email")
