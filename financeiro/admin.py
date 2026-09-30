@@ -45,13 +45,17 @@ class LembreteCobrancaAdmin(admin.ModelAdmin):
     date_hierarchy = "enviado_em"
     readonly_fields = ("atualizado_em",)
 
+# Credencial (cifrada ou impressão) e link de KYC nunca aparecem no admin.
+_CONTA_OCULTOS = ("credencial_fingerprint", "onboarding_url", "credencial_cifrada")
+
+
 @admin.register(ContaRecebimento)
 class ContaRecebimentoAdmin(admin.ModelAdmin):
     list_display = ("academia", "modelo_recebimento", "status", "pix_key", "ativa", "criada_em", "desativada_em")
     list_filter = ("modelo_recebimento", "status", "ativa", "academia")
     search_fields = ("pix_key", "academia__nome")
-    readonly_fields = tuple(f.name for f in ContaRecebimento._meta.fields if f.name not in ("id", "credencial_fingerprint", "onboarding_url"))
-    exclude = ("credencial_fingerprint", "onboarding_url")
+    readonly_fields = tuple(f.name for f in ContaRecebimento._meta.fields if f.name not in ("id",) + _CONTA_OCULTOS)
+    exclude = _CONTA_OCULTOS
 
     def has_add_permission(self, request):
         return False

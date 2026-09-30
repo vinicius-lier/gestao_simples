@@ -11,11 +11,12 @@
 <section class="card p-4 mt-3" aria-labelledby="situacao-conta">
   <h2 id="situacao-conta" class="h5">Conexão da conta</h2>
   <p><strong>Situação:</strong> {% if conta %}{{ conta.get_status_display }}{% else %}Não configurada{% endif %}</p>
+  {% if conta and conta.status != 'conectada' %}<p><strong>Etapa:</strong> {{ conta.etapa_rotulo }}</p>{% endif %}
   {% if conta.status == 'conectada' %}
     <p>Mensalidades e taxas de matrícula novas são recebidas diretamente na conta Woovi da academia.</p>
     <p class="small text-secondary mb-0">Conectada em {{ conta.conectada_em|date:"d/m/Y H:i" }}. A assinatura do sistema continua sendo paga à plataforma, separadamente.</p>
   {% elif conta.status == 'aguardando' %}
-    <p>O cadastro está em análise ou aguarda a verificação da conexão. A aprovação do cadastro e a ativação do recebimento são etapas separadas.</p>
+    <p>O cadastro está em análise ou aguarda a verificação da conexão. Quando a Woovi aprovar o cadastro, o sistema conclui a conexão automaticamente; use “Atualizar situação do cadastro” para conferir.</p>
   {% elif conta.status == 'erro' %}
     <p>Não foi possível concluir a conexão. Confira o cadastro na Woovi e tente verificar novamente. Se precisar, fale com o suporte.</p>
   {% else %}

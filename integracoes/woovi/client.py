@@ -133,6 +133,8 @@ class WooviClient:
             raise WooviConfigError("Operação exclusiva do recebimento legado.")
         if caminho.startswith("/api/v1/charge") and self.contexto not in ("legado", "academia", "plataforma"):
             raise WooviConfigError("Este contexto não pode operar cobranças.")
+        if caminho.startswith("/api/v1/partner") and self.contexto != "onboarding":
+            raise WooviConfigError("Operação exclusiva da credencial de parceiro.")
         headers = self._headers if autenticar else {"Accept": "application/json"}
         try:
             response = requests.request(
@@ -394,3 +396,30 @@ class WooviClient:
 
     def consultar_onboarding(self, correlation_id):
         return self._request("GET", f"/api/v1/account-register/{_caminho(correlation_id)}")
+
+    # ---------------------------------------------------------- Partner API
+    def consultar_empresa_parceira(self, cnpj):
+        """Pré-cadastro/afiliada gerida pela conta parceira, pelo CNPJ."""
+        resposta = self._request("GET", f"/api/v1/partner/company/{_caminho(cnpj)}")
+        return self._objeto(resposta, "preRegistration")
+
+    def listar_afiliadas(self):
+        resposta = self._request("GET", "/api/v1/partner/affiliate")
+        afiliadas = resposta.get("affiliates") if isinstance(resposta, dict) else None
+        if not isinstance(afiliadas, list):
+            raise WooviInvalidResponseError("A Woovi retornou uma lista de afiliadas inválida.")
+        return afiliadas
+
+    @sensitive_variables()
+    def criar_application_afiliada(self, *, cnpj, nome, escopos):
+        """Cria (ou devolve, idempotente) a application da afiliada.
+
+        A resposta traz clientId e clientSecret: quem chama monta o AppID
+        (partner.montar_app_id) e o guarda cifrado. Nunca registre o retorno.
+        """
+        from .partner import validar_escopos
+
+        return self._request("POST", "/api/v1/partner/application", json={
+            "application": {"name": nome[:60], "type": "API", "scopes": list(validar_escopos(escopos))},
+            "taxID": {"taxID": cnpj, "type": "BR:CNPJ"},
+        })

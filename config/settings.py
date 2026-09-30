@@ -329,6 +329,10 @@ WOOVI_APP_ID = os.getenv("WOOVI_APP_ID", "")
 # o AppID da academia. Contas próprias usam WOOVI_ACADEMIA_<id>_APP_ID.
 WOOVI_PLATAFORMA_APP_ID = os.getenv("WOOVI_PLATAFORMA_APP_ID", "")
 WOOVI_ONBOARDING_APP_ID = os.getenv("WOOVI_ONBOARDING_APP_ID", "")
+# Chave Fernet (Fernet.generate_key()) que cifra, no banco, o AppID criado
+# pela Partner API da Woovi. Mesmo nome e padrão do Ciclo. Perder ou trocar a
+# chave torna a credencial ilegível: a conta volta a precisar de conexão.
+CREDENTIALS_ENCRYPTION_KEY = os.getenv("CREDENTIALS_ENCRYPTION_KEY", "")
 
 WOOVI_BASE_URL = os.getenv(
     "WOOVI_BASE_URL",
