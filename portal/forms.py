@@ -474,11 +474,24 @@ GraduacaoFormSet = forms.inlineformset_factory(
 
 
 class ContaWooviForm(forms.Form):
+    """A ciência da taxa é exigida ao abrir a conta e ao conectar; conferir o
+    andamento do cadastro não pede a confirmação de novo."""
+
     confirmacao = forms.BooleanField(
         label="Estou ciente da taxa de R$ 0,85 por Pix recebido, cobrada pela Woovi.",
         widget=forms.CheckboxInput(attrs={"class": "form-check-input"}),
-        error_messages={"required": "Confirme a ciência da taxa antes de continuar."},
+        required=False,
     )
+
+    def __init__(self, *args, exigir_confirmacao=True, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.exigir_confirmacao = exigir_confirmacao
+
+    def clean_confirmacao(self):
+        confirmacao = self.cleaned_data.get("confirmacao")
+        if self.exigir_confirmacao and not confirmacao:
+            raise forms.ValidationError("Confirme a ciência da taxa antes de continuar.")
+        return confirmacao
 
 
 class ChavePixForm(forms.Form):
