@@ -1,8 +1,15 @@
 """Conexão da conta própria e onboarding hospedado pela Woovi.
 
-Nenhum segredo é recebido de formulários. O operador provisiona a variável
-por academia no servidor; a academia inicia/verifica/ativa pelo portal.
+Nenhum segredo é recebido de formulários. Dois caminhos levam à conta
+conectada, e o portal escolhe o disponível (``conectar_conta``):
+
+1. Partner API (automático): a academia conclui o KYC hospedado pela Woovi;
+   aprovado o cadastro, o sistema cria a application da afiliada, monta o
+   AppID, guarda-o cifrado e ativa a conta;
+2. fallback: o operador provisiona ``WOOVI_ACADEMIA_<id>_APP_ID`` no servidor
+   e a academia usa "Verificar e ativar".
 """
+import logging
 import os
 import re
 from urllib.parse import urlsplit
@@ -11,12 +18,17 @@ from django.conf import settings
 from django.db import transaction
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.debug import sensitive_variables
 
 from academias.models import Academia
 from financeiro.models import ContaRecebimento
+from . import partner
 from .client import WooviClient
-from .credenciais import da_conta, fingerprint, referencia_academia
+from .credenciais import da_conta, fingerprint, provisionada_no_servidor, referencia_academia
+from .cripto import cifrar
 from .exceptions import WooviConfigError, WooviInvalidResponseError
+
+logger = logging.getLogger(__name__)
 
 TEXTO_TAXA = "Taxa de processamento Pix: R$ 0,85 por Pix recebido."
 EXPLICACAO_TAXA = (
@@ -127,6 +139,9 @@ def ativar_conta(conta, usuario=None):
     # Valida a credencial antes de qualquer operação remota. Nunca usar uma
     # credencial principal como substituta quando faltar a da academia.
     digest = fingerprint(da_conta(conta))
+    # Uma credencial Woovi atende uma única conta do sistema.
+    if ContaRecebimento.objects.filter(credencial_fingerprint=digest).exclude(pk=conta.pk).exists():
+        raise ValueError("Esta credencial Woovi já está vinculada a outra conta.")
     client = WooviClient(conta=conta)
     contas = client.listar_contas()
     padrao = [c for c in contas if isinstance(c, dict) and c.get("isDefault") is True]
@@ -154,6 +169,7 @@ def ativar_conta(conta, usuario=None):
                 url_publica(reverse("webhook_woovi_conta", args=[travada.pk])),
                 f"keiko-academia-{travada.academia_id}-conta-{travada.pk}",
             )
+            travada.webhook_configurado_em = timezone.now()
         # Desativar como destino NOVO não muda as cobranças nem os repasses.
         ContaRecebimento.objects.filter(academia_id=conta.academia_id, ativa=True).exclude(pk=conta.pk).update(
             ativa=False, desativada_em=timezone.now(), desativada_por=usuario,
@@ -166,3 +182,66 @@ def ativar_conta(conta, usuario=None):
         travada.taxa_ciente_em = timezone.now()
         travada.save()
         return travada
+
+
+def automacao_disponivel(conta):
+    """A conexão pode ser concluída pela Partner API?"""
+    return (not conta.legada and bool(conta.onboarding_url)
+            and bool(getattr(settings, "WOOVI_ONBOARDING_APP_ID", "")))
+
+
+@sensitive_variables("resposta", "app_id", "cifrada")
+def conectar_automaticamente(conta, usuario=None):
+    """KYC aprovado -> application da afiliada -> AppID cifrado -> ativação.
+
+    Idempotente: com a credencial já guardada, não cria outra application
+    (e a própria Woovi devolve a existente para o mesmo CNPJ). A ativação
+    (CNPJ, conta padrão, webhook, travas de origem) é a mesma do fallback.
+    """
+    if conta.legada:
+        raise ValueError("Selecione a conta própria da academia.")
+    if conta.conectada_em:
+        return conta
+    if not automacao_disponivel(conta):
+        raise WooviConfigError("A conexão automática não está disponível para esta conta.")
+    if conta.onboarding_status != "APPROVED":
+        atualizar_onboarding(conta)
+        if conta.onboarding_status != "APPROVED":
+            raise ValueError("O cadastro ainda aguarda aprovação na Woovi.")
+
+    if not conta.credencial_cifrada:
+        cnpj = re.sub(r"\D", "", conta.academia.cnpj)
+        if len(cnpj) != 14:
+            raise ValueError("Confira o CNPJ da academia antes de conectar a conta.")
+        resposta = WooviClient(contexto="onboarding").criar_application_afiliada(
+            cnpj=cnpj, nome=f"Keiko Fukuda conta {conta.pk}", escopos=partner.ESCOPOS_AFILIADA,
+        )
+        app_id = partner.montar_app_id(*partner.credencial_da_application(resposta))
+        reservados = [getattr(settings, nome, "") for nome in (
+            "WOOVI_APP_ID", "WOOVI_PLATAFORMA_APP_ID", "WOOVI_ONBOARDING_APP_ID",
+        )]
+        if app_id in reservados:
+            raise WooviConfigError("A Woovi devolveu uma credencial reservada à plataforma.")
+        if ContaRecebimento.objects.filter(credencial_fingerprint=fingerprint(app_id)).exclude(pk=conta.pk).exists():
+            raise ValueError("Esta credencial Woovi já está vinculada a outra conta.")
+        cifrada = cifrar(app_id)
+        with transaction.atomic():
+            travada = ContaRecebimento.objects.select_for_update().get(pk=conta.pk)
+            if not travada.credencial_cifrada:
+                travada.credencial_cifrada = cifrada
+                travada.save(update_fields=["credencial_cifrada"])
+        conta.refresh_from_db()
+        logger.info("Credencial da afiliada criada pela Partner API para a conta %s.", conta.pk)
+
+    return ativar_conta(conta, usuario)
+
+
+def conectar_conta(conta, usuario=None):
+    """Porta única do portal: usa a credencial existente (cifrada ou do
+    operador); sem ela, conclui pela Partner API; sem nenhum dos dois, pede
+    a preparação no servidor (WooviConfigError)."""
+    if conta.credencial_cifrada or provisionada_no_servidor(conta):
+        return ativar_conta(conta, usuario)
+    if automacao_disponivel(conta):
+        return conectar_automaticamente(conta, usuario)
+    raise WooviConfigError("A conexão precisa ser preparada no servidor.")

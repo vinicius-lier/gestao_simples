@@ -33,7 +33,22 @@ Documentos, KYC e aceite legal acontecem exclusivamente no domínio seguro da Wo
 
 A página usa `Referrer-Policy: same-origin`: preserva a origem dos formulários internos para a validação CSRF em HTTPS e não envia referência para sites externos. Não usar `no-referrer` na resposta inteira, pois pode provocar 403 nos formulários. Os links externos mantêm `rel="noopener noreferrer"`.
 
-**Aprovação do KYC não entrega automaticamente um AppID utilizável.** Nesta implementação, o provisionamento da credencial exclusiva é feito pelo operador no servidor; o portal inicia, acompanha e ativa a conexão, mas não solicita tokens em formulários. OAuth/distribuição de aplicativo Woovi não foi implementado. O estado “Conectada” depende da verificação da credencial e do webhook, além do cadastro aprovado quando iniciado por API.
+## Conexão automática pela Partner API
+
+Com o cadastro aprovado, o sistema conclui a conexão sozinho, sem ninguém entrar em API/Plugins nem copiar AppID:
+
+1. `POST /api/v1/partner/application` com a credencial de parceiro (`WOOVI_ONBOARDING_APP_ID`, escopo `PARTNER_APPLICATION_POST`), o CNPJ da academia e escopos mínimos: `CHARGE_POST`, `CHARGE_GET`, `CHARGE_GET_LIST`, `CHARGE_DELETE`, `WEBHOOK_POST`, `WEBHOOK_GET_LIST`, `ACCOUNT_GET_LIST`, `ACCOUNT_GET`. Nunca saque, transferência, débito ou crédito (`partner.validar_escopos` recusa).
+2. A Woovi devolve `clientId` e `clientSecret`; o AppID é `Base64(clientId:clientSecret)`, montado só em `integracoes/woovi/partner.py` (`montar_app_id`).
+3. O AppID é guardado cifrado (Fernet, `CREDENTIALS_ENCRYPTION_KEY`) em `ContaRecebimento.credencial_cifrada`. Uma credencial já vinculada a outra conta é recusada pela impressão SHA-256.
+4. Segue a mesma ativação do fallback: conta padrão única, CNPJ da conta igual ao da academia, webhook próprio em `/webhooks/woovi/contas/<id>/` (`webhook_configurado_em`) e as travas de origem.
+
+Gatilhos: **Atualizar situação do cadastro** (na tela de Recebimento) e o comando `python manage.py conectar_contas_woovi`, idempotente, que pode ser agendado (não está agendado no Coolify). A etapa (`ContaRecebimento.etapa`: não iniciado → aguardando KYC → em análise → aprovado → credencial criada → notificações configuradas → ativa, ou erro) é derivada dos campos existentes.
+
+**Fallback manual (operador):** se a Partner API não estiver habilitada ou falhar, o cadastro continua aprovado e a tela orienta que o suporte conclua pelo servidor: o operador provisiona `WOOVI_ACADEMIA_<id>_APP_ID` e a academia usa **Verificar e ativar**. A credencial cifrada, quando existe, tem precedência sobre a variável. O portal continua sem pedir tokens em formulários.
+
+Credenciais nunca aparecem em log, tela, admin ou mensagem de erro. Depois da conexão, a credencial cifrada não pode ser trocada pelo fluxo normal (mesma trava da origem). Trocar a `CREDENTIALS_ENCRYPTION_KEY` depois de conectar torna a credencial ilegível: a conta precisa ser reconectada por procedimento revisado.
+
+Pendências com a Woovi: confirmar no sandbox o caminho `/api/v1/partner/...` (a especificação OpenAPI usa esse; os guias citam `/api/openpix/v1/...` e `/api/woovi/v1/...`); a habilitação das features `PARTNER` e `KYC_ONBOARDING_LINK` e do escopo `PARTNER_APPLICATION_POST`; e se a repetição (resposta 200) de `partner/application` devolve o mesmo `clientSecret`. Taxa personalizada do afiliado existe só no painel da Woovi (Ajustes) e não foi ativada.
 
 ## Taxas e segurança
 

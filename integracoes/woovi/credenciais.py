@@ -1,4 +1,9 @@
-"""Credenciais só no servidor. Não há fallback academia -> plataforma."""
+"""Credenciais no servidor ou cifradas no banco. Não há fallback academia -> plataforma.
+
+Conta própria: o AppID criado pela Partner API (cifrado em
+``ContaRecebimento.credencial_cifrada``) tem precedência; sem ele vale a
+variável ``WOOVI_ACADEMIA_<id>_APP_ID`` provisionada pelo operador (fallback).
+"""
 import hashlib
 import os
 import re
@@ -37,13 +42,27 @@ def referencia_plataforma():
 
 
 @sensitive_variables()
+def provisionada_no_servidor(conta):
+    """A credencial da conta própria foi provisionada pelo operador?"""
+    if conta.legada:
+        return False
+    ref = referencia_academia(conta.academia_id)
+    return bool(getattr(settings, ref, None) or os.getenv(ref, ""))
+
+
+@sensitive_variables()
 def da_conta(conta):
     if conta.legada:
         if conta.credencial_ref not in ("WOOVI_APP_ID", "WOOVI_PLATAFORMA_APP_ID"):
             raise WooviConfigError("A conta legada não pode usar credencial da academia.")
     elif conta.credencial_ref != referencia_academia(conta.academia_id):
         raise WooviConfigError("Credencial incompatível com a academia.")
-    segredo = resolver(conta.credencial_ref)
+    if not conta.legada and conta.credencial_cifrada:
+        from .cripto import decifrar
+
+        segredo = decifrar(conta.credencial_cifrada)
+    else:
+        segredo = resolver(conta.credencial_ref)
     if not conta.legada:
         reservados = [getattr(settings, nome, "") for nome in (
             "WOOVI_APP_ID", "WOOVI_PLATAFORMA_APP_ID", "WOOVI_ONBOARDING_APP_ID",

@@ -278,7 +278,9 @@ class ContaRecebimento(models.Model):
 
     A identidade de uma conta com histórico é imutável. Desativar uma
     conta para novas cobranças preserva seus Pix e repasses anteriores.
-    Credenciais são referências a segredos mantidos somente no servidor.
+    Credenciais são referências a segredos mantidos no servidor ou, quando
+    criadas pela Partner API da Woovi, o AppID cifrado em
+    ``credencial_cifrada`` (nunca em texto puro).
     """
 
     LEGADO_SUBCONTA = "legado_subconta"
@@ -308,6 +310,10 @@ class ContaRecebimento(models.Model):
     onboarding_url = models.URLField(max_length=1000, blank=True, editable=False)
     conectada_em = models.DateTimeField(null=True, blank=True)
     taxa_ciente_em = models.DateTimeField(null=True, blank=True)
+    # AppID da afiliada criado pela Partner API, cifrado com Fernet
+    # (integracoes.woovi.cripto). Nunca leia direto: use credenciais.da_conta.
+    credencial_cifrada = models.TextField(blank=True, editable=False)
+    webhook_configurado_em = models.DateTimeField(null=True, blank=True, editable=False)
 
     CPF = "cpf"
     CNPJ = "cnpj"
@@ -373,10 +379,39 @@ class ContaRecebimento(models.Model):
             anterior = type(self).objects.get(pk=self.pk)
             if anterior.conectada_em or anterior.cobrancas_pix.exists() or anterior.repasses.exists():
                 campos = ("academia_id", "modelo_recebimento", "provider", "provider_account_id",
-                          "credencial_ref", "api_base_url", "credencial_fingerprint", "pix_key")
+                          "credencial_ref", "api_base_url", "credencial_fingerprint", "pix_key",
+                          "credencial_cifrada")
                 if any(getattr(self, campo) != getattr(anterior, campo) for campo in campos):
                     raise ValidationError("A origem de uma conta com histórico não pode ser alterada.")
         return super().save(*args, **kwargs)
+
+    @property
+    def etapa(self):
+        """Etapa da conexão por parceiro (integracoes.woovi.partner.ETAPAS),
+        derivada dos campos existentes — não é gravada."""
+        from integracoes.woovi import partner
+
+        if self.legada:
+            return partner.ATIVA if self.ativa else partner.NAO_INICIADO
+        if self.status == self.CONECTADA and self.ativa:
+            return partner.ATIVA
+        if self.status == self.ERRO:
+            return partner.ERRO
+        if self.webhook_configurado_em:
+            return partner.WEBHOOK_CONFIGURADO
+        if self.credencial_cifrada:
+            return partner.APPLICATION_CRIADA
+        if self.onboarding_url:
+            return partner.etapa_do_cadastro(self.onboarding_status)
+        if self.onboarding_correlation_id and self.onboarding_status:
+            return partner.PRE_CADASTRO_CRIADO
+        return partner.NAO_INICIADO
+
+    @property
+    def etapa_rotulo(self):
+        from integracoes.woovi.partner import ETAPAS
+
+        return dict(ETAPAS).get(self.etapa, "")
 
     @classmethod
     def ativa_da(cls, academia):

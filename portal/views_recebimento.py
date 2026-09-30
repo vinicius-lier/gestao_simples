@@ -10,14 +10,31 @@ from django.views.decorators.http import require_http_methods
 
 from financeiro.models import ContaRecebimento, Repasse
 from integracoes.woovi.contas import (
-    EXPLICACAO_TAXA, TEXTO_TAXA, ativar_conta, atualizar_onboarding,
-    iniciar_onboarding, link_kyc_seguro, preparar_conta,
+    EXPLICACAO_TAXA, TEXTO_TAXA, ativar_conta, atualizar_onboarding, automacao_disponivel,
+    conectar_automaticamente, iniciar_onboarding, link_kyc_seguro, preparar_conta,
 )
-from integracoes.woovi.exceptions import WooviConfigError, WooviError
+from integracoes.woovi.credenciais import provisionada_no_servidor
+from integracoes.woovi.exceptions import WooviAuthError, WooviConfigError, WooviError
 from .forms import ContaWooviForm
 from .views import academia_required
 
 logger = logging.getLogger(__name__)
+
+
+def _concluir_conexao(request, conta):
+    """Cadastro aprovado: termina a conexão pela Partner API. Uma falha aqui
+    não marca a conta como erro — o cadastro continua aprovado e o fallback
+    (credencial provisionada pelo operador) segue disponível."""
+    try:
+        conectar_automaticamente(conta, request.user)
+    except WooviAuthError:
+        logger.warning("Partner API recusou a conexão automática da conta %s.", conta.pk)
+        messages.info(request, "Cadastro aprovado. A conexão automática ainda não está habilitada na Woovi; o suporte conclui a conexão pelo servidor.")
+    except (WooviError, ValueError) as erro:
+        logger.warning("Conexão automática da conta %s não concluída (%s).", conta.pk, type(erro).__name__)
+        messages.warning(request, "Cadastro aprovado, mas não foi possível concluir a conexão agora. Tente de novo em instantes.")
+    else:
+        messages.success(request, "Cadastro aprovado e conta Woovi conectada. Novos Pix serão recebidos diretamente pela academia.")
 
 
 @academia_required
@@ -45,7 +62,12 @@ def recebimento(request):
                         messages.info(request, "Abra a conta pelo cadastro oficial abaixo. Depois, solicite ao suporte a conexão segura e volte para ativar.")
                 elif acao == "atualizar":
                     atualizar_onboarding(conta)
-                    messages.success(request, "Situação do cadastro atualizada.")
+                    if conta.onboarding_status == "APPROVED" and not conta.conectada_em and automacao_disponivel(conta):
+                        _concluir_conexao(request, conta)
+                    else:
+                        messages.success(request, "Situação do cadastro atualizada.")
+                elif automacao_disponivel(conta) and not (conta.credencial_cifrada or provisionada_no_servidor(conta)):
+                    _concluir_conexao(request, conta)
                 else:
                     ativar_conta(conta, request.user)
                     messages.success(request, "Conta Woovi conectada. Novos Pix serão recebidos diretamente pela academia.")
