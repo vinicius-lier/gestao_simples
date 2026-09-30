@@ -8,6 +8,7 @@ from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from academias.models import Academia
 from financeiro.models import ContaRecebimento
@@ -44,8 +45,10 @@ class PartnerTests(CenarioWoovi, TestCase):
         self.academia.cnpj = CNPJ
         self.academia.save(update_fields=["cnpj"])
         self.propria = preparar_conta(self.academia, self.usuario)
+        # Cadastro aberto pelo sistema (ciência da taxa registrada) e aprovado.
         ContaRecebimento.objects.filter(pk=self.propria.pk).update(
             onboarding_url=KYC, onboarding_status="APPROVED", status=ContaRecebimento.AGUARDANDO,
+            taxa_ciente_em=timezone.now(),
         )
         self.propria.refresh_from_db()
         self.chamadas = []
@@ -60,6 +63,9 @@ class PartnerTests(CenarioWoovi, TestCase):
                     "clientId": CLIENT_ID, "clientSecret": CLIENT_SECRET,
                 }}
                 return http(corpo, status_application)
+            if url.endswith("/api/v1/kyc/onboarding"):
+                return http({"linkOnboarding": KYC, "accountRegister": {
+                    "correlationID": kw["json"]["correlationID"], "taxID": {"taxID": CNPJ}, "status": "PENDING"}}, 201)
             if "/api/v1/account-register/" in url:
                 return http({"correlationID": self.propria.onboarding_correlation_id,
                              "taxID": {"taxID": CNPJ}, "status": cadastro})
@@ -277,3 +283,70 @@ class PartnerTests(CenarioWoovi, TestCase):
         self.assertNotIn(CLIENT_SECRET, saida.getvalue())
         self.propria.refresh_from_db()
         self.assertEqual(self.propria.status, ContaRecebimento.CONECTADA)
+
+    # ------------------------------------------------ passos da tela e ciência
+    def entrar(self):
+        AcessoAcademia.objects.create(usuario=self.usuario, academia=self.academia, administrador=True)
+        self.client.force_login(self.usuario)
+        return "/configuracoes/recebimento/"
+
+    def test_conexao_automatica_exige_a_ciencia_da_taxa(self):
+        ContaRecebimento.objects.filter(pk=self.propria.pk).update(taxa_ciente_em=None)
+        self.propria.refresh_from_db()
+        with patch("integracoes.woovi.client.requests.request") as request:
+            with self.assertRaises(ValueError):
+                conectar_automaticamente(self.propria)
+            request.assert_not_called()
+
+    def test_tela_sem_conta_com_parceiro_leva_a_abrir_conta(self):
+        url = self.entrar()
+        self.propria.delete()
+        resposta = self.client.get(url)
+        self.assertContains(resposta, "Passos da conexão")
+        self.assertContains(resposta, 'value="iniciar">Abrir conta na Woovi')
+        self.assertContains(resposta, "Estou ciente da taxa")
+        self.assertNotContains(resposta, "Verificar e ativar")
+        self.assertNotContains(resposta, "Abrir cadastro oficial da Woovi")
+        self.assertNotContains(resposta, "solicite ao suporte")
+
+    def test_tela_sem_parceiro_oferece_o_fallback(self):
+        url = self.entrar()
+        self.propria.delete()
+        with override_settings(WOOVI_ONBOARDING_APP_ID=""):
+            resposta = self.client.get(url)
+        self.assertContains(resposta, "Abrir cadastro oficial da Woovi")
+        self.assertContains(resposta, "Verificar e ativar")
+        self.assertNotContains(resposta, 'value="iniciar"')
+
+    def test_tela_em_analise_nao_pede_ciencia_de_novo(self):
+        url = self.entrar()
+        ContaRecebimento.objects.filter(pk=self.propria.pk).update(onboarding_status="IN_REVIEW")
+        resposta = self.client.get(url)
+        self.assertContains(resposta, "Continuar cadastro na Woovi")
+        self.assertContains(resposta, "Atualizar situação")
+        self.assertContains(resposta, "A Woovi está analisando o cadastro")
+        self.assertNotContains(resposta, "Estou ciente da taxa")
+        self.assertNotContains(resposta, "Verificar e ativar")
+
+    def test_tela_aprovado_mostra_concluir_conexao(self):
+        url = self.entrar()
+        resposta = self.client.get(url)
+        self.assertContains(resposta, "Concluir conexão")
+        self.assertContains(resposta, "Cadastro aprovado pela Woovi")
+        self.assertNotContains(resposta, 'value="iniciar"')
+
+    @patch("integracoes.woovi.client.requests.request")
+    def test_abrir_conta_exige_e_registra_a_ciencia(self, request):
+        request.side_effect = self.woovi()
+        url = self.entrar()
+        self.propria.delete()
+        resposta = self.client.post(url, {"acao": "iniciar"}, follow=True)
+        self.assertContains(resposta, "Confirme a ciência da taxa")
+        request.assert_not_called()
+        self.assertFalse(ContaRecebimento.objects.filter(modelo_recebimento=ContaRecebimento.CONTA_PROPRIA).exists())
+
+        self.client.post(url, {"acao": "iniciar", "confirmacao": "on"}, follow=True)
+        conta = ContaRecebimento.objects.get(modelo_recebimento=ContaRecebimento.CONTA_PROPRIA)
+        self.assertIsNotNone(conta.taxa_ciente_em)
+        self.assertEqual(conta.onboarding_url, KYC)
+        self.assertEqual(conta.etapa, partner.AGUARDANDO_KYC)

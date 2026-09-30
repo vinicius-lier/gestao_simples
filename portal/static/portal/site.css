@@ -144,3 +144,14 @@
 .respostas-saude li:last-child{border-bottom:0;padding-bottom:0}
 .respostas-saude-pergunta{display:block;font-size:14px;margin-bottom:6px}
 .respostas-saude-detalhe{display:block;font-size:13px;font-weight:600;margin-top:6px}
+
+/* Recebimento: trilha de passos da conexão da conta Woovi. */
+.trilha-conexao{list-style:none;display:flex;flex-wrap:wrap;gap:10px 26px;margin:6px 0 18px;padding:0}
+.trilha-conexao li{display:flex;align-items:center;gap:10px;color:#5f5f66;font-weight:600;font-size:.92rem}
+.trilha-numero{display:inline-grid;place-items:center;flex:none;width:30px;height:30px;border-radius:50%;border:2px solid var(--line);background:#fff;font-size:.82rem;font-weight:700;font-variant-numeric:tabular-nums}
+.trilha-conexao .trilha-feito{color:var(--ink)}
+.trilha-conexao .trilha-feito .trilha-numero{background:#b5242c;border-color:#b5242c;color:#fff}
+.trilha-conexao .trilha-atual{color:var(--ink)}
+.trilha-conexao .trilha-atual .trilha-numero{border-color:#b5242c;color:#b5242c;box-shadow:0 0 0 4px #fcf4f4}
+.trilha-conexao .trilha-erro{color:#8f1c22}
+.trilha-conexao .trilha-erro .trilha-numero{border-color:#8f1c22;background:#fcf4f4;color:#8f1c22}

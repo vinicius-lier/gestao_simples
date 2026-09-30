@@ -204,6 +204,10 @@ def conectar_automaticamente(conta, usuario=None):
         return conta
     if not automacao_disponivel(conta):
         raise WooviConfigError("A conexão automática não está disponível para esta conta.")
+    # A ciência da taxa é registrada ao abrir a conta (ou ao concluir pela
+    # tela); sem ela, nenhuma conexão automática acontece.
+    if not conta.taxa_ciente_em:
+        raise ValueError("Confirme a ciência da taxa antes de concluir a conexão.")
     if conta.onboarding_status != "APPROVED":
         atualizar_onboarding(conta)
         if conta.onboarding_status != "APPROVED":
