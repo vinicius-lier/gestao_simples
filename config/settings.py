@@ -466,6 +466,8 @@ LEMBRETES_ENVIAM_N8N = os.getenv(
 # =============================================================================
 
 ALERTAS_DISCORD_WEBHOOK_URL = os.getenv("ALERTAS_DISCORD_WEBHOOK_URL", "")
+# Token exclusivo do Zabbix, somente para contagens; vazio desabilita a rota.
+MONITORAMENTO_TOKEN = os.getenv("MONITORAMENTO_TOKEN", "")
 MONITORAMENTO_LIMITE_RAM = int(os.getenv("MONITORAMENTO_LIMITE_RAM", "90"))
 MONITORAMENTO_LIMITE_DISCO = int(os.getenv("MONITORAMENTO_LIMITE_DISCO", "85"))
 

@@ -18,12 +18,14 @@ from django.contrib import admin
 from django.urls import include, path
 
 from config.views import favicon, health
+from monitoramento.views import metricas
 from integracoes.evolution.views import webhook_conexao as webhook_evolution
 from integracoes.woovi.views import webhook as webhook_woovi
 
 urlpatterns = [
     path('favicon.ico', favicon, name='favicon'),
     path('health/', health, name='health'),
+    path('monitoramento/metricas/', metricas, name='monitoramento_metricas'),
     path('', include('portal.urls')),
     path('admin/', admin.site.urls),
     path('webhooks/woovi/', webhook_woovi, name='webhook_woovi'),
