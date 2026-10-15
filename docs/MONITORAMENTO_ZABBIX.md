@@ -11,7 +11,7 @@ Host `Keiko_Web` (nome visível `Keiko Fukuda`), cenário `Keiko - Site e banco`
 - Ação `Keiko - Discord - Falha e recuperação`, restrita ao host, envia ao administrador
   via Discord. Sem repetição periódica. Recuperação usa o mesmo destino.
 
-## Coleta interna preparada, ainda não publicada
+## Coleta interna ativa
 
 GET `/monitoramento/metricas/`, HTTPS, cabeçalho
 `Authorization: Bearer {$KEIKO.MONITORAMENTO.TOKEN}`. Chave aleatória exclusiva,
@@ -58,10 +58,20 @@ Não há migrations, dependências novas, retries ou ações financeiras neste c
 - Não alterar rotinas ou dados para simular incidentes. Testes de código usam banco
   isolado e HTTP externo bloqueado; teste de canal deve ser explicitamente sintético.
 
-## Implantação pendente
+## Validação em produção — 15/10/2026
 
-Autorizar a nova credencial de leitura e a publicação no serviço **Keiko_fukuda**,
-repositório `gestao_simples`, branch `main`. A base examinada foi `4507a4f`.
-Revalidar o topo remoto antes de publicar; não incluir alterações locais de outros
-trabalhos. Confirmar hash implantado, `/health/`, resposta autenticada e coleta
-normal pelo Zabbix. Shiai permanece pausado durante sua transição.
+- Credencial e publicação autorizadas pelo responsável. Serviço **Keiko_fukuda**,
+  repositório `gestao_simples`, branch `main`, base `4507a4f`, código `df76dc3`.
+  Publicação confirmada como Success no Coolify.
+- 96 testes relevantes passaram em PostgreSQL isolado, com HTTP real bloqueado.
+  `makemigrations --check --dry-run` sem alterações. Nenhuma migration nova.
+- 10 itens manuais ativos (mestre + 9 dependentes), além dos 9 itens web gerados.
+  Coleta normal autenticada validada com a macro salva, sem informar chave no teste.
+- 13 triggers ativos: 3 públicos e 10 internos. Site e banco HTTP 200.
+- Na coleta de validação: 303 lembretes com erro; demais contagens de falha zero;
+  captura de erros configurada = 1. Valores são uma observação, não inventário fixo.
+- Alerta real dos lembretes recebido no Discord, evento Zabbix **897**.
+  A ação inclui recuperação; recuperação real não foi simulada alterando dados.
+- Nenhum pagamento, saque ou reenvio executado. Chave fora do Git e dos logs.
+  Alterações de outros trabalhos no checkout principal preservadas.
+- Shiai permanece pausado durante sua transição.
