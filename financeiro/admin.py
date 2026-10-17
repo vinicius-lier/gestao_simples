@@ -1,5 +1,26 @@
 from django.contrib import admin
-from .models import CobrancaPix, ContaRecebimento, EventoWebhook, LembreteCobranca, Mensalidade, Repasse
+from .models import (
+    CobrancaPix, ContaRecebimento, EventoWebhook, LembreteCobranca, Mensalidade, OperacaoCobrancaPix, Repasse,
+)
+
+
+@admin.register(OperacaoCobrancaPix)
+class OperacaoCobrancaPixAdmin(admin.ModelAdmin):
+    """Somente leitura: a reconciliação é feita pelo sistema, com o mesmo
+    correlationID, no próximo pedido de Pix da mensalidade."""
+
+    list_display = ("correlation_id", "mensalidade", "status", "valor", "tentativas", "criada_em")
+    list_filter = ("status",)
+    search_fields = ("correlation_id", "mensalidade__matricula__atleta__nome")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Mensalidade)

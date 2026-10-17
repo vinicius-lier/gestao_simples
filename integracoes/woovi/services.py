@@ -14,19 +14,29 @@ import uuid
 from datetime import datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from financeiro.alertas import alertar_plataforma
-from financeiro.models import CobrancaPix, ContaRecebimento, EventoWebhook, Mensalidade, Repasse
+from financeiro.models import (
+    CobrancaPix, ContaRecebimento, EventoWebhook, Mensalidade, OperacaoCobrancaPix, Repasse,
+)
 from integracoes.woovi.chave_pix import normalizar_chave_pix
 from integracoes.woovi.client import WooviClient
-from integracoes.woovi.exceptions import WooviError, WooviInvalidResponseError, WooviNotFoundError
+from integracoes.woovi.exceptions import (
+    WooviError, WooviInvalidResponseError, WooviNotFoundError, WooviUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
 VALIDADE_COBRANCA_DIAS = 30
+
+# Um pedido de Pix PENDENTE mais novo que WOOVI_TIMEOUT + esta margem ainda
+# pode estar em andamento em outro processo: não é reconciliado.
+MARGEM_PEDIDO_EM_ANDAMENTO = 30
 
 # Pix que expira dentro desta janela já é trocado por um novo, para a
 # família não receber um código que morre antes de concluir o pagamento.
@@ -207,8 +217,17 @@ def garantir_cobranca_pix(mensalidade):
     sem split, crédito ou repasse. Códigos legados vigentes são preservados
     com sua conta de origem.
 
-    O lock na linha da mensalidade impede que operador e família, clicando
-    ao mesmo tempo, gerem dois Pix."""
+    Criação em três passos, sem transação aberta durante chamadas HTTP:
+
+    1. ``_reservar``: com a mensalidade travada, grava (e confirma) uma
+       ``OperacaoCobrancaPix`` com o correlationID do pedido. O índice
+       único de operação aberta impede dois pedidos simultâneos;
+    2. ``_executar``: pede o Pix à Woovi com esse correlationID;
+    3. ``_concluir``: grava a ``CobrancaPix`` e fecha a operação.
+
+    Se o resultado ficar desconhecido (timeout, erro 5xx, falha ao gravar
+    depois do Pix criado), a operação continua aberta e o próximo pedido
+    passa por ``_reconciliar`` antes de qualquer Pix novo."""
     _validar_em_aberto(mensalidade)
     conta = ContaRecebimento.ativa_da(mensalidade.academia)
     atual = CobrancaPix.objects.filter(mensalidade=mensalidade, status=CobrancaPix.ATIVA).first()
@@ -219,75 +238,273 @@ def garantir_cobranca_pix(mensalidade):
     if _serve(atual, conta, mensalidade.valor_devido()):
         return atual
 
-    if conta is None or conta.legada or conta.status != ContaRecebimento.CONECTADA:
+    # Uma reconciliação registra o Pix que já existia; a volta seguinte o
+    # devolve (se ainda serve) ou reserva o substituto.
+    for _volta in range(3):
+        aberta = OperacaoCobrancaPix.objects.filter(
+            mensalidade_id=mensalidade.pk, status__in=OperacaoCobrancaPix.ABERTAS,
+        ).first()
+        if aberta is not None:
+            _reconciliar(aberta)
+            continue
+        atual, operacao = _reservar(mensalidade)
+        if atual is not None:
+            return atual
+        if operacao is None:  # outro pedido reservou no mesmo instante
+            continue
+        cobranca = _executar(operacao)
+        if cobranca.status == CobrancaPix.ATIVA:
+            return cobranca
+        # Mensalidade paga/encerrada enquanto o Pix era criado: a próxima
+        # volta explica o motivo (``_validar_em_aberto``).
+    raise PixEmProcessamento(
+        "O Pix desta mensalidade está sendo gerado. Tente novamente em instantes."
+    )
+
+
+class PixEmProcessamento(ValueError):
+    """Há um pedido de Pix em andamento para a mensalidade."""
+
+
+def _exigir_conta_conectada(conta):
+    if conta is None or not conta.ativa or conta.legada or conta.status != ContaRecebimento.CONECTADA:
         raise RecebimentoNaoConfigurado(
             "Configure a conta de recebimento da academia antes de gerar novos Pix."
         )
 
-    with transaction.atomic():
-        travada = (
-            Mensalidade.objects.select_for_update()
-            .select_related("matricula__atleta__responsavel_financeiro")
-            .get(pk=mensalidade.pk)
-        )
-        _validar_em_aberto(travada)
-        conta = ContaRecebimento.objects.select_for_update().get(pk=conta.pk)
-        if not conta.ativa or conta.legada or conta.status != ContaRecebimento.CONECTADA:
-            raise RecebimentoNaoConfigurado("A conta de recebimento precisa estar conectada.")
-        valor = travada.valor_devido()
-        atual = (
-            CobrancaPix.objects.select_for_update()
-            .filter(mensalidade=travada, status=CobrancaPix.ATIVA)
-            .first()
-        )
-        if _serve(atual, conta, valor):
-            return atual
 
-        if atual is not None and atual.modelo_recebimento == ContaRecebimento.LEGADO_SUBCONTA and atual.vigente:
-            return atual
-        client = WooviClient(conta=conta)
-        if atual is not None:
-            _encerrar_cobranca_substituida(WooviClient(conta=atual.conta_recebimento), atual)
+def _reservar(mensalidade):
+    """Passo 1, numa transação curta e sem HTTP. Devolve ``(pix, None)``
+    se já há um Pix que serve, ``(None, operação)`` com o pedido gravado, ou
+    ``(None, None)`` se outro pedido acabou de reservar."""
+    try:
+        with transaction.atomic():
+            travada = Mensalidade.objects.select_for_update().get(pk=mensalidade.pk)
+            _validar_em_aberto(travada)
+            conta = ContaRecebimento.ativa_da(travada.academia)
+            _exigir_conta_conectada(conta)
+            conta = ContaRecebimento.objects.select_for_update().get(pk=conta.pk)
+            _exigir_conta_conectada(conta)
+            valor = travada.valor_devido()
+            atual = (
+                CobrancaPix.objects.select_for_update()
+                .filter(mensalidade=travada, status=CobrancaPix.ATIVA)
+                .first()
+            )
+            if _serve(atual, conta, valor):
+                return atual, None
+            if atual is not None and atual.modelo_recebimento == ContaRecebimento.LEGADO_SUBCONTA and atual.vigente:
+                return atual, None
+            if OperacaoCobrancaPix.objects.filter(
+                mensalidade=travada, status__in=OperacaoCobrancaPix.ABERTAS,
+            ).exists():
+                return None, None
+            operacao = OperacaoCobrancaPix.objects.create(
+                mensalidade=travada,
+                conta_recebimento=conta,
+                substitui=atual,
+                correlation_id=f"mensalidade-{travada.pk}-{uuid.uuid4().hex}",
+                valor=valor,
+                validade_segundos=_validade_em_segundos(travada),
+            )
+    except IntegrityError:
+        # O índice de operação aberta barrou um pedido simultâneo.
+        return None, None
+    return None, operacao
 
-        validade = _validade_em_segundos(travada)
-        aluno = travada.matricula.atleta
-        criada = client.criar_cobranca(
-            correlation_id=f"mensalidade-{travada.pk}-{uuid.uuid4().hex}",
-            valor_centavos=valor_em_centavos(valor),
+
+def _executar(operacao):
+    """Passo 2: pede o Pix à Woovi com o correlationID já gravado, fora de
+    transação. ``return_existing`` faz o mesmo pedido, repetido, devolver o
+    Pix já criado. Recusa da Woovi (4xx) fecha a operação; sem resposta
+    confiável, ela fica INCERTA para reconciliação."""
+    _encerrar_cobranca_substituida(operacao)
+    mensalidade = (
+        Mensalidade.objects.select_related("matricula__atleta__responsavel_financeiro")
+        .get(pk=operacao.mensalidade_id)
+    )
+    aluno = mensalidade.matricula.atleta
+    OperacaoCobrancaPix.objects.filter(pk=operacao.pk).update(
+        tentativas=F("tentativas") + 1, atualizada_em=timezone.now(),
+    )
+    try:
+        criada = WooviClient(conta=operacao.conta_recebimento).criar_cobranca(
+            correlation_id=operacao.correlation_id,
+            valor_centavos=valor_em_centavos(operacao.valor),
             # Vai para o infoPagador do Pix (máx. 140 caracteres).
-            comentario=f"{travada.descricao} - {aluno.nome}"[:140],
-            expira_em_segundos=validade,
+            comentario=f"{mensalidade.descricao} - {aluno.nome}"[:140],
+            expira_em_segundos=operacao.validade_segundos,
             cliente=_dados_cliente(aluno.responsavel_financeiro),
         )
-        if not criada.correlation_id or not criada.br_code:
-            raise WooviInvalidResponseError("A resposta da Woovi não contém o Pix da cobrança.")
+    except (WooviUnavailableError, WooviInvalidResponseError) as exc:
+        # Timeout, falha de rede, 5xx ou resposta ilegível: a Woovi pode ter
+        # criado o Pix. Nada de novo correlationID até conferir.
+        _marcar_operacao(operacao, OperacaoCobrancaPix.INCERTA, exc)
+        raise
+    except WooviError as exc:
+        _marcar_operacao(operacao, OperacaoCobrancaPix.NAO_CRIADA, exc)
+        raise
+    if criada.correlation_id != operacao.correlation_id or not criada.br_code:
+        erro = WooviInvalidResponseError("A resposta da Woovi não contém o Pix da cobrança.")
+        _marcar_operacao(operacao, OperacaoCobrancaPix.INCERTA, erro)
+        raise erro
+    return _concluir_ou_marcar_incerta(operacao, criada)
 
-        return CobrancaPix.objects.create(
-            mensalidade=travada,
-            conta_recebimento=conta,
-            correlation_id=criada.correlation_id,
-            transaction_id=criada.transaction_id,
-            valor=valor,
-            br_code=criada.br_code,
-            link_pagamento=criada.link_pagamento,
-            expira_em=criada.expira_em or timezone.now() + timedelta(seconds=validade),
+
+def _reconciliar(operacao):
+    """Resolve uma operação aberta consultando a Woovi pelo MESMO
+    correlationID, antes de permitir qualquer Pix novo da mensalidade:
+
+    - pedido ainda em andamento (pendente e recente) -> ``PixEmProcessamento``;
+    - Pix ativo ou pago lá -> registrado aqui (o pago já recebe a baixa);
+    - expirado lá -> operação encerrada, sem Pix vigente;
+    - não encontrado -> repete o pedido com a mesma identificação, se a
+      mensalidade e a conta ainda permitem; senão, encerra a operação;
+    - consulta sem resposta -> continua INCERTA e a falha sobe.
+    """
+    janela = timedelta(seconds=getattr(settings, "WOOVI_TIMEOUT", 30) + MARGEM_PEDIDO_EM_ANDAMENTO)
+    if operacao.status == OperacaoCobrancaPix.PENDENTE and operacao.atualizada_em > timezone.now() - janela:
+        raise PixEmProcessamento(
+            "O Pix desta mensalidade está sendo gerado. Tente novamente em instantes."
         )
+    try:
+        remota = WooviClient(conta=operacao.conta_recebimento).obter_cobranca(operacao.correlation_id)
+    except WooviNotFoundError:
+        remota = None
+    except WooviError as exc:
+        _marcar_operacao(operacao, OperacaoCobrancaPix.INCERTA, exc)
+        raise
+
+    if remota is None:
+        mensalidade = Mensalidade.objects.get(pk=operacao.mensalidade_id)
+        conta = ContaRecebimento.objects.get(pk=operacao.conta_recebimento_id)
+        try:
+            _validar_em_aberto(mensalidade)
+            _exigir_conta_conectada(conta)
+        except ValueError as exc:
+            _marcar_operacao(operacao, OperacaoCobrancaPix.NAO_CRIADA, exc)
+            return
+        _executar(operacao)
+        return
+
+    if remota.correlation_id != operacao.correlation_id:
+        erro = WooviInvalidResponseError("A Woovi devolveu outra cobrança na conferência.")
+        _marcar_operacao(operacao, OperacaoCobrancaPix.INCERTA, erro)
+        raise erro
+    if remota.status == "EXPIRED":
+        _marcar_operacao(operacao, OperacaoCobrancaPix.EXPIRADA, "Pix expirado antes de ser registrado.")
+        return
+    if remota.status not in ("ACTIVE", "COMPLETED") or not remota.br_code:
+        erro = WooviInvalidResponseError("A Woovi devolveu um Pix em situação inesperada.")
+        _marcar_operacao(operacao, OperacaoCobrancaPix.INCERTA, erro)
+        raise erro
+
+    _encerrar_cobranca_substituida(operacao)
+    cobranca = _concluir_ou_marcar_incerta(operacao, remota)
+    if remota.status == "COMPLETED":
+        registrar_pagamento_pix(
+            cobranca, pago_em=remota.pago_em, transaction_id=remota.transaction_id,
+            taxa_centavos=remota.taxa_centavos, valor_pago_centavos=remota.valor_centavos or None,
+        )
+    logger.info("Pix %s reconciliado (%s).", operacao.correlation_id, remota.status)
 
 
-def _encerrar_cobranca_substituida(client, cobranca):
+def _concluir_ou_marcar_incerta(operacao, remota):
+    """O Pix existe na Woovi: se a gravação local falhar, a operação fica
+    INCERTA (a reconciliação o encontra pelo correlationID) e a falha sobe."""
+    try:
+        return _concluir(operacao, remota)
+    except Exception as exc:
+        _marcar_operacao(operacao, OperacaoCobrancaPix.INCERTA, "Pix criado na Woovi, mas não gravado: "
+                         f"{type(exc).__name__}")
+        raise
+
+
+def _concluir(operacao, remota):
+    """Passo 3, numa transação curta: grava o Pix existente na Woovi e fecha
+    a operação. Se a mensalidade já não está em aberto, o Pix é gravado
+    (pode ser pago e precisa ser reconhecido) e tirado do ar em seguida."""
+    if remota.valor_centavos and remota.valor_centavos != valor_em_centavos(operacao.valor):
+        raise WooviInvalidResponseError("O valor do Pix na Woovi difere do pedido.")
+    with transaction.atomic():
+        travada = OperacaoCobrancaPix.objects.select_for_update().get(pk=operacao.pk)
+        if travada.status == OperacaoCobrancaPix.CONCLUIDA:
+            return travada.cobranca
+        mensalidade = Mensalidade.objects.select_for_update().get(pk=travada.mensalidade_id)
+        # No máximo um Pix ativo: o substituído sai antes do novo entrar.
+        for antiga in CobrancaPix.objects.select_for_update().filter(
+            mensalidade=mensalidade, status=CobrancaPix.ATIVA,
+        ):
+            _fechar_localmente(antiga)
+        cobranca = CobrancaPix.objects.create(
+            mensalidade=mensalidade,
+            conta_recebimento=travada.conta_recebimento,
+            correlation_id=travada.correlation_id,
+            transaction_id=remota.transaction_id,
+            valor=travada.valor,
+            br_code=remota.br_code,
+            link_pagamento=remota.link_pagamento,
+            # Sem data da Woovi, conta a validade desde o pedido (mais cedo
+            # que a real: nunca oferece um Pix já morto).
+            expira_em=remota.expira_em or travada.criada_em + timedelta(seconds=travada.validade_segundos),
+        )
+        travada.status = OperacaoCobrancaPix.CONCLUIDA
+        travada.cobranca = cobranca
+        travada.erro = ""
+        travada.save(update_fields=["status", "cobranca", "erro", "atualizada_em"])
+        em_aberto = mensalidade.status in STATUS_EM_ABERTO
+
+    if not em_aberto and remota.status != "COMPLETED":
+        try:
+            WooviClient(conta=cobranca.conta_recebimento).remover_cobranca(cobranca.correlation_id)
+        except WooviNotFoundError:
+            pass
+        except WooviError as exc:
+            logger.warning("Não foi possível cancelar o Pix %s: %s", cobranca.correlation_id, exc)
+            alertar_plataforma(
+                "Pix criado para mensalidade já encerrada e não cancelado na Woovi",
+                mensalidade=mensalidade.pk, cobranca=cobranca.correlation_id,
+            )
+        _fechar_localmente(cobranca)
+        cobranca.refresh_from_db()
+    return cobranca
+
+
+def _marcar_operacao(operacao, status, erro):
+    """Grava o desfecho fora de qualquer transação de negócio (sobrevive ao
+    rollback dela). Uma operação concluída nunca volta a ficar aberta."""
+    texto = re.sub(r"https?://\S+", "[url]", str(erro))[:300]
+    OperacaoCobrancaPix.objects.filter(pk=operacao.pk).exclude(
+        status=OperacaoCobrancaPix.CONCLUIDA,
+    ).update(status=status, erro=texto, atualizada_em=timezone.now())
+    operacao.status, operacao.erro = status, texto
+
+
+def _fechar_localmente(cobranca):
+    """ATIVA -> CANCELADA (ainda no prazo) ou EXPIRADA. Condicional: nunca
+    sobrescreve um Pix que o webhook acabou de marcar como pago."""
+    novo = CobrancaPix.CANCELADA if cobranca.expira_em > timezone.now() else CobrancaPix.EXPIRADA
+    CobrancaPix.objects.filter(pk=cobranca.pk, status=CobrancaPix.ATIVA).update(
+        status=novo, atualizada_em=timezone.now(),
+    )
+
+
+def _encerrar_cobranca_substituida(operacao):
     """O Pix anterior vai ser substituído (expirou, está perto de expirar ou
-    é de uma chave antiga). Se ainda aceita pagamento, tenta tirá-lo do ar;
-    se a família pagar por ele mesmo assim, o webhook registra o pagamento
-    normalmente (ver ``registrar_pagamento_pix``)."""
+    tem outro valor). Se ainda aceita pagamento, tenta tirá-lo do ar, fora
+    de transação; se a família pagar por ele mesmo assim, o webhook registra
+    o pagamento normalmente (ver ``registrar_pagamento_pix``)."""
+    if operacao.substitui_id is None:
+        return
+    cobranca = CobrancaPix.objects.select_related("conta_recebimento").get(pk=operacao.substitui_id)
+    if cobranca.status != CobrancaPix.ATIVA:
+        return
     if cobranca.expira_em > timezone.now():
         try:
-            client.remover_cobranca(cobranca.correlation_id)
+            WooviClient(conta=cobranca.conta_recebimento).remover_cobranca(cobranca.correlation_id)
         except WooviError as exc:  # melhor esforço; ver docstring
             logger.warning("Não foi possível cancelar o Pix %s: %s", cobranca.correlation_id, exc)
-        cobranca.status = CobrancaPix.CANCELADA
-    else:
-        cobranca.status = CobrancaPix.EXPIRADA
-    cobranca.save(update_fields=["status", "atualizada_em"])
+    _fechar_localmente(cobranca)
 
 
 def remover_cobranca_pix(mensalidade):

@@ -524,6 +524,71 @@ class CobrancaPix(models.Model):
         )
 
 
+class OperacaoCobrancaPix(models.Model):
+    """Pedido de criação de um Pix, gravado (e confirmado no banco) ANTES da
+    chamada à Woovi, fora da transação que cria a ``CobrancaPix``.
+
+    Se a chamada termina sem resposta (timeout, erro 5xx, resposta ilegível)
+    ou o Pix é criado lá mas falha ao ser gravado aqui, a operação fica
+    aberta com o ``correlation_id`` já usado. Antes de qualquer Pix novo da
+    mensalidade, esse mesmo ``correlation_id`` é consultado na Woovi
+    (``services._reconciliar``): o Pix que existir lá é registrado, e só um
+    "não encontrado" permite repetir o pedido — com a mesma identificação.
+
+    No máximo uma operação aberta (pendente ou incerta) por mensalidade:
+    dois cliques simultâneos não geram dois Pix."""
+
+    PENDENTE = "pendente"
+    INCERTA = "incerta"
+    CONCLUIDA = "concluida"
+    NAO_CRIADA = "nao_criada"
+    EXPIRADA = "expirada"
+    STATUS = [
+        (PENDENTE, "Pedido em andamento"),
+        (INCERTA, "Resultado desconhecido — conferir na Woovi"),
+        (CONCLUIDA, "Pix registrado"),
+        (NAO_CRIADA, "Pix não criado"),
+        (EXPIRADA, "Pix expirou antes de ser registrado"),
+    ]
+    ABERTAS = (PENDENTE, INCERTA)
+
+    mensalidade = models.ForeignKey(Mensalidade, on_delete=models.PROTECT, related_name="operacoes_pix")
+    conta_recebimento = models.ForeignKey(
+        ContaRecebimento, on_delete=models.PROTECT, related_name="operacoes_pix",
+    )
+    # O Pix ativo que este pedido substitui (expirado, perto de expirar ou
+    # com outro valor). Sai do ar antes de o novo ser registrado.
+    substitui = models.ForeignKey(
+        CobrancaPix, on_delete=models.PROTECT, null=True, blank=True, related_name="+",
+    )
+    cobranca = models.OneToOneField(
+        CobrancaPix, on_delete=models.PROTECT, null=True, blank=True, related_name="operacao",
+    )
+    correlation_id = models.CharField(max_length=100, unique=True)
+    valor = models.DecimalField(max_digits=10, decimal_places=2)
+    validade_segundos = models.PositiveIntegerField()
+    status = models.CharField(max_length=12, choices=STATUS, default=PENDENTE, db_index=True)
+    tentativas = models.PositiveSmallIntegerField(default=0)
+    erro = models.TextField(blank=True)
+    criada_em = models.DateTimeField(auto_now_add=True)
+    atualizada_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-criada_em", "-pk"]
+        verbose_name = "operação de criação de Pix"
+        verbose_name_plural = "operações de criação de Pix"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["mensalidade"],
+                condition=Q(status__in=["pendente", "incerta"]),
+                name="uma_operacao_pix_aberta_por_mensalidade",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.correlation_id} ({self.get_status_display()})"
+
+
 class EventoWebhook(models.Model):
     """Aviso recebido do provedor de pagamento, gravado antes de ser
     processado. ``chave`` identifica o evento (tipo + correlationID +
