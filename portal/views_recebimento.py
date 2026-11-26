@@ -6,6 +6,7 @@ principal por passo. O caminho manual (cadastro oficial + credencial
 provisionada pelo operador) só aparece como fallback.
 """
 import logging
+import re
 
 from django.conf import settings
 from django.contrib import messages
@@ -38,14 +39,36 @@ def _registrar_ciencia(conta):
     conta.refresh_from_db()
 
 
+_ESCOPO_FALTANTE = re.compile(r"escopo necess[áa]rio:\s*([A-Z][A-Z_]+)")
+
+
+def _escopo_no_log(erro):
+    escopo = _ESCOPO_FALTANTE.search(str(erro)) if isinstance(erro, WooviAuthError) else None
+    return f"; escopo faltante: {escopo.group(1)}" if escopo else ""
+
+
+def _mensagem_erro(erro):
+    """Mensagem para a tela: diz o motivo quando a Woovi recusa a permissão."""
+    if isinstance(erro, ValueError):
+        return str(erro)
+    if isinstance(erro, WooviAuthError):
+        escopo = _ESCOPO_FALTANTE.search(str(erro))
+        if escopo:
+            return (f"A Woovi ainda não liberou a permissão {escopo.group(1)} para a credencial de "
+                    "parceiro do sistema. Fale com o suporte para habilitá-la e tente novamente.")
+        return ("A Woovi recusou a credencial de parceiro do sistema (chave inválida ou permissão "
+                "não liberada). Fale com o suporte e tente novamente.")
+    return "Não foi possível validar a conexão agora. Tente novamente ou fale com o suporte."
+
+
 def _concluir_conexao(request, conta):
     """Cadastro aprovado: termina a conexão pela Partner API. Uma falha aqui
     não marca a conta como erro — o cadastro continua aprovado e o fallback
     (credencial provisionada pelo operador) segue disponível."""
     try:
         conectar_automaticamente(conta, request.user)
-    except WooviAuthError:
-        logger.warning("Partner API recusou a conexão automática da conta %s.", conta.pk)
+    except WooviAuthError as erro:
+        logger.warning("Partner API recusou a conexão automática da conta %s%s.", conta.pk, _escopo_no_log(erro))
         messages.info(request, "Cadastro aprovado. A conexão automática ainda não está habilitada na Woovi; o suporte conclui a conexão pelo servidor.")
     except (WooviError, ValueError) as erro:
         logger.warning("Conexão automática da conta %s não concluída (%s).", conta.pk, type(erro).__name__)
@@ -147,9 +170,11 @@ def recebimento(request):
                 if conta is not None and not conta.conectada_em:
                     ContaRecebimento.objects.filter(pk=conta.pk).update(status=ContaRecebimento.ERRO)
                     conta.refresh_from_db()
-                logger.warning("Falha na configuração Woovi da academia %s (%s).", request.academia.pk, type(erro).__name__)
-                messages.error(request, str(erro) if isinstance(erro, ValueError) else
-                               "Não foi possível validar a conexão agora. Tente novamente ou fale com o suporte.")
+                # Só o nome do escopo faltante vai para o log: a mensagem
+                # externa completa pode trazer dados que não devem ser logados.
+                logger.warning("Falha na configuração Woovi da academia %s (%s%s).",
+                               request.academia.pk, type(erro).__name__, _escopo_no_log(erro))
+                messages.error(request, _mensagem_erro(erro))
     if conta is not None:
         conta.refresh_from_db()
     onboarding_url = conta.onboarding_url if conta and link_kyc_seguro(conta.onboarding_url) else ""
