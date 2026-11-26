@@ -19,7 +19,7 @@ from financeiro.models import ContaRecebimento, Repasse
 from integracoes.woovi import partner
 from integracoes.woovi.contas import (
     EXPLICACAO_TAXA, TEXTO_TAXA, ativar_conta, atualizar_onboarding, automacao_disponivel,
-    conectar_automaticamente, iniciar_onboarding, link_kyc_seguro, preparar_conta,
+    conectar_automaticamente, iniciar_onboarding, link_kyc_seguro, preparar_conta, texto_taxa_parceiro,
 )
 from integracoes.woovi.credenciais import provisionada_no_servidor
 from integracoes.woovi.exceptions import WooviAuthError, WooviConfigError, WooviError
@@ -155,6 +155,7 @@ def recebimento(request):
     onboarding_url = conta.onboarding_url if conta and link_kyc_seguro(conta.onboarding_url) else ""
     response = render(request, "portal/recebimento.html", {
         "conta": conta, "form": form, "taxa_texto": TEXTO_TAXA, "taxa_explicacao": EXPLICACAO_TAXA,
+        "taxa_parceiro": texto_taxa_parceiro(),
         "onboarding_url": onboarding_url,
         "cadastro_url": "https://app.woovi-sandbox.com/register" if (
             conta.api_base_url if conta else settings.WOOVI_ACADEMIAS_BASE_URL

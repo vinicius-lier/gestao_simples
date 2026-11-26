@@ -41,6 +41,7 @@
   <div class="mt-3 pt-3 border-top" id="taxa-pix">
     <h3 class="h6">{{ taxa_texto }}</h3>
     <p>{{ taxa_explicacao }}</p>
+    {% if taxa_parceiro %}<p><strong>{{ taxa_parceiro }}</strong></p>{% endif %}
     <p class="small text-secondary mb-0">O registro de cada pagamento utiliza a taxa efetivamente informada pela Woovi. Esta informação comercial permanece disponível nesta tela.</p>
   </div>
 
