@@ -10,7 +10,7 @@ from financeiro.models import ContaRecebimento, Repasse
 from integracoes.woovi.exceptions import WooviUnavailableError
 from portal.models import AcessoAcademia
 from integracoes.woovi.contas import EXPLICACAO_TAXA, TEXTO_TAXA, preparar_conta
-from integracoes.woovi.exceptions import WooviConfigError
+from integracoes.woovi.exceptions import WooviAuthError, WooviConfigError
 
 @override_settings(PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"])
 class RecebimentoTests(TestCase):
@@ -101,6 +101,17 @@ class RecebimentoTests(TestCase):
     def test_inicia_onboarding_pelo_sistema(self, iniciar):
         self.salvar("iniciar")
         iniciar.assert_called_once_with(ContaRecebimento.objects.get())
+
+    @override_settings(WOOVI_ONBOARDING_APP_ID="onboarding-secreto")
+    @patch("portal.views_recebimento.iniciar_onboarding", side_effect=WooviAuthError(
+        "A Woovi retornou o status HTTP 401: A aplicação não tem o escopo necessário: KYC_ONBOARDING_POST.", 401))
+    def test_escopo_faltante_aparece_na_tela_e_no_log(self, iniciar):
+        with self.assertLogs("portal.views_recebimento", level="WARNING") as logs:
+            resposta = self.salvar("iniciar")
+        self.assertContains(resposta, "não liberou a permissão KYC_ONBOARDING_POST")
+        self.assertIn("KYC_ONBOARDING_POST", "".join(logs.output))
+        self.assertNotIn("onboarding-secreto", "".join(logs.output))
+        self.assertNotContains(resposta, "onboarding-secreto")
 
     @patch("portal.views_recebimento.iniciar_onboarding")
     def test_sem_api_habilitada_mostra_cadastro_oficial(self, iniciar):

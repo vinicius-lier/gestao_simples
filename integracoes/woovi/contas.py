@@ -53,6 +53,8 @@ def texto_taxa_parceiro():
 
 BASES = {"https://api.woovi.com", "https://api.woovi-sandbox.com"}
 HOSTS_KYC = {"kyc.woovi.com", "kyc.woovi-sandbox.com"}
+# Em produção a Woovi também devolve o link do cadastro no app oficial.
+HOSTS_APP_WOOVI = {"app.woovi.com", "app.woovi-sandbox.com"}
 
 
 def url_publica(caminho):
@@ -66,9 +68,11 @@ def url_publica(caminho):
 def link_kyc_seguro(url):
     try:
         partes = urlsplit(url)
-        return (partes.scheme == "https" and partes.hostname in HOSTS_KYC
-                and partes.port in (None, 443) and not partes.username and not partes.password
-                and partes.path.startswith("/onboarding/"))
+        if partes.scheme != "https" or partes.port not in (None, 443) or partes.username or partes.password:
+            return False
+        if partes.hostname in HOSTS_KYC:
+            return partes.path.startswith("/onboarding/")
+        return partes.hostname in HOSTS_APP_WOOVI and partes.path.strip("/") != ""
     except (TypeError, ValueError):
         return False
 

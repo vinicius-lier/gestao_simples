@@ -5,7 +5,7 @@ from decimal import Decimal
 from unittest.mock import Mock, patch
 
 from django.core.exceptions import ValidationError
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 
 from assinaturas.models import Assinatura, FaturaAssinatura
@@ -351,3 +351,27 @@ class ContaPropriaTests(CenarioWoovi, TestCase):
         resp = self.client.post("/webhooks/woovi/", data=json.dumps(payload), content_type="application/json")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(Repasse.objects.get().conta_recebimento_id, self.legada.pk)
+
+
+class LinkKycSeguroTests(SimpleTestCase):
+    def test_aceita_somente_links_oficiais_da_woovi(self):
+        from integracoes.woovi.contas import link_kyc_seguro
+        aceitos = [
+            "https://kyc.woovi.com/onboarding/QWNjb3VudFJlZ2lzdGVyOjE",
+            "https://app.woovi.com/onboarding/QWNjb3VudFJlZ2lzdGVyOjE",
+            "https://app.woovi-sandbox.com/register/abc",
+        ]
+        recusados = [
+            "https://app.woovi.com/",
+            "http://app.woovi.com/onboarding/x",
+            "https://app.woovi.com.evil.example/onboarding/x",
+            "https://user:senha@app.woovi.com/onboarding/x",
+            "https://app.woovi.com:8443/onboarding/x",
+            "https://kyc.woovi.com/outra/x",
+            "https://evil.example/onboarding/x",
+            None,
+        ]
+        for url in aceitos:
+            self.assertTrue(link_kyc_seguro(url), url)
+        for url in recusados:
+            self.assertFalse(link_kyc_seguro(url), url)
