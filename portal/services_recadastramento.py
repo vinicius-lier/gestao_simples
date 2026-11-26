@@ -271,6 +271,9 @@ def dados_iniciais(pedido):
     inicial = {
         'nome': atleta.nome,
         'data_nascimento': atleta.data_nascimento,
+        'federado': 'sim' if atleta.federado is True else 'nao' if atleta.federado is False else '',
+        'numero_zempo': atleta.numero_zempo,
+        'numero_fjerj': atleta.numero_fjerj,
         'responsavel_nome': responsavel.nome if responsavel else '',
         'responsavel_cpf': (responsavel.cpf if responsavel else '') or (ficha.responsavel_cpf if ficha else ''),
         'telefone': (responsavel.whatsapp if responsavel else '') or atleta.telefone,
@@ -306,6 +309,10 @@ def responder_pedido(pedido, dados, *, foto=None, documentos=()):
     atleta.nome = dados['nome']
     atleta.data_nascimento = dados.get('data_nascimento')
     campos_atleta = ['nome', 'data_nascimento']
+    for campo in ('federado', 'numero_zempo', 'numero_fjerj'):
+        if campo in dados:
+            setattr(atleta, campo, dados[campo])
+            campos_atleta.append(campo)
 
     responsavel = atleta.responsavel_financeiro
     if responsavel is not None and responsavel.academia_id != academia.pk:

@@ -100,7 +100,7 @@ class AlunoForm(forms.ModelForm):
 
     class Meta:
         model = Atleta
-        fields = ('nome', 'data_nascimento', 'cpf', 'telefone', 'faixa', 'status', 'observacoes', 'bolsa_percentual', 'desconto_irmaos', 'beneficio_inicio', 'beneficio_fim', 'proprio_responsavel')
+        fields = ('nome', 'data_nascimento', 'cpf', 'telefone', 'faixa', 'federado', 'numero_zempo', 'numero_fjerj', 'status', 'observacoes', 'bolsa_percentual', 'desconto_irmaos', 'beneficio_inicio', 'beneficio_fim', 'proprio_responsavel')
         help_texts = {'telefone': 'Com DDD. Se o aluno for o próprio responsável financeiro, as cobranças vão para este WhatsApp.'}
         widgets = {campo: forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}) for campo in ('data_nascimento', 'beneficio_inicio', 'beneficio_fim')}
 

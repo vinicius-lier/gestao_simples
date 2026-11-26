@@ -176,6 +176,26 @@ class Envio(BaseRecadastramento):
 
 
 class RespostaDaFamilia(BaseRecadastramento):
+    def test_recadastramento_preenche_e_atualiza_federacao(self):
+        from .services_recadastramento import dados_iniciais
+        self.ana.federado = True
+        self.ana.numero_zempo = '000123'
+        self.ana.numero_fjerj = '001-25'
+        self.ana.save()
+        campanha = self.campanha(pedir_foto=False, documentos=[])
+        pedido = campanha.pedidos.get(atleta=self.ana)
+        self.assertEqual(dados_iniciais(pedido)['federado'], 'sim')
+        self.assertEqual(dados_iniciais(pedido)['numero_zempo'], '000123')
+        pagina = self.client.get(pedido.url())
+        self.assertContains(pagina, 'Número FJERJ')
+        resposta = self.client.post(pedido.url(), self.resposta(
+            federado='nao', numero_zempo='', numero_fjerj='0099'))
+        self.assertEqual(resposta.status_code, 302)
+        self.ana.refresh_from_db()
+        self.assertIs(self.ana.federado, False)
+        self.assertEqual(self.ana.numero_zempo, '')
+        self.assertEqual(self.ana.numero_fjerj, '0099')
+
     def setUp(self):
         super().setUp()
         FichaMatricula.objects.create(

@@ -114,6 +114,9 @@ class Atleta(models.Model):
     )
 
     observacoes = models.TextField(blank=True)
+    federado = models.BooleanField('Federado?', null=True, blank=True, default=None)
+    numero_zempo = models.CharField('Número Zempo', max_length=40, blank=True)
+    numero_fjerj = models.CharField('Número FJERJ', max_length=40, blank=True)
     bolsa_percentual = models.DecimalField(
         'Bolsa (%)', max_digits=5, decimal_places=2, default=0,
         validators=[MinValueValidator(0), MaxValueValidator(100)],

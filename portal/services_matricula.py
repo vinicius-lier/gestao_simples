@@ -95,6 +95,9 @@ def efetivar_convite(convite, dados):
         academia=convite.academia,
         nome=dados['nome'],
         data_nascimento=dados.get('data_nascimento'),
+        federado=dados.get('federado'),
+        numero_zempo=dados.get('numero_zempo', ''),
+        numero_fjerj=dados.get('numero_fjerj', ''),
         status='ativo',
         responsavel_financeiro=responsavel,
     )
