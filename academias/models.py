@@ -20,6 +20,15 @@ class Academia(models.Model):
         help_text='Declaração exibida no fim da ficha de matrícula.',
     )
 
+    # Recadastramento anual: no dia 1º deste mês a rotina diária abre o
+    # recadastramento do ano e manda o link às famílias. Vazio = só manual.
+    recadastramento_mes = models.PositiveSmallIntegerField(
+        'mês do recadastramento anual', null=True, blank=True,
+        choices=[(i, nome) for i, nome in enumerate(
+            ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho',
+             'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'], start=1)],
+    )
+
     ativo = models.BooleanField(default=True)
     criado = models.DateTimeField(auto_now_add=True)
 

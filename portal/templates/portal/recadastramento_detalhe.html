@@ -1,0 +1,64 @@
+{% extends 'portal/base.html' %}{% block title %}{{ campanha.titulo }}{% endblock %}{% block content %}
+<a href="{% url 'portal:recadastramentos' %}" class="back-link">← Recadastramento</a>
+
+<section class="card perfil-topo mt-3">
+  <div class="perfil-linha">
+    <div class="min-w-0">
+      <h1 class="perfil-nome">{{ campanha.titulo }}</h1>
+      <p class="perfil-resumo">
+        {% if campanha.aberta %}<span class="status-badge status-ativo">Aberto</span>{% else %}<span class="status-badge status-trancado">Encerrado em {{ campanha.encerrada_em|date:'d/m/Y' }}</span>{% endif %}
+        <span>Responder até {{ campanha.prazo|date:'d/m/Y' }}</span>
+        <span>{% if campanha.pedir_foto %}Foto{% else %}Sem foto{% endif %}{% for tipo, rotulo in campanha.tipos_documentos %} · {{ rotulo }}{% endfor %}</span>
+      </p>
+    </div>
+    {% if request.administrador_academia and campanha.aberta %}
+    <div class="perfil-acoes">
+      {% if numeros.aguardando_envio %}<form method="post" action="{% url 'portal:recadastramento_acao' campanha.pk %}">{% csrf_token %}<button class="btn btn-primary" name="acao" value="enviar">Enviar para {{ numeros.aguardando_envio }} na fila</button></form>{% endif %}
+      {% if numeros.enviados %}<form method="post" action="{% url 'portal:recadastramento_acao' campanha.pk %}">{% csrf_token %}<button class="btn btn-outline-primary" name="acao" value="lembrar">Lembrar quem não respondeu</button></form>{% endif %}
+      <form method="post" action="{% url 'portal:recadastramento_acao' campanha.pk %}">{% csrf_token %}<button class="btn btn-outline-danger" name="acao" value="encerrar">Encerrar</button></form>
+    </div>
+    {% elif request.administrador_academia %}
+    <div class="perfil-acoes"><form method="post" action="{% url 'portal:recadastramento_acao' campanha.pk %}">{% csrf_token %}<button class="btn btn-outline-primary" name="acao" value="reabrir">Reabrir</button></form></div>
+    {% endif %}
+  </div>
+  <dl class="perfil-numeros">
+    <div><dt>Alunos</dt><dd>{{ numeros.total }}</dd></div>
+    <div><dt>Responderam</dt><dd>{{ numeros.respondidos }} · {{ numeros.percentual }}%</dd></div>
+    <div><dt>Aguardando a família</dt><dd>{{ numeros.enviados }}</dd></div>
+    <div{% if numeros.sem_contato or numeros.aguardando_envio %} class="perfil-alerta"{% endif %}><dt>Na fila / sem WhatsApp</dt><dd>{{ numeros.aguardando_envio }} / {{ numeros.sem_contato }}</dd></div>
+  </dl>
+</section>
+
+{% if campanha.mensagem %}<div class="card p-3 mt-3 small"><strong>Recado para as famílias:</strong> {{ campanha.mensagem|linebreaksbr }}</div>{% endif %}
+
+<nav class="perfil-abas mt-3" aria-label="Filtrar por situação">
+  <a href="?"{% if not filtro %} class="ativa" aria-current="page"{% endif %}>Todos</a>
+  {% for valor, rotulo in status %}{% if valor != 'enviando' %}<a href="?status={{ valor }}"{% if filtro == valor %} class="ativa" aria-current="page"{% endif %}>{{ rotulo }}</a>{% endif %}{% endfor %}
+</nav>
+
+<section class="card mt-3">
+  <ul class="recad-lista">
+    {% for p in pedidos %}
+    <li class="recad-item">
+      <div class="recad-info">
+        <a href="{% url 'portal:detalhe' p.atleta.pk %}"><strong>{{ p.atleta.nome }}</strong></a>
+        <span>{% if p.atleta.responsavel_financeiro %}{{ p.atleta.responsavel_financeiro.nome }} · {% endif %}{{ p.telefone|default:'sem WhatsApp' }}</span>
+        {% if p.ultimo_erro and p.status == 'pendente' %}<span class="text-danger">Falhou ({{ p.tentativas_envio }}x): {{ p.ultimo_erro }}</span>{% endif %}
+      </div>
+      <span class="recad-data">{% if p.respondido_em %}Respondeu em {{ p.respondido_em|date:'d/m H:i' }}{% elif p.enviado_em %}Enviado em {{ p.enviado_em|date:'d/m H:i' }}{% endif %}</span>
+      <span class="status-badge {% if p.status == 'respondido' %}status-paga{% elif p.status == 'sem_contato' %}status-vencida{% elif p.status == 'enviado' %}status-isenta{% else %}status-pendente{% endif %}">{{ p.get_status_display }}</span>
+      <div class="recad-acao">
+        {% if p.status != 'respondido' and campanha.aberta %}
+        <button type="button" class="btn btn-outline-primary btn-sm" data-copy="{{ p.link }}">Copiar link</button>
+        {% if request.administrador_academia and p.status != 'enviando' %}<form method="post" action="{% url 'portal:recadastramento_acao' campanha.pk %}">{% csrf_token %}<input type="hidden" name="pedido" value="{{ p.pk }}"><button class="btn btn-outline-secondary btn-sm" name="acao" value="reenviar">{% if p.enviado_em %}Reenviar{% else %}Enviar{% endif %}</button></form>{% endif %}
+        {% elif p.status == 'respondido' %}
+        <a class="btn btn-outline-primary btn-sm" href="{% url 'portal:detalhe' p.atleta.pk %}?aba=ficha">Ver ficha</a>
+        {% endif %}
+      </div>
+    </li>
+    {% empty %}
+    <li class="p-4 text-secondary">Nenhum aluno nesta situação.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

@@ -5,6 +5,7 @@ from .models_experimentais import (
     InscricaoExperimental,
 )
 from .models_matricula import ConviteMatricula, FichaMatricula
+from .models_recadastramento import CampanhaRecadastramento, PedidoRecadastramento
 from datetime import timedelta
 
 from django.conf import settings

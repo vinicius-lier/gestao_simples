@@ -62,3 +62,11 @@ class WhatsAppProvider(ABC):
         raise WhatsAppProviderError(
             "Este provedor de WhatsApp não suporta o envio de avisos para a escola."
         )
+
+    def enviar_recadastramento(self, telefone, texto):
+        """Envia à família o pedido de recadastramento (texto livre com os
+        links). Mesmo contrato de retorno/erro de ``enviar_cobranca``. Como
+        no convite, só o Evolution (texto livre) implementa."""
+        raise WhatsAppProviderError(
+            "Este provedor de WhatsApp não suporta o envio do recadastramento."
+        )

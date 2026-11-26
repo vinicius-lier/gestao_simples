@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Responsavel, Atleta
+from .models import Responsavel, Atleta, DocumentoAtleta
 
 
 @admin.register(Responsavel)
@@ -44,3 +44,11 @@ class AtletaAdmin(admin.ModelAdmin):
         "status",
         "faixa",
     )
+
+
+@admin.register(DocumentoAtleta)
+class DocumentoAtletaAdmin(admin.ModelAdmin):
+    list_display = ("atleta", "tipo", "academia", "enviado_pela_familia", "criado_em")
+    list_filter = ("academia", "tipo", "enviado_pela_familia")
+    search_fields = ("atleta__nome", "descricao")
+    raw_id_fields = ("atleta", "enviado_por")

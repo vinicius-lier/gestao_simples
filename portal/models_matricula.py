@@ -210,9 +210,11 @@ class FichaMatricula(models.Model):
 
     CONVITE = 'convite'
     PLANILHA = 'planilha'
+    RECADASTRAMENTO = 'recadastro'
     ORIGENS = [
         (CONVITE, 'Convite de matrícula'),
         (PLANILHA, 'Planilha do formulário'),
+        (RECADASTRAMENTO, 'Recadastramento'),
     ]
 
     academia = models.ForeignKey('academias.Academia', on_delete=models.CASCADE, related_name='fichas_matricula')

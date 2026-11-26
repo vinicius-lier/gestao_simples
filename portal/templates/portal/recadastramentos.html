@@ -1,0 +1,69 @@
+{% extends 'portal/base.html' %}{% block title %}Recadastramento{% endblock %}{% block content %}
+<div class="hero-dashboard">
+  <div>
+    <p class="eyebrow">Alunos</p>
+    <h1>Recadastramento</h1>
+    <p class="text-secondary mb-0">As famílias dos alunos já cadastrados recebem pelo WhatsApp um link com a ficha preenchida. Elas conferem os dados, respondem o questionário de saúde, aceitam os termos de novo e mandam foto e documentos. As respostas atualizam o cadastro.</p>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <section class="perfil-secao">
+      <h2 class="h5 mb-3">Recadastramentos</h2>
+      {% for c in campanhas %}
+      <article class="card p-4 mb-3">
+        <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+          <div>
+            <h3 class="h6 mb-1"><a href="{% url 'portal:recadastramento_detalhe' c.pk %}">{{ c.titulo }}</a></h3>
+            <p class="small text-secondary mb-0">Aberto em {{ c.criada_em|date:'d/m/Y' }}{% if c.automatica %} (anual automático){% elif c.criada_por %} por {{ c.criada_por.get_username }}{% endif %} · responder até {{ c.prazo|date:'d/m/Y' }}</p>
+          </div>
+          {% if c.aberta %}<span class="status-badge status-ativo">Aberto</span>{% else %}<span class="status-badge status-trancado">Encerrado</span>{% endif %}
+        </div>
+        <div class="recad-progresso mt-3" role="img" aria-label="{{ c.numeros.respondidos }} de {{ c.numeros.total }} responderam"><span style="width:{{ c.numeros.percentual }}%"></span></div>
+        <p class="small mb-0 mt-2"><strong>{{ c.numeros.respondidos }}</strong> de {{ c.numeros.total }} responderam ({{ c.numeros.percentual }}%){% if c.numeros.aguardando_envio %} · {{ c.numeros.aguardando_envio }} aguardando envio{% endif %}{% if c.numeros.sem_contato %} · {{ c.numeros.sem_contato }} sem WhatsApp{% endif %}</p>
+      </article>
+      {% empty %}
+      <div class="card p-4 text-secondary">Nenhum recadastramento aberto ainda.</div>
+      {% endfor %}
+    </section>
+  </div>
+
+  <div class="col-lg-5">
+    {% if request.administrador_academia %}
+    <section class="card p-4 mb-4">
+      <h2 class="perfil-titulo">Abrir recadastramento</h2>
+      <form method="post">{% csrf_token %}
+        {{ form.non_field_errors }}
+        {% for field in form %}
+        <div class="mb-3">
+          {% if field.name == 'pedir_foto' or field.name == 'enviar_agora' %}
+          <div class="form-check">{{ field }} <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label></div>
+          {% elif field.name == 'documentos' %}
+          <fieldset><legend class="form-label fs-6">{{ field.label }}</legend>{% for opcao in field %}<div class="form-check">{{ opcao.tag }} <label class="form-check-label" for="{{ opcao.id_for_label }}">{{ opcao.choice_label }}</label></div>{% endfor %}</fieldset>
+          {% else %}
+          <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}
+          {% endif %}
+          {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+          {% for e in field.errors %}<div class="text-danger small">{{ e }}</div>{% endfor %}
+        </div>
+        {% endfor %}
+        <button class="btn btn-primary w-100">Abrir recadastramento</button>
+      </form>
+    </section>
+
+    <section class="card p-4">
+      <h2 class="perfil-titulo">Todo ano</h2>
+      <form method="post">{% csrf_token %}<input type="hidden" name="acao" value="anual">
+        <label class="form-label" for="{{ anual_form.recadastramento_mes.id_for_label }}">{{ anual_form.recadastramento_mes.label }}</label>
+        {{ anual_form.recadastramento_mes }}
+        <div class="form-text">{{ anual_form.recadastramento_mes.help_text }}</div>
+        <button class="btn btn-outline-primary mt-3">Salvar</button>
+      </form>
+    </section>
+    {% else %}
+    <section class="card p-4 text-secondary">Somente o administrador da academia abre e envia o recadastramento.</section>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

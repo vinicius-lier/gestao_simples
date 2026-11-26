@@ -83,6 +83,17 @@ class GeracaoNoPainel(BaseConvite):
         self.assertEqual(self.client.get(f'/matriculas/convites/{c.pk}/').status_code, 404)
         self.assertEqual(self.client.post(f'/matriculas/convites/{c.pk}/acao/', {'acao': 'cancelar'}).status_code, 404)
 
+    def test_lista_com_convite_sem_nome_e_sem_aluno(self):
+        """Regressão do erro 500 em produção: convite gerado sem o nome do
+        aluno (campo opcional) e ainda não preenchido não tem atleta."""
+        self.convite(convidado_nome='')
+        self.convite(convidado_nome='Maria')
+        self.client.force_login(self.prof)
+        resp = self.client.get('/matriculas/convites/')
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, '(sem nome ainda)')
+        self.assertContains(resp, 'Maria')
+
 
 class FormularioPublico(BaseConvite):
     def test_mostra_formulario_com_a_turma(self):

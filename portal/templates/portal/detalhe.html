@@ -4,7 +4,7 @@
 <section class="card perfil-topo mt-3">
   <div class="perfil-linha">
     <div class="perfil-identidade">
-      <span class="perfil-avatar" aria-hidden="true">{{ iniciais }}</span>
+      {% if aluno.foto %}<img class="perfil-avatar perfil-foto" src="{% url 'portal:aluno_foto' aluno.pk %}?v={{ aluno.foto_atualizada_em|date:'U' }}" alt="Foto de {{ aluno.nome }}" width="64" height="64">{% else %}<span class="perfil-avatar" aria-hidden="true">{{ iniciais }}</span>{% endif %}
       <div class="min-w-0">
         <h1 class="perfil-nome">{{ aluno.nome }}</h1>
         <p class="perfil-resumo">
@@ -59,6 +59,7 @@
         <dt>Faixa</dt><dd>{{ aluno.faixa|default:'—' }}</dd>
         <dt>Dia preferido de vencimento</dt><dd>{% if ficha_recente.vencimento_preferido %}Dia {{ ficha_recente.vencimento_preferido }}{% else %}—{% endif %}</dd>
         <dt>Cadastrado em</dt><dd>{{ aluno.criado_em|date:'d/m/Y' }}</dd>
+        <dt>Recadastramento</dt><dd>{% if recadastramento %}<a href="{% url 'portal:recadastramento_detalhe' recadastramento.campanha_id %}">{{ recadastramento.campanha.titulo }}</a>: {% if recadastramento.respondido_em %}respondido em {{ recadastramento.respondido_em|date:'d/m/Y' }}{% else %}{{ recadastramento.get_status_display|lower }}{% endif %}{% else %}—{% endif %}</dd>
         <dt>Observações</dt><dd>{{ aluno.observacoes|linebreaksbr|default:'—' }}</dd>
       </dl>
     </section>
@@ -113,6 +114,47 @@
       {% empty %}
       <div class="card p-4 text-secondary">Nenhuma matrícula cadastrada.</div>
       {% endfor %}
+    </section>
+
+    <section id="documentos" class="perfil-secao">
+      <h2 class="h5 mb-3">Foto e documentos</h2>
+      <div class="card">
+        <div class="doc-foto">
+          {% if aluno.foto %}<img src="{% url 'portal:aluno_foto' aluno.pk %}?v={{ aluno.foto_atualizada_em|date:'U' }}" alt="Foto de {{ aluno.nome }}" width="96" height="96">{% else %}<span class="perfil-avatar" aria-hidden="true">{{ iniciais }}</span>{% endif %}
+          <form method="post" enctype="multipart/form-data" action="{% url 'portal:aluno_foto_enviar' aluno.pk %}" class="doc-foto-form">{% csrf_token %}
+            <label class="form-label small mb-1" for="foto-aluno">{% if aluno.foto %}Trocar a foto{% else %}Foto do aluno{% endif %}</label>
+            <div class="d-flex gap-2 flex-wrap">
+              <input id="foto-aluno" class="form-control form-control-sm" type="file" name="foto" accept="{{ aceita_foto }}" required>
+              <button class="btn btn-primary btn-sm" type="submit">Salvar foto</button>
+            </div>
+            <span class="form-text">JPG, PNG ou WEBP. A foto é reduzida e os dados de localização do celular são apagados.</span>
+          </form>
+          {% if aluno.foto %}<form method="post" action="{% url 'portal:aluno_foto_enviar' aluno.pk %}">{% csrf_token %}<button class="btn btn-link btn-sm text-danger p-0" name="acao" value="remover">Remover foto</button></form>{% endif %}
+        </div>
+        <ul class="documentos">
+          {% for d in documentos %}
+          <li class="documento">
+            <div class="documento-info">
+              <a href="{% url 'portal:aluno_documento' aluno.pk d.pk %}" target="_blank" rel="noopener"><strong>{{ d.titulo }}</strong></a>
+              <span>{% if d.descricao %}{{ d.get_tipo_display }} · {% endif %}{% if d.enviado_pela_familia %}enviado pela família{% else %}anexado{% if d.enviado_por %} por {{ d.enviado_por.get_username }}{% endif %}{% endif %} em {{ d.criado_em|date:'d/m/Y' }} · {{ d.tamanho|filesizeformat }}</span>
+            </div>
+            {% if d.validade %}<span class="status-badge {% if d.vencido %}status-vencida{% else %}status-ativo{% endif %}">{% if d.vencido %}Venceu em{% else %}Válido até{% endif %} {{ d.validade|date:'d/m/Y' }}</span>{% endif %}
+            <form method="post" action="{% url 'portal:aluno_documento_excluir' aluno.pk d.pk %}">{% csrf_token %}<button class="btn btn-outline-danger btn-sm" type="submit" aria-label="Excluir {{ d.titulo }}">Excluir</button></form>
+          </li>
+          {% empty %}
+          <li class="documento text-secondary">Nenhum documento anexado.</li>
+          {% endfor %}
+        </ul>
+        <details class="doc-novo">
+          <summary class="btn btn-outline-primary btn-sm">＋ Anexar documento</summary>
+          <form method="post" enctype="multipart/form-data" action="{% url 'portal:aluno_documento_enviar' aluno.pk %}" class="row g-3 mt-1">{% csrf_token %}
+            {% for field in documento_form %}
+            <div class="col-sm-6"><label class="form-label small mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<span class="form-text">{{ field.help_text }}</span>{% endif %}</div>
+            {% endfor %}
+            <div class="col-12"><button class="btn btn-primary btn-sm" type="submit">Anexar</button></div>
+          </form>
+        </details>
+      </div>
     </section>
 
     <section id="financeiro" class="perfil-secao">

@@ -11,7 +11,7 @@
 <article class="card p-3 mb-2">
   <div class="d-flex justify-content-between flex-wrap gap-2">
     <div>
-      {% if c.permanente %}<span class="status-badge status-paga me-1">Link do site</span>{% endif %}<a href="{% url 'portal:matricula_convite_detalhe' c.pk %}"><strong>{% if c.permanente %}Ficha de matrícula no site{% else %}{{ c.convidado_nome|default:c.atleta.nome|default:'(sem nome ainda)' }}{% endif %}</strong></a>
+      {% if c.permanente %}<span class="status-badge status-paga me-1">Link do site</span>{% endif %}<a href="{% url 'portal:matricula_convite_detalhe' c.pk %}"><strong>{% if c.permanente %}Ficha de matrícula no site{% else %}{% if c.convidado_nome %}{{ c.convidado_nome }}{% elif c.atleta %}{{ c.atleta.nome }}{% else %}(sem nome ainda){% endif %}{% endif %}</strong></a>
       · {{ c.turma|default:c.modalidade }}{% if c.turma.unidade %} · {{ c.turma.unidade }}{% endif %}
     </div>
     <span>{{ c.get_status_display }}</span>
