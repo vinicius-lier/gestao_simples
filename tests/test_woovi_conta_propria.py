@@ -358,11 +358,14 @@ class LinkKycSeguroTests(SimpleTestCase):
         from integracoes.woovi.contas import link_kyc_seguro
         aceitos = [
             "https://kyc.woovi.com/onboarding/QWNjb3VudFJlZ2lzdGVyOjE",
-            "https://app.woovi.com/onboarding/QWNjb3VudFJlZ2lzdGVyOjE",
-            "https://app.woovi-sandbox.com/register/abc",
+            "https://app.woovi.com/kyc/QWNjb3VudFJlZ2lzdGVyOjE",
+            "https://app.woovi-sandbox.com/kyc/abc",
         ]
         recusados = [
             "https://app.woovi.com/",
+            "https://app.woovi.com/kyc/",
+            "https://app.woovi.com/onboarding/x",
+            "https://app.woovi.com/register",
             "http://app.woovi.com/onboarding/x",
             "https://app.woovi.com.evil.example/onboarding/x",
             "https://user:senha@app.woovi.com/onboarding/x",
