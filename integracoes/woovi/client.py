@@ -7,6 +7,7 @@ testes em https://api.woovi-sandbox.com.
 Só transporte: autenticação, timeout, tradução de erros e normalização das
 respostas. Regra de negócio (mensalidade, repasse) fica em ``services``.
 """
+import logging
 import re
 from dataclasses import dataclass
 from typing import Optional
@@ -19,6 +20,7 @@ from django.views.decorators.debug import sensitive_variables
 
 from integracoes.woovi.exceptions import (
     WooviAuthError,
+    WooviBlockedError,
     WooviConfigError,
     WooviInvalidResponseError,
     WooviNotFoundError,
@@ -26,6 +28,13 @@ from integracoes.woovi.exceptions import (
     WooviTimeoutError,
     WooviUnavailableError,
 )
+
+logger = logging.getLogger(__name__)
+
+# Enviados em toda requisição. A API da Woovi fica atrás do Cloudflare, que
+# responde 403 "error code: 1010" ao User-Agent padrão do Python.
+USER_AGENT = "KeikoFukuda/1.0 (+https://judokeikofukuda.com.br)"
+HEADERS_PADRAO = {"User-Agent": USER_AGENT, "Accept": "application/json"}
 
 _NAO_ENCONTRADO = re.compile(r"not found|n[aã]o encontrad", re.IGNORECASE)
 
@@ -117,9 +126,9 @@ class WooviClient:
         # A Woovi recebe o AppID cru, sem o prefixo "Bearer". Ele vive só
         # neste header: nunca entra em mensagem de erro, log ou repr.
         self._headers = {
+            **HEADERS_PADRAO,
             "Authorization": app_id,
             "Content-Type": "application/json",
-            "Accept": "application/json",
         }
         self.timeout = getattr(settings, "WOOVI_TIMEOUT", 30)
 
@@ -135,7 +144,7 @@ class WooviClient:
             raise WooviConfigError("Este contexto não pode operar cobranças.")
         if caminho.startswith("/api/v1/partner") and self.contexto != "onboarding":
             raise WooviConfigError("Operação exclusiva da credencial de parceiro.")
-        headers = self._headers if autenticar else {"Accept": "application/json"}
+        headers = self._headers if autenticar else dict(HEADERS_PADRAO)
         try:
             response = requests.request(
                 metodo,
@@ -174,13 +183,15 @@ class WooviClient:
         except ValueError:
             corpo = None
         if isinstance(corpo, dict) and isinstance(corpo.get("error"), str):
-            detalhe = corpo["error"]
-            # Respostas externas podem ecoar cabeçalhos. Nunca propagar isso.
-            for segredo in self._headers.values():
-                if segredo:
-                    detalhe = detalhe.replace(segredo, "[redigido]")
-            detalhe = re.sub(r"https?://\S+", "[url]", detalhe)[:200]
+            detalhe = self._redigir(corpo["error"])[:200]
 
+        if status in (401, 403) and corpo is None:
+            # Corpo que não é JSON: bloqueio na borda (Cloudflare), não a
+            # Woovi recusando a chave. Loga status e o início do corpo.
+            texto = response.text if isinstance(response.text, str) else ""
+            inicio = self._redigir(texto)[:80].replace("\n", " ")
+            logger.warning("Woovi: requisição bloqueada antes da API (HTTP %s): %r", status, inicio)
+            return WooviBlockedError(f"Requisição bloqueada antes de chegar à Woovi (HTTP {status}).", status)
         mensagem = f"A Woovi retornou o status HTTP {status}" + (f": {detalhe}" if detalhe else "") + "."
         if status in (401, 403):
             return WooviAuthError(mensagem, status)
@@ -189,6 +200,13 @@ class WooviClient:
         if status >= 500:
             return WooviUnavailableError(mensagem, status)
         return WooviRequestError(mensagem, status)
+
+    def _redigir(self, texto):
+        # Respostas externas podem ecoar cabeçalhos. Nunca propagar isso.
+        segredo = self._headers.get("Authorization")
+        if segredo:
+            texto = texto.replace(segredo, "[redigido]")
+        return re.sub(r"https?://\S+", "[url]", texto)
 
     @staticmethod
     def _objeto(resposta, *chaves):

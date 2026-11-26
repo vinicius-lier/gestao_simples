@@ -4,9 +4,10 @@ from unittest.mock import Mock, patch
 import requests
 from django.test import SimpleTestCase, override_settings
 
-from integracoes.woovi.client import WooviClient
+from integracoes.woovi.client import USER_AGENT, WooviClient
 from integracoes.woovi.exceptions import (
     WooviAuthError,
+    WooviBlockedError,
     WooviConfigError,
     WooviInvalidResponseError,
     WooviNotFoundError,
@@ -246,6 +247,52 @@ class WooviClientTests(SimpleTestCase):
 
         self.assertEqual(self.client.chaves_publicas_webhook(), ["PEM-ANTIGA", "PEM-NOVA"])
         self.assertNotIn("Authorization", mock_request.call_args.kwargs["headers"])
+
+
+@override_settings(**CONFIG, WOOVI_ONBOARDING_APP_ID="T05CT0FSRElORzpzZWdyZWRv",
+                   WOOVI_ONBOARDING_BASE_URL="https://api.woovi.com")
+@patch("integracoes.woovi.client.requests.request")
+class CabecalhosEBloqueioTests(SimpleTestCase):
+    def test_user_agent_vai_em_toda_requisicao(self, mock_request):
+        chamadas = [
+            lambda: WooviClient().obter_subconta("x@y.com"),
+            lambda: WooviClient().obter_cobranca("c1"),
+            lambda: WooviClient().configurar_webhook("https://judokeikofukuda.com.br/w/", "nome"),
+            lambda: WooviClient(contexto="publico").chaves_publicas_webhook(),
+            lambda: WooviClient(contexto="onboarding").consultar_onboarding("academia-1-conta-1"),
+            lambda: WooviClient(contexto="onboarding").listar_afiliadas(),
+        ]
+        for chamada in chamadas:
+            mock_request.reset_mock()
+            mock_request.return_value = resposta(json={})
+            try:
+                chamada()
+            except Exception:
+                pass  # só interessa o que foi enviado
+            self.assertTrue(mock_request.call_args_list)
+            for call in mock_request.call_args_list:
+                headers = call.kwargs["headers"]
+                self.assertEqual(headers["User-Agent"], USER_AGENT)
+                self.assertEqual(headers["Accept"], "application/json")
+
+    def test_403_sem_json_e_bloqueio_e_nao_chave_invalida(self, mock_request):
+        bloqueio = resposta(403, ValueError("sem json"))
+        bloqueio.text = "error code: 1010"
+        mock_request.return_value = bloqueio
+        with self.assertLogs("integracoes.woovi.client", level=logging.WARNING) as logs:
+            with self.assertRaises(WooviBlockedError) as ctx:
+                WooviClient(contexto="onboarding").listar_afiliadas()
+        self.assertNotIsInstance(ctx.exception, WooviAuthError)
+        self.assertEqual(ctx.exception.status_code, 403)
+        self.assertIn("error code: 1010", "".join(logs.output))
+        self.assertIn("403", "".join(logs.output))
+        for segredo in (APP_ID, "T05CT0FSRElORzpzZWdyZWRv"):
+            self.assertNotIn(segredo, "".join(logs.output) + str(ctx.exception))
+
+    def test_403_com_json_da_woovi_continua_erro_de_autenticacao(self, mock_request):
+        mock_request.return_value = resposta(403, {"error": "Invalid Authorization header"})
+        with self.assertRaises(WooviAuthError):
+            WooviClient(contexto="onboarding").listar_afiliadas()
 
 
 class ProtecaoDaSuiteTests(SimpleTestCase):
