@@ -259,6 +259,13 @@ class MatriculaPublicaForm(forms.Form):
         label='Data de nascimento do (a) aluno (a)',
         widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
     )
+    federado = forms.TypedChoiceField(
+        label='Federado?', required=False, empty_value=None,
+        choices=[('', 'Não informado'), ('sim', 'Sim'), ('nao', 'Não')],
+        coerce=lambda valor: valor == 'sim',
+    )
+    numero_zempo = forms.CharField(label='Número Zempo', max_length=40, required=False)
+    numero_fjerj = forms.CharField(label='Número FJERJ', max_length=40, required=False)
     responsavel_nome = forms.CharField(label='Nome do (a) responsável', max_length=150)
     responsavel_cpf = forms.CharField(
         label='CPF do (a) responsável financeiro', max_length=14,

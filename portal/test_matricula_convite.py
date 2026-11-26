@@ -96,6 +96,19 @@ class GeracaoNoPainel(BaseConvite):
 
 
 class FormularioPublico(BaseConvite):
+    def test_federacao_e_registros_preservam_zeros(self):
+        convite = self.convite()
+        pagina = self.client.get(convite.url())
+        self.assertContains(pagina, 'Número Zempo')
+        self.assertContains(pagina, 'Número FJERJ')
+        resposta = self.client.post(convite.url(), self.dados_familia(
+            federado='sim', numero_zempo='000123', numero_fjerj='001-25'))
+        self.assertEqual(resposta.status_code, 302)
+        aluno = Atleta.objects.get()
+        self.assertIs(aluno.federado, True)
+        self.assertEqual(aluno.numero_zempo, '000123')
+        self.assertEqual(aluno.numero_fjerj, '001-25')
+
     def test_mostra_formulario_com_a_turma(self):
         c = self.convite()
         resp = self.client.get(f'/matricula/{c.token}/')

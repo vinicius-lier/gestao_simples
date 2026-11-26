@@ -57,6 +57,9 @@
         <dt>CPF</dt><dd>{{ aluno.cpf|default:'—' }}</dd>
         <dt>Telefone / WhatsApp</dt><dd>{{ aluno.telefone|default:'—' }}</dd>
         <dt>Faixa</dt><dd>{{ aluno.faixa|default:'—' }}</dd>
+        <dt>Federado?</dt><dd>{{ aluno.federado|yesno:'Sim,Não,Não informado' }}</dd>
+        <dt>Número Zempo</dt><dd>{{ aluno.numero_zempo|default:'—' }}</dd>
+        <dt>Número FJERJ</dt><dd>{{ aluno.numero_fjerj|default:'—' }}</dd>
         <dt>Dia preferido de vencimento</dt><dd>{% if ficha_recente.vencimento_preferido %}Dia {{ ficha_recente.vencimento_preferido }}{% else %}—{% endif %}</dd>
         <dt>Cadastrado em</dt><dd>{{ aluno.criado_em|date:'d/m/Y' }}</dd>
         <dt>Recadastramento</dt><dd>{% if recadastramento %}<a href="{% url 'portal:recadastramento_detalhe' recadastramento.campanha_id %}">{{ recadastramento.campanha.titulo }}</a>: {% if recadastramento.respondido_em %}respondido em {{ recadastramento.respondido_em|date:'d/m/Y' }}{% else %}{{ recadastramento.get_status_display|lower }}{% endif %}{% else %}—{% endif %}</dd>
