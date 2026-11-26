@@ -41,6 +41,7 @@
   <div class="mt-3 pt-3 border-top" id="taxa-pix">
     <h3 class="h6">{{ taxa_texto }}</h3>
     <p>{{ taxa_explicacao }}</p>
+    {% if taxa_parceiro %}<p><strong>{{ taxa_parceiro }}</strong></p>{% endif %}
     <p class="small text-secondary mb-0">O registro de cada pagamento utiliza a taxa efetivamente informada pela Woovi. Esta informação comercial permanece disponível nesta tela.</p>
   </div>
 
@@ -65,6 +66,73 @@
     </div>
   </form>
   {% endif %}
+</section>
+
+<section class="card p-4 mt-3" aria-labelledby="tutorial-conta">
+  <h2 id="tutorial-conta" class="h5">Passo a passo: como abrir e conectar a conta</h2>
+  <p class="text-secondary">O processo leva alguns minutos para preencher e depende da análise da Woovi, que pode levar alguns dias úteis. Você pode sair desta tela e voltar depois: o andamento fica salvo.</p>
+
+  <details class="mb-3"{% if passo == 0 and conta.status != 'conectada' %} open{% endif %}>
+    <summary class="fw-semibold">1. Abrir a conta na Woovi</summary>
+    <ol class="mt-2">
+      <li>Leia o quadro de taxas acima e marque a caixa de ciência.</li>
+      <li>Clique em <strong>Abrir conta na Woovi</strong>. O sistema cria o cadastro da academia usando o CNPJ informado no sistema.</li>
+      <li>Aparece o botão <strong>Continuar cadastro na Woovi</strong>. Ele abre o site oficial da Woovi (endereço <code>kyc.woovi.com</code>) em outra aba.</li>
+      <li>No site da Woovi, informe os dados da academia e do responsável, envie os documentos pedidos e aceite os termos. Esses dados ficam com a Woovi; o sistema não vê documentos nem senhas.</li>
+      <li>Ao terminar, a Woovi traz você de volta para esta tela automaticamente.</li>
+    </ol>
+    <p class="small text-secondary mb-0">Confira o CNPJ da academia nas configurações antes de começar: ele precisa ser o mesmo da conta na Woovi.</p>
+  </details>
+
+  <details class="mb-3"{% if passo == 1 %} open{% endif %}>
+    <summary class="fw-semibold">2. Aguardar a análise da Woovi</summary>
+    <ol class="mt-2">
+      <li>A Woovi confere os dados e documentos. Enquanto isso, a situação aparece como “em análise”.</li>
+      <li>Clique em <strong>Atualizar situação</strong> para consultar o andamento quando quiser.</li>
+      <li>Se a Woovi pedir algum ajuste, use <strong>Continuar cadastro na Woovi</strong> para corrigir no próprio site deles.</li>
+      <li>Se o cadastro for recusado, a situação muda para “Erro”. Nesse caso, fale com o suporte.</li>
+    </ol>
+  </details>
+
+  <details class="mb-3"{% if passo == 2 %} open{% endif %}>
+    <summary class="fw-semibold">3. Concluir a conexão</summary>
+    <ol class="mt-2">
+      <li>Com o cadastro aprovado, clique em <strong>Concluir conexão</strong>.</li>
+      <li>O sistema cria, na conta Woovi da academia, uma credencial que só emite e consulta cobranças. Ela não permite saques nem transferências.</li>
+      <li>O sistema confere se o CNPJ da conta é o da academia e ativa os avisos de pagamento.</li>
+      <li>A situação passa para “Conectada”.</li>
+    </ol>
+  </details>
+
+  <details class="mb-3"{% if conta.status == 'conectada' %} open{% endif %}>
+    <summary class="fw-semibold">4. Recebendo os pagamentos</summary>
+    <ol class="mt-2">
+      <li>A partir da conexão, os Pix novos de mensalidades e matrículas caem direto na conta Woovi da academia.</li>
+      <li>Quando o aluno paga, a Woovi avisa o sistema e a cobrança aparece como paga sozinha.</li>
+      <li>Os Pix gerados antes da conexão continuam valendo e são recebidos no destino anterior.</li>
+      <li>Saldo, extrato e saques são feitos no aplicativo ou site da Woovi, com o login da academia. O sistema não movimenta o dinheiro da conta.</li>
+    </ol>
+  </details>
+
+  <details class="mb-3">
+    <summary class="fw-semibold">5. Como sacar o dinheiro da conta Woovi</summary>
+    <ol class="mt-2">
+      <li>Entre no aplicativo ou no site da Woovi com o login da academia.</li>
+      <li>Cadastre a <strong>chave Pix de saque</strong>: é a chave da conta bancária da academia que vai receber o dinheiro. Ela precisa estar no nome e no CNPJ da academia. Chaves de outra conta Woovi não são aceitas.</li>
+      <li>Na área de saldo, escolha <strong>Sacar</strong>, informe o valor e confirme. O dinheiro vai por Pix para a chave cadastrada.</li>
+      <li>Só a academia faz saques. A credencial que o sistema usa não tem permissão para sacar, transferir ou pagar nada.</li>
+    </ol>
+    <p class="small text-secondary mb-0">A Woovi pode cobrar uma tarifa em saques abaixo do valor mínimo sem tarifa do plano da academia. Juntar o saldo e sacar menos vezes costuma sair mais barato. Confira os valores atuais em “Taxas” no aplicativo ou site da Woovi.</p>
+  </details>
+
+  <h3 class="h6 mt-4">Sobre as taxas</h3>
+  <ul class="mb-0">
+    <li><strong>{{ taxa_texto }}</strong> A Woovi desconta essa taxa de cada pagamento recebido; o valor que entra na conta já vem líquido.</li>
+    {% if taxa_parceiro %}<li><strong>{{ taxa_parceiro }}</strong></li>{% endif %}
+    <li>Conectar a conta ao sistema não tem custo adicional.</li>
+    <li>Saque: pode haver tarifa em saques abaixo do valor mínimo sem tarifa do plano da academia (veja o passo 5). Os valores ficam em “Taxas” no aplicativo ou site da Woovi.</li>
+    <li>A assinatura do sistema é cobrada à parte e não é descontada dos Pix dos alunos.</li>
+  </ul>
 </section>
 
 {% if anteriores %}

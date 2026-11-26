@@ -46,6 +46,19 @@ class RecebimentoTests(TestCase):
         self.assertContains(resposta, "Conectada")
         self.assertNotContains(resposta, "Verificar e ativar")
 
+    def test_taxa_do_parceiro_so_aparece_quando_configurada(self):
+        self.assertNotContains(self.client.get(self.url), "Taxa do sistema")
+        with self.settings(WOOVI_TAXA_PARCEIRO_CENTAVOS=50):
+            resposta = self.client.get(self.url)
+        self.assertContains(resposta, TEXTO_TAXA)
+        self.assertContains(resposta, "Taxa do sistema: R$ 0,50 por Pix recebido. Total por Pix: R$ 1,35.")
+
+    def test_tutorial_explica_passos_e_taxas(self):
+        resposta = self.client.get(self.url)
+        for texto in ("Passo a passo: como abrir e conectar a conta", "Abrir conta na Woovi",
+                      "Atualizar situação", "Concluir conexão", "Sobre as taxas", "Como sacar o dinheiro", "chave Pix de saque", TEXTO_TAXA):
+            self.assertContains(resposta, texto)
+
     def test_todos_os_estados_sao_consultaveis(self):
         conta = preparar_conta(self.a)
         for estado, texto in ContaRecebimento.STATUS:

@@ -368,6 +368,11 @@ WOOVI_SAQUE_MINIMO_CENTAVOS = int(os.getenv("WOOVI_SAQUE_MINIMO_CENTAVOS", "101"
 WOOVI_TARIFA_SAQUE_CENTAVOS = int(os.getenv("WOOVI_TARIFA_SAQUE_CENTAVOS", "100"))
 WOOVI_SAQUE_SEM_TARIFA_CENTAVOS = int(os.getenv("WOOVI_SAQUE_SEM_TARIFA_CENTAVOS", "100000"))
 
+# Taxa que o parceiro (dono do sistema) cobra por Pix recebido pela academia,
+# além da taxa da Woovi. Hoje só aparece na tela "Conta Woovi da Academia";
+# 0 = não cobrada. Valores negativos contam como 0.
+WOOVI_TAXA_PARCEIRO_CENTAVOS = max(0, int(os.getenv("WOOVI_TAXA_PARCEIRO_CENTAVOS", "0")))
+
 # Por quanto tempo as chaves públicas que assinam os webhooks ficam em cache.
 WOOVI_WEBHOOK_CHAVES_TTL = int(os.getenv("WOOVI_WEBHOOK_CHAVES_TTL", str(6 * 60 * 60)))
 

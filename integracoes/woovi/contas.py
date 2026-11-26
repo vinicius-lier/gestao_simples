@@ -35,6 +35,22 @@ EXPLICACAO_TAXA = (
     "Essa taxa é cobrada pela Woovi diretamente sobre os pagamentos processados "
     "e não é receita do sistema Keiko Fukuda."
 )
+TAXA_WOOVI_CENTAVOS = 85
+
+
+def _reais(centavos):
+    return f"R$ {centavos // 100},{centavos % 100:02d}"
+
+
+def texto_taxa_parceiro():
+    """Linha da taxa do parceiro e do total por Pix; vazia se não houver taxa."""
+    taxa = settings.WOOVI_TAXA_PARCEIRO_CENTAVOS
+    if taxa <= 0:
+        return ""
+    return (f"Taxa do sistema: {_reais(taxa)} por Pix recebido. "
+            f"Total por Pix: {_reais(TAXA_WOOVI_CENTAVOS + taxa)}.")
+
+
 BASES = {"https://api.woovi.com", "https://api.woovi-sandbox.com"}
 HOSTS_KYC = {"kyc.woovi.com", "kyc.woovi-sandbox.com"}
 
