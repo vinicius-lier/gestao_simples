@@ -22,6 +22,12 @@ class WooviAuthError(WooviError):
     """401/403: AppID inválido ou recurso não habilitado para a conta."""
 
 
+class WooviBlockedError(WooviError):
+    """Requisição barrada antes de chegar à Woovi (ex.: Cloudflare 403
+    "error code: 1010", corpo que não é JSON). Não é chave inválida, e a
+    operação não foi executada."""
+
+
 class WooviNotFoundError(WooviError):
     """Recurso inexistente (404, ou 400 com "not found", como a Woovi às
     vezes responde)."""
