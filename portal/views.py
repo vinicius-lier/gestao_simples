@@ -133,8 +133,15 @@ def detalhe(request, pk):
     fichas = list(aluno.fichas_matricula.filter(academia=request.academia))
     aba = request.GET.get('aba') if request.GET.get('aba') in ('cadastro', 'ficha') else 'cadastro'
     partes = aluno.nome.split()
+    from .forms_recadastramento import ACEITA_FOTO, DocumentoForm
+
     return render(request, 'portal/detalhe.html', {
         'aluno': aluno,
+        'documentos': list(aluno.documentos.filter(academia=request.academia)),
+        'documento_form': DocumentoForm(),
+        'aceita_foto': ACEITA_FOTO,
+        'recadastramento': aluno.recadastramentos.filter(academia=request.academia)
+                                .select_related('campanha').order_by('-campanha__criada_em').first(),
         'iniciais': ''.join(p[0] for p in (partes[:1] + partes[1:][-1:])).upper() or '?',
         'responsavel': responsavel,
         'responsavel_divergente': responsavel_divergente(aluno) if responsavel else None,

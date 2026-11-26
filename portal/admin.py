@@ -112,3 +112,22 @@ class TokenAcessoResponsavelAdmin(AcessoAcademiaAdmin):
 
     def has_change_permission(self, request, obj=None):
         return False
+
+
+from .models import CampanhaRecadastramento, PedidoRecadastramento
+
+
+class PedidoRecadastramentoInline(admin.TabularInline):
+    model = PedidoRecadastramento
+    extra = 0
+    fields = ('atleta', 'status', 'telefone', 'enviado_em', 'respondido_em', 'ultimo_erro')
+    readonly_fields = fields
+    can_delete = False
+    show_change_link = False
+
+
+@admin.register(CampanhaRecadastramento)
+class CampanhaRecadastramentoAdmin(admin.ModelAdmin):
+    list_display = ('titulo', 'academia', 'prazo', 'automatica', 'criada_em', 'encerrada_em')
+    list_filter = ('academia', 'automatica')
+    inlines = [PedidoRecadastramentoInline]

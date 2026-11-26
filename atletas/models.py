@@ -1,10 +1,13 @@
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
 from django.utils import timezone
 
 from academias.models import Academia
+
+from .arquivos import apagar_arquivo, caminho_documento, caminho_foto, validar_documento
 
 
 class Responsavel(models.Model):
@@ -109,9 +112,89 @@ class Atleta(models.Model):
     )
 
     observacoes = models.TextField(blank=True)
+    # Foto de rosto, já reduzida e sem metadados (ver arquivos.preparar_foto).
+    # Servida só pela view do painel, nunca por URL pública.
+    foto = models.ImageField(upload_to=caminho_foto, blank=True)
+    foto_atualizada_em = models.DateTimeField(null=True, blank=True)
     criado_em = models.DateTimeField(auto_now_add=True)
-    
-    
 
     def __str__(self):
         return self.nome
+
+    def trocar_foto(self, conteudo):
+        """Grava a foto nova (um ContentFile de ``preparar_foto``) e apaga a
+        anterior do disco."""
+        anterior = self.foto.name if self.foto else ''
+        self.foto.save('foto.jpg', conteudo, save=False)
+        self.foto_atualizada_em = timezone.now()
+        self.save(update_fields=['foto', 'foto_atualizada_em'])
+        if anterior and anterior != self.foto.name:
+            try:
+                self.foto.storage.delete(anterior)
+            except OSError:
+                pass
+
+    def remover_foto(self):
+        apagar_arquivo(self.foto)
+        self.foto = ''
+        self.foto_atualizada_em = timezone.now()
+        self.save(update_fields=['foto', 'foto_atualizada_em'])
+
+
+class DocumentoAtleta(models.Model):
+    """Documento anexado ao cadastro do aluno (identidade, atestado etc.),
+    enviado pela equipe no painel ou pela família no recadastramento."""
+
+    IDENTIDADE = 'identidade'
+    CPF = 'cpf'
+    ATESTADO = 'atestado'
+    RESIDENCIA = 'residencia'
+    IMAGEM = 'imagem'
+    FEDERACAO = 'federacao'
+    OUTRO = 'outro'
+    TIPOS = [
+        (IDENTIDADE, 'Certidão de nascimento ou RG'),
+        (CPF, 'CPF'),
+        (ATESTADO, 'Atestado médico'),
+        (RESIDENCIA, 'Comprovante de residência'),
+        (IMAGEM, 'Autorização de uso de imagem'),
+        (FEDERACAO, 'Carteira da federação'),
+        (OUTRO, 'Outro documento'),
+    ]
+
+    academia = models.ForeignKey(Academia, on_delete=models.CASCADE, related_name='documentos_alunos')
+    atleta = models.ForeignKey(Atleta, on_delete=models.CASCADE, related_name='documentos')
+    tipo = models.CharField(max_length=20, choices=TIPOS)
+    descricao = models.CharField('descrição', max_length=150, blank=True)
+    arquivo = models.FileField(upload_to=caminho_documento, validators=[validar_documento], max_length=255)
+    nome_original = models.CharField(max_length=255, blank=True)
+    tamanho = models.PositiveIntegerField(default=0)
+    validade = models.DateField(
+        'válido até', null=True, blank=True,
+        help_text='Para documentos que vencem, como o atestado médico.',
+    )
+    enviado_pela_familia = models.BooleanField(default=False)
+    enviado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+    )
+    criado_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['tipo', '-criado_em', '-pk']
+        verbose_name = 'documento do aluno'
+        verbose_name_plural = 'documentos dos alunos'
+
+    def __str__(self):
+        return f'{self.get_tipo_display()} — {self.atleta}'
+
+    @property
+    def titulo(self):
+        return self.descricao or self.get_tipo_display()
+
+    @property
+    def vencido(self):
+        return self.validade is not None and self.validade < timezone.localdate()
+
+    @property
+    def eh_imagem(self):
+        return self.arquivo.name.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))

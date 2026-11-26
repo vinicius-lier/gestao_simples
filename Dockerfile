@@ -17,6 +17,9 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY --chown=app:app . .
+# Foto e documentos dos alunos: o volume persistente do Coolify é montado
+# aqui. Criada com o dono "app" para o volume novo herdar a permissão.
+RUN install -d -o app -g app -m 750 /app/media
 USER app
 
 # Os estáticos entram na imagem; o WhiteNoise serve /static/ (não há Nginx).

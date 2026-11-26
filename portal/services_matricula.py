@@ -42,9 +42,14 @@ def _achar_ou_criar_responsavel(academia, *, nome, cpf, whatsapp, email):
 def registrar_ficha(convite, atleta, dados):
     """Guarda as respostas da ficha do convite, com o texto dos termos e da
     declaração que a família aceitou."""
+    return criar_ficha(convite.academia, atleta, dados, origem=FichaMatricula.CONVITE, convite=convite)
+
+
+def criar_ficha(academia, atleta, dados, *, origem, convite=None):
+    """Registro do que a família respondeu (convite ou recadastramento):
+    dados, questionário de saúde e o texto exato dos termos aceitos."""
     from .models_matricula import PERGUNTAS_SAUDE
 
-    academia = convite.academia
     saude = {}
     for campo, _pergunta, campo_detalhe, _detalhe in PERGUNTAS_SAUDE:
         saude[campo] = dados.get(campo)
@@ -55,7 +60,7 @@ def registrar_ficha(convite, atleta, dados):
         academia=academia,
         atleta=atleta,
         convite=convite,
-        origem=FichaMatricula.CONVITE,
+        origem=origem,
         respondida_em=timezone.now(),
         nome_aluno=dados['nome'],
         data_nascimento_informada=f'{nascimento:%d/%m/%Y}' if nascimento else '',

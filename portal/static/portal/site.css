@@ -155,3 +155,33 @@
 .trilha-conexao .trilha-atual .trilha-numero{border-color:#b5242c;color:#b5242c;box-shadow:0 0 0 4px #fcf4f4}
 .trilha-conexao .trilha-erro{color:#8f1c22}
 .trilha-conexao .trilha-erro .trilha-numero{border-color:#8f1c22;background:#fcf4f4;color:#8f1c22}
+
+/* Foto e documentos do aluno */
+img.perfil-avatar{object-fit:cover;background:#f5ebec}
+.doc-foto{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:20px 22px;border-bottom:1px solid var(--line)}
+.doc-foto>img{width:96px;height:96px;border-radius:18px;object-fit:cover;flex-shrink:0}
+.doc-foto-form{flex:1 1 260px;min-width:0}
+.doc-foto-form .form-control{flex:1 1 200px;width:auto}
+.documentos{list-style:none;margin:0;padding:0}
+.documento{display:flex;gap:10px 16px;align-items:center;flex-wrap:wrap;padding:14px 22px;border-bottom:1px solid var(--line)}
+.documento-info{flex:1 1 240px;min-width:0}
+.documento-info strong{display:block;font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.documento-info span{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.doc-novo{padding:16px 22px}
+.doc-novo>summary{list-style:none}
+.doc-novo>summary::-webkit-details-marker{display:none}
+
+/* Recadastramento: progresso e lista de alunos */
+.recad-progresso{height:8px;border-radius:99px;background:#f1e7e8;overflow:hidden}
+.recad-progresso span{display:block;height:100%;background:#b5242c;border-radius:99px}
+.recad-lista{list-style:none;margin:0;padding:0}
+.recad-item{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) auto minmax(150px,auto);gap:10px 16px;align-items:center;padding:14px 22px;border-bottom:1px solid var(--line)}
+.recad-item:last-child{border-bottom:0}
+.recad-info{min-width:0}
+.recad-info strong{display:block;font-size:14px;font-weight:600}
+.recad-info span{display:block;font-size:12px;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.recad-info .text-danger{color:#8f1c22!important}
+.recad-data{font-size:12px;color:var(--muted)}
+.recad-item>.status-badge{justify-self:start}
+.recad-acao{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+@media(max-width:767px){.recad-item{grid-template-columns:minmax(0,1fr) auto;padding:14px 16px}.recad-data{grid-column:1/-1;order:3}.recad-acao{grid-column:1/-1;justify-content:flex-start;order:4}.doc-foto,.documento,.doc-novo{padding-left:16px;padding-right:16px}}

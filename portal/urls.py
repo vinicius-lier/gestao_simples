@@ -1,6 +1,6 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
-from . import views, views_assinatura, views_responsaveis, views_responsavel, views_whatsapp, views_experimentais, views_matricula, views_recebimento
+from . import views, views_assinatura, views_responsaveis, views_responsavel, views_whatsapp, views_experimentais, views_matricula, views_recebimento, views_recadastramento
 
 app_name = 'portal'
 urlpatterns = [
@@ -16,6 +16,9 @@ urlpatterns = [
     path('matricula/', views_matricula.matricula_site, name='matricula_site'),
     path('matricula/recebido/', views_matricula.matricula_convite_recebido, name='matricula_convite_recebido'),
     path('matricula/<str:token>/', views_matricula.matricula_convite, name='matricula_convite'),
+    # Recadastramento — link de cada aluno, enviado às famílias.
+    path('recadastramento/recebido/', views_recadastramento.recadastramento_recebido, name='recadastramento_recebido'),
+    path('recadastramento/<str:token>/', views_recadastramento.recadastramento_publico, name='recadastramento_publico'),
     path('login/', auth_views.LoginView.as_view(template_name='portal/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('', views.pagina_publica, name='publica'),
@@ -26,6 +29,14 @@ urlpatterns = [
     path('matriculas/convites/<int:pk>/', views_matricula.convite_detalhe, name='matricula_convite_detalhe'),
     path('matriculas/convites/<int:pk>/acao/', views_matricula.convite_acao, name='matricula_convite_acao'),
     path('matriculas/convites/<int:pk>/enviar/', views_matricula.convite_enviar, name='matricula_convite_enviar'),
+    path('alunos/recadastramento/', views_recadastramento.recadastramentos, name='recadastramentos'),
+    path('alunos/recadastramento/<int:pk>/', views_recadastramento.recadastramento_detalhe, name='recadastramento_detalhe'),
+    path('alunos/recadastramento/<int:pk>/acao/', views_recadastramento.recadastramento_acao, name='recadastramento_acao'),
+    path('alunos/<int:pk>/foto/', views_recadastramento.aluno_foto, name='aluno_foto'),
+    path('alunos/<int:pk>/foto/enviar/', views_recadastramento.aluno_foto_enviar, name='aluno_foto_enviar'),
+    path('alunos/<int:pk>/documentos/', views_recadastramento.aluno_documento_enviar, name='aluno_documento_enviar'),
+    path('alunos/<int:pk>/documentos/<int:documento_pk>/', views_recadastramento.aluno_documento, name='aluno_documento'),
+    path('alunos/<int:pk>/documentos/<int:documento_pk>/excluir/', views_recadastramento.aluno_documento_excluir, name='aluno_documento_excluir'),
     path('alunos/<int:pk>/matriculas/nova/', views.aluno_form, {'nova_matricula': True}, name='nova_matricula'),
     path('alunos/novo/', views.aluno_form, name='novo'),
     path('alunos/<int:pk>/', views.detalhe, name='detalhe'),

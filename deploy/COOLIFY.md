@@ -105,6 +105,34 @@ EVOLUTION_WEBHOOK_TOKEN=
 O `WOOVI_APP_ID` nunca aparece em tela, log ou banco: ele só vai no header
 das chamadas à Woovi.
 
+## 2.1 Volume da foto e dos documentos dos alunos (obrigatório)
+
+Fotos e documentos (enviados no perfil do aluno ou pela família no
+recadastramento) ficam em `/app/media`. Sem volume, **somem a cada deploy**.
+
+Aplicação → **Persistent Storage → + Add → Volume Mount**:
+
+| Name | Destination Path |
+|---|---|
+| `keiko-media` | `/app/media` |
+
+Crie o volume **antes** do deploy que leva o recadastramento e reinicie a
+aplicação. A imagem cria `/app/media` com o dono `app` (uid 1000), e o volume
+novo herda essa permissão. Se o deploy mostrar o aviso `arquivos.W001` no log
+do `migrate`, o volume não está montado.
+
+- Nada de `/app/media` tem URL pública: o painel entrega cada arquivo só a
+  quem tem acesso àquela academia (`Cache-Control: private, no-store`).
+- O backup diário do Postgres **não** inclui esses arquivos. Faça backup do
+  volume (Coolify → Servers → o volume, ou `docker run --rm -v keiko-media:/m
+  -v $PWD:/b alpine tar czf /b/media.tgz -C /m .` no servidor).
+- São documentos de crianças (LGPD): não copie o volume para fora do
+  servidor sem necessidade.
+
+Variáveis opcionais: `MEDIA_ROOT` (padrão `/app/media`),
+`RECADASTRAMENTO_PAUSA_ENVIO` (segundos entre uma família e outra no envio
+pelo WhatsApp; padrão `8`).
+
 ## 3. Primeiro acesso
 
 Na aplicação: aba **Terminal** → contêiner da app:
@@ -136,7 +164,9 @@ Aplicação → **Scheduled Tasks → + Add**:
 - **Rotina diária**: gera as mensalidades do mês (e antecipa as do mês
   seguinte que vencem em até 7 dias), marca as vencidas, confere se algum
   Pix já foi pago antes de cobrar e envia os lembretes. Sem ela, **nenhuma
-  mensalidade nova é criada a partir do 2º mês**.
+  mensalidade nova é criada a partir do 2º mês**. Também abre o
+  recadastramento anual (no mês escolhido em Alunos → Recadastramento) e
+  retoma as mensagens de recadastramento que falharam.
 - **Repasses do Pix: não têm tarefa agendada.** Quando um Pix é pago, o
   próprio site transfere o saldo para a chave Pix da academia, em segundo
   plano, e volta a cada minuto **só enquanto houver repasse em aberto**

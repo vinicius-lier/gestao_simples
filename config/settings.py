@@ -266,7 +266,21 @@ STORAGES = {
 
 MEDIA_URL = "/media/"
 
-MEDIA_ROOT = BASE_DIR / "media"
+# Foto e documentos dos alunos. Em produção é o volume persistente do Coolify
+# (montado em /app/media): sem ele, os arquivos somem a cada deploy. Nada
+# daqui é servido por URL pública; as views do painel conferem a academia.
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", str(BASE_DIR / "media")))
+
+# O check "arquivos.W001" avisa (no log do migrate de cada deploy) quando,
+# com DEBUG desligado, MEDIA_ROOT não é um ponto de montagem: o volume foi
+# esquecido. Ligado por padrão só dentro da imagem de produção (/app).
+MEDIA_EXIGE_VOLUME = os.getenv(
+    "MEDIA_EXIGE_VOLUME",
+    "true" if str(BASE_DIR) == "/app" else "false",
+).lower() in {"1", "true", "yes", "on"}
+
+FILE_UPLOAD_PERMISSIONS = 0o640
+FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o750
 
 
 # =============================================================================
@@ -364,6 +378,16 @@ REPASSES_EM_SEGUNDO_PLANO = os.getenv(
     "REPASSES_EM_SEGUNDO_PLANO",
     "false" if DEBUG else "true",
 ).lower() == "true"
+
+# Recadastramento: as mensagens saem em segundo plano, uma por família, com
+# uma pausa entre elas (muitas mensagens de uma vez podem fazer o WhatsApp
+# bloquear o número). Desligado, o envio roda na própria requisição, sem
+# pausa (testes e desenvolvimento).
+RECADASTRAMENTO_EM_SEGUNDO_PLANO = os.getenv(
+    "RECADASTRAMENTO_EM_SEGUNDO_PLANO",
+    "false" if DEBUG else "true",
+).lower() == "true"
+RECADASTRAMENTO_PAUSA_ENVIO = float(os.getenv("RECADASTRAMENTO_PAUSA_ENVIO", "8"))
 
 
 # =============================================================================

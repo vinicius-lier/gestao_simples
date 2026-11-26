@@ -13,6 +13,7 @@ __all__ = [
     "enviar_acesso",
     "enviar_convite_matricula",
     "enviar_aviso_escola",
+    "enviar_recadastramento",
     "normalizar_telefone",
     "WhatsAppProvider",
     "WhatsAppProviderError",
@@ -81,3 +82,9 @@ def enviar_convite_matricula(academia, nome, telefone, link, contexto=""):
     levanta ``WhatsAppProviderError`` para provedores baseados em
     template (Meta), e a tela chamadora cai no link manual."""
     return get_provider(academia).enviar_convite_matricula(nome, telefone, link, contexto)
+
+
+def enviar_recadastramento(academia, telefone, texto):
+    """Pedido de recadastramento para a família (texto com os links de
+    cada aluno). Levanta ``WhatsAppProviderError`` se o provedor não enviar."""
+    return get_provider(academia).enviar_recadastramento(telefone, texto)

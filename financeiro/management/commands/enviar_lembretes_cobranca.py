@@ -34,3 +34,13 @@ class Command(BaseCommand):
         repasses = processar_repasses()
         if repasses["processados"] or repasses["conferidos"]:
             self.stdout.write(f"{repasses['processados']} repasse(s) Pix retomado(s).")
+
+        # Recadastramento: abre o anual no mês escolhido pela academia e
+        # retoma a fila de envio (o que falhou ou ficou para trás).
+        from portal.services_recadastramento import rotina_diaria as recadastramento
+
+        recad = recadastramento()
+        if recad["abertas"] or recad["enviados"]:
+            self.stdout.write(
+                f"Recadastramento: {recad['abertas']} aberto(s), {recad['enviados']} mensagem(ns) enviada(s)."
+            )

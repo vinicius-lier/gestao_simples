@@ -1,0 +1,56 @@
+{% extends 'portal/publica_base.html' %}{% block title %}Recadastramento{% endblock %}{% block content %}
+<section class="section">
+{% if estado == 'ok' %}
+  <p class="eyebrow">RECADASTRAMENTO</p>
+  <h2>{{ pedido.campanha.titulo }}: {{ pedido.atleta.nome }}</h2>
+  {% if pedido.campanha.mensagem %}<p>{{ pedido.campanha.mensagem|linebreaksbr }}</p>{% endif %}
+  <p>Os dados abaixo são os que a escola tem hoje. Confira, corrija o que mudou e responda de novo o questionário de saúde. Prazo: <strong>{{ pedido.campanha.prazo|date:'d/m/Y' }}</strong>.</p>
+
+  <form method="post" enctype="multipart/form-data" class="form-publica">{% csrf_token %}
+    {{ form.non_field_errors }}
+
+    {% if form.termos %}
+      <div class="termos">{{ form.termos|linebreaksbr }}</div>
+      {% include 'portal/_aceite_publico.html' with campo=form.aceite_termos %}
+    {% endif %}
+
+    <h3>Dados do aluno</h3>
+    {% include 'portal/_campo_publico.html' with campo=form.nome %}
+    {% include 'portal/_campo_publico.html' with campo=form.data_nascimento %}
+    {% include 'portal/_campo_publico.html' with campo=form.responsavel_nome %}
+    {% include 'portal/_campo_publico.html' with campo=form.responsavel_cpf %}
+    {% include 'portal/_campo_publico.html' with campo=form.telefone %}
+    {% include 'portal/_campo_publico.html' with campo=form.email %}
+    {% include 'portal/_campo_publico.html' with campo=form.autorizados_buscar %}
+
+    {% if form.foto or form.campos_documento %}
+    <h3>Foto e documentos</h3>
+    {% if form.foto %}{% include 'portal/_campo_publico.html' with campo=form.foto %}{% endif %}
+    {% for campo in form.campos_de_documento %}{% include 'portal/_campo_publico.html' with campo=campo %}{% endfor %}
+    {% endif %}
+
+    <h3>Saúde</h3>
+    {% for pergunta, detalhe in form.campos_saude %}
+      {% include 'portal/_opcoes_publico.html' with campo=pergunta %}
+      {% if detalhe %}{% include 'portal/_campo_publico.html' with campo=detalhe %}{% endif %}
+    {% endfor %}
+
+    {% if form.declaracao %}
+      <div class="termos">{{ form.declaracao|linebreaksbr }}</div>
+      {% include 'portal/_aceite_publico.html' with campo=form.aceite_declaracao %}
+    {% endif %}
+
+    <p class="small">Os dados atualizam o cadastro do aluno na escola. Foto e documentos ficam guardados só para a escola.</p>
+    <button class="button red">Enviar recadastramento</button>
+  </form>
+{% elif estado == 'recebido' %}
+  <p class="eyebrow">RECADASTRAMENTO</p>
+  <h2>Recebemos, obrigado!</h2><p>O cadastro de <strong>{{ nome }}</strong> foi atualizado. Se precisar corrigir algo, fale com a escola.</p>
+{% elif estado == 'respondido' %}
+  <h2>Recadastramento já enviado</h2><p>O recadastramento de {{ pedido.atleta.nome }} já foi respondido. Se precisar corrigir algo, fale com a escola.</p>
+{% elif estado == 'encerrado' %}
+  <h2>Recadastramento encerrado</h2><p>Este link não aceita mais respostas. Fale com a escola.</p>
+{% else %}
+  <h2>Link inválido</h2><p>Não encontramos este recadastramento. Confira o endereço com a escola.</p>
+{% endif %}
+</section>{% endblock %}
