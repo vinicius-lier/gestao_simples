@@ -61,6 +61,9 @@
         <dt>Cadastrado em</dt><dd>{{ aluno.criado_em|date:'d/m/Y' }}</dd>
         <dt>Recadastramento</dt><dd>{% if recadastramento %}<a href="{% url 'portal:recadastramento_detalhe' recadastramento.campanha_id %}">{{ recadastramento.campanha.titulo }}</a>: {% if recadastramento.respondido_em %}respondido em {{ recadastramento.respondido_em|date:'d/m/Y' }}{% else %}{{ recadastramento.get_status_display|lower }}{% endif %}{% else %}—{% endif %}</dd>
         <dt>Observações</dt><dd>{{ aluno.observacoes|linebreaksbr|default:'—' }}</dd>
+        <dt>Bolsa</dt><dd>{% if aluno.bolsa_percentual %}{{ aluno.bolsa_percentual|floatformat:0 }}%{% else %}Sem bolsa{% endif %}</dd>
+        <dt>Desconto de irmãos</dt><dd>{{ aluno.desconto_irmaos|yesno:'Sim,Não' }} · somente em dia</dd>
+        {% if aluno.beneficio_inicio or aluno.beneficio_fim %}<dt>Validade do benefício</dt><dd>{{ aluno.beneficio_inicio|date:'d/m/Y'|default:'Sem início definido' }} a {{ aluno.beneficio_fim|date:'d/m/Y'|default:'sem prazo final' }}</dd>{% endif %}
       </dl>
     </section>
 
@@ -96,9 +99,9 @@
           <span class="status-badge {% if m.ativo %}status-ativo{% else %}status-trancado{% endif %}">{% if m.ativo %}Ativa{% else %}Inativa{% endif %}</span>
         </div>
         <dl class="perfil-grade">
-          <div><dt>Mensalidade</dt><dd>R$ {{ m.valor_mensalidade }}</dd></div>
-          <div><dt>Após o vencimento</dt><dd>{% if m.valor_apos_vencimento %}R$ {{ m.valor_apos_vencimento }}{% else %}—{% endif %}</dd></div>
-          <div><dt>Vencimento</dt><dd>Dia {{ m.dia_vencimento }}</dd></div>
+          <div><dt>Mensalidade atual</dt><dd>R$ {{ m.valor_atual }}</dd></div>
+          <div><dt>Após o vencimento</dt><dd>{% if m.valor_atual_apos_vencimento %}R$ {{ m.valor_atual_apos_vencimento }}{% else %}—{% endif %}</dd></div>
+          <div><dt>Vencimento</dt><dd>Dia {{ m.dia_atual }}</dd></div>
           <div><dt>Início</dt><dd>{{ m.data_inicio|date:'d/m/Y' }}</dd></div>
           {% if m.primeiro_vencimento %}<div><dt>1º vencimento</dt><dd>{{ m.primeiro_vencimento|date:'d/m/Y' }}</dd></div>{% endif %}
           {% if m.taxa_matricula and not m.ativo %}<div><dt>Taxa de matrícula</dt><dd>R$ {{ m.taxa_matricula }}, gerada ao ativar</dd></div>{% endif %}

@@ -3,6 +3,8 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from academias.models import Academia
@@ -112,6 +114,28 @@ class Atleta(models.Model):
     )
 
     observacoes = models.TextField(blank=True)
+    bolsa_percentual = models.DecimalField(
+        'Bolsa (%)', max_digits=5, decimal_places=2, default=0,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text='0 = sem bolsa; 100 = bolsa integral. Não se acumula com o desconto de irmãos.',
+    )
+    beneficio_inicio = models.DateField('Início da bolsa / desconto', null=True, blank=True)
+    beneficio_fim = models.DateField('Fim da bolsa / desconto', null=True, blank=True)
+    desconto_irmaos = models.BooleanField(
+        'Desconto para irmãos', default=False,
+        help_text='Marque após confirmar o parentesco. Desconto somente no pagamento em dia.',
+    )
+
+    def clean(self):
+        super().clean()
+        if self.beneficio_inicio and self.beneficio_fim and self.beneficio_fim < self.beneficio_inicio:
+            raise ValidationError({'beneficio_fim': 'O fim não pode ser anterior ao início.'})
+
+    def beneficio_valido(self, competencia):
+        from calendar import monthrange
+        fim_mes = competencia.replace(day=monthrange(competencia.year, competencia.month)[1])
+        return (not self.beneficio_inicio or self.beneficio_inicio <= fim_mes) and (
+            not self.beneficio_fim or self.beneficio_fim >= competencia)
     # Foto de rosto, já reduzida e sem metadados (ver arquivos.preparar_foto).
     # Servida só pela view do painel, nunca por URL pública.
     foto = models.ImageField(upload_to=caminho_foto, blank=True)

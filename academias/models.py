@@ -1,4 +1,5 @@
 from django.db import models
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 # Create your models here.
 class Academia(models.Model):
@@ -34,6 +35,21 @@ class Academia(models.Model):
 
     def __str__(self):
         return self.nome
+
+class TabelaMensalidade(models.Model):
+    academia = models.ForeignKey(Academia, on_delete=models.CASCADE, related_name='tabelas_mensalidade')
+    ano = models.PositiveSmallIntegerField()
+    valor = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    valor_apos_vencimento = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
+    dia_vencimento = models.PositiveSmallIntegerField(default=15, validators=[MinValueValidator(1), MaxValueValidator(31)])
+    desconto_irmaos_percentual = models.DecimalField(max_digits=5, decimal_places=2, default=10, validators=[MinValueValidator(0), MaxValueValidator(100)])
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['academia', 'ano'], name='tabela_mensalidade_academia_ano')]
+
+    def __str__(self):
+        return f'{self.academia} — {self.ano}'
+
 
 class Unidade(models.Model):
     academia = models.ForeignKey(Academia, on_delete=models.CASCADE, related_name='unidades')

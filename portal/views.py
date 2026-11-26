@@ -119,8 +119,16 @@ def detalhe(request, pk):
     # Do not expose legacy cross-tenant relationships.
     matriculas = [m for m in matriculas if not m.turma_id or m.turma.academia_id == request.academia.pk]
     from financeiro.models import Mensalidade
+    from financeiro.services import valores_da_competencia
+    from academias.models import TabelaMensalidade
     from .forms_matricula import AtivacaoMatriculaForm
+    competencia_atual = timezone.localdate()
+    tabela_atual = TabelaMensalidade.objects.filter(
+        academia=request.academia, ano__lte=competencia_atual.year).order_by('-ano').first()
     for matricula in matriculas:
+        matricula.valor_atual, matricula.valor_atual_apos_vencimento = valores_da_competencia(
+            matricula, competencia_atual.year, competencia_atual.month)
+        matricula.dia_atual = tabela_atual.dia_vencimento if tabela_atual else matricula.dia_vencimento
         if not matricula.ativo and request.administrador_academia:
             matricula.ativacao_form = AtivacaoMatriculaForm(matricula=matricula, prefix=f'ativar-{matricula.pk}')
 

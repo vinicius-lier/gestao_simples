@@ -100,13 +100,14 @@ class AlunoForm(forms.ModelForm):
 
     class Meta:
         model = Atleta
-        fields = ('nome', 'data_nascimento', 'cpf', 'telefone', 'faixa', 'status', 'observacoes', 'proprio_responsavel')
+        fields = ('nome', 'data_nascimento', 'cpf', 'telefone', 'faixa', 'status', 'observacoes', 'bolsa_percentual', 'desconto_irmaos', 'beneficio_inicio', 'beneficio_fim', 'proprio_responsavel')
         help_texts = {'telefone': 'Com DDD. Se o aluno for o próprio responsável financeiro, as cobranças vão para este WhatsApp.'}
-        widgets = {'data_nascimento': forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'})}
+        widgets = {campo: forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}) for campo in ('data_nascimento', 'beneficio_inicio', 'beneficio_fim')}
 
     def __init__(self, *args, academia, **kwargs):
         super().__init__(*args, **kwargs)
         self.academia = academia
+        self.fields['bolsa_percentual'].required = False
         self.instance.academia = academia
         self.fields['responsavel'].queryset = Responsavel.objects.filter(academia=academia).order_by('nome')
         if self.instance.pk:
@@ -130,6 +131,9 @@ class AlunoForm(forms.ModelForm):
         )
         for field in self.fields.values():
             field.widget.attrs['class'] = 'form-check-input' if isinstance(field.widget, forms.CheckboxInput) else 'form-select' if isinstance(field.widget, forms.Select) else 'form-control'
+
+    def clean_bolsa_percentual(self):
+        return self.cleaned_data.get('bolsa_percentual') or 0
 
     def clean_data_nascimento(self):
         value = self.cleaned_data['data_nascimento']

@@ -31,6 +31,8 @@ class AtletaAdmin(admin.ModelAdmin):
         "responsavel_financeiro",
         "faixa",
         "status",
+        "bolsa_percentual",
+        "desconto_irmaos",
     )
 
     search_fields = (

@@ -1,5 +1,6 @@
 from calendar import monthrange
 from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import transaction
 from django.db.models import Q
@@ -7,6 +8,7 @@ from django.utils import timezone
 
 from matriculas.models import Matricula
 from financeiro.models import Mensalidade
+from academias.models import TabelaMensalidade
 
 # A rotina diária cria a mensalidade do mês seguinte quando o vencimento
 # dela cai dentro desta janela — a tempo do lembrete de 5 dias antes.
@@ -21,7 +23,9 @@ def _vencimento(matricula, ano, mes):
     if primeiro is not None and (primeiro.year, primeiro.month) == (ano, mes):
         return primeiro
     ultimo_dia_mes = monthrange(ano, mes)[1]
-    return date(ano, mes, min(matricula.dia_vencimento, ultimo_dia_mes))
+    tabela = TabelaMensalidade.objects.filter(academia_id=matricula.academia_id, ano__lte=ano).order_by("-ano").first()
+    dia = tabela.dia_vencimento if tabela else matricula.dia_vencimento
+    return date(ano, mes, min(dia, ultimo_dia_mes))
 
 
 def _inicio_da_cobranca(matricula):
@@ -39,11 +43,33 @@ def proximo_vencimento(matricula, a_partir_de=None):
     quando quem cria ou ativa a matrícula não escolhe outra data."""
     a_partir_de = a_partir_de or max(matricula.data_inicio, timezone.localdate())
     ano, mes = a_partir_de.year, a_partir_de.month
-    vencimento = date(ano, mes, min(matricula.dia_vencimento, monthrange(ano, mes)[1]))
+    tabela = TabelaMensalidade.objects.filter(academia_id=matricula.academia_id, ano__lte=ano).order_by("-ano").first()
+    dia = tabela.dia_vencimento if tabela else matricula.dia_vencimento
+    vencimento = date(ano, mes, min(dia, monthrange(ano, mes)[1]))
     if vencimento < a_partir_de:
         ano, mes = _mes_seguinte(ano, mes)
-        vencimento = date(ano, mes, min(matricula.dia_vencimento, monthrange(ano, mes)[1]))
+        tabela = TabelaMensalidade.objects.filter(academia_id=matricula.academia_id, ano__lte=ano).order_by("-ano").first()
+        dia = tabela.dia_vencimento if tabela else matricula.dia_vencimento
+        vencimento = date(ano, mes, min(dia, monthrange(ano, mes)[1]))
     return vencimento
+
+
+def valores_da_competencia(matricula, ano, mes):
+    """Tabela anual e benefícios não alteram parcelas já emitidas nem taxas de matrícula."""
+    tabela = TabelaMensalidade.objects.filter(academia_id=matricula.academia_id, ano__lte=ano).order_by("-ano").first()
+    valor = tabela.valor if tabela else matricula.valor_mensalidade
+    apos = tabela.valor_apos_vencimento if tabela else matricula.valor_apos_vencimento
+    # Preserva isenções anteriores cadastradas com valor zero.
+    if matricula.valor_mensalidade == 0:
+        return Decimal('0.00'), None
+    aluno = matricula.atleta
+    if aluno.beneficio_valido(date(ano, mes, 1)):
+        bolsa = Decimal(aluno.bolsa_percentual)
+        desconto = bolsa or (tabela.desconto_irmaos_percentual if tabela and aluno.desconto_irmaos else 0)
+        valor = (valor * (1 - Decimal(desconto) / 100)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+        if bolsa and apos is not None:
+            apos = (apos * (1 - bolsa / 100)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+    return valor, apos if valor else None
 
 
 def _criar_ou_obter_mensalidade(matricula, ano, mes):
@@ -51,15 +77,16 @@ def _criar_ou_obter_mensalidade(matricula, ano, mes):
     # histórico do aluno, mas não entra na régua de cobrança nem gera Pix.
     # O valor após o vencimento é copiado da matrícula: mudar a matrícula
     # depois não altera mensalidades já criadas (igual ao valor).
-    em_aberto = matricula.valor_mensalidade > 0
+    valor, apos = valores_da_competencia(matricula, ano, mes)
+    em_aberto = valor > 0
     return Mensalidade.objects.get_or_create(
         matricula=matricula,
         competencia=date(ano, mes, 1),
         tipo=Mensalidade.MENSALIDADE,
         defaults={
             "academia": matricula.academia,
-            "valor": matricula.valor_mensalidade,
-            "valor_apos_vencimento": matricula.valor_apos_vencimento if em_aberto else None,
+            "valor": valor,
+            "valor_apos_vencimento": apos if em_aberto else None,
             "vencimento": _vencimento(matricula, ano, mes),
             "status": "pendente" if em_aberto else "isenta",
         },

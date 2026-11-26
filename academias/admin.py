@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import Academia, IntegracaoWhatsApp
+from .models import Academia, IntegracaoWhatsApp, TabelaMensalidade
+
+
+@admin.register(TabelaMensalidade)
+class TabelaMensalidadeAdmin(admin.ModelAdmin):
+    list_display = ('academia', 'ano', 'valor', 'valor_apos_vencimento', 'dia_vencimento', 'desconto_irmaos_percentual')
+    list_filter = ('academia', 'ano')
 
 @admin.register(Academia)
 class AcademiaAdmin(admin.ModelAdmin):
