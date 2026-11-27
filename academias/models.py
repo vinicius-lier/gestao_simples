@@ -31,6 +31,10 @@ class Academia(models.Model):
     )
 
     ativo = models.BooleanField(default=True)
+    dia_vencimento_fixo = models.PositiveSmallIntegerField(
+        'Dia fixo das mensalidades', null=True, blank=True,
+        validators=[MinValueValidator(1), MaxValueValidator(31)],
+    )
     criado = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

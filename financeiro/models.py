@@ -45,14 +45,23 @@ class Mensalidade(models.Model):
 
     MENSALIDADE = "mensalidade"
     TAXA_MATRICULA = "taxa_matricula"
+    COMPRA_AVULSA = 'compra_avulsa'
+    JUDOGUI = 'judogui'
+    EXAME_FAIXA = 'exame_faixa'
+    TIPOS_AVULSOS = [COMPRA_AVULSA, JUDOGUI, EXAME_FAIXA]
     TIPOS = [
         (MENSALIDADE, "Mensalidade"),
         (TAXA_MATRICULA, "Taxa de matrícula"),
+        (COMPRA_AVULSA, 'Compra avulsa'),
+        (JUDOGUI, 'Judogui'),
+        (EXAME_FAIXA, 'Exame de faixa'),
     ]
 
     # A taxa de matrícula usa a mesma estrutura (Pix, lembretes, baixa):
     # uma por matrícula, com a competência do mês em que foi gerada.
     tipo = models.CharField(max_length=20, choices=TIPOS, default=MENSALIDADE)
+    descricao_avulsa = models.CharField('Descrição', max_length=150, blank=True)
+    chave_avulsa = models.UUIDField(null=True, blank=True, unique=True, editable=False)
 
     academia = models.ForeignKey(
         Academia,
@@ -139,6 +148,8 @@ class Mensalidade(models.Model):
     def referencia(self):
         """Como a cobrança aparece nas listas e mensagens: o mês da
         mensalidade ou "Taxa de matrícula"."""
+        if self.tipo in self.TIPOS_AVULSOS:
+            return self.descricao_avulsa or self.get_tipo_display()
         if self.eh_taxa_matricula:
             return "Taxa de matrícula"
         return f"{self.competencia:%m/%Y}"
@@ -146,6 +157,8 @@ class Mensalidade(models.Model):
     @property
     def descricao(self):
         """"Mensalidade 10/2026" ou "Taxa de matrícula" (Pix e mensagens)."""
+        if self.tipo in self.TIPOS_AVULSOS:
+            return self.get_tipo_display() + (f' — {self.descricao_avulsa}' if self.descricao_avulsa else '')
         if self.eh_taxa_matricula:
             return "Taxa de matrícula"
         return f"Mensalidade {self.competencia:%m/%Y}"

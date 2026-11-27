@@ -103,7 +103,8 @@ def _formatar_cpf(cpf):
 
 def nome_do_arquivo(mensalidade):
     aluno = "-".join(mensalidade.matricula.atleta.nome.lower().split())[:40]
-    referencia = "taxa-matricula" if mensalidade.eh_taxa_matricula else f"{mensalidade.competencia:%Y-%m}"
+    referencia = (f'{mensalidade.tipo}-{mensalidade.pk}' if mensalidade.tipo in mensalidade.TIPOS_AVULSOS
+                  else 'taxa-matricula' if mensalidade.eh_taxa_matricula else f'{mensalidade.competencia:%Y-%m}')
     return f"recibo-{_texto(aluno).replace('?', '')}-{referencia}.pdf"
 
 

@@ -19,12 +19,15 @@ def _vencimento(matricula, ano, mes):
     """Vencimento da competência: o dia de vencimento da matrícula (ou o
     último dia do mês), exceto no mês do primeiro vencimento, que vence na
     data escolhida por quem criou ou ativou a matrícula."""
+    fixo = matricula.academia.dia_vencimento_fixo
+    if fixo:
+        return date(ano, mes, min(fixo, monthrange(ano, mes)[1]))
     primeiro = matricula.primeiro_vencimento
     if primeiro is not None and (primeiro.year, primeiro.month) == (ano, mes):
         return primeiro
     ultimo_dia_mes = monthrange(ano, mes)[1]
     tabela = TabelaMensalidade.objects.filter(academia_id=matricula.academia_id, ano__lte=ano).order_by("-ano").first()
-    dia = tabela.dia_vencimento if tabela else matricula.dia_vencimento
+    dia = matricula.academia.dia_vencimento_fixo or (tabela.dia_vencimento if tabela else matricula.dia_vencimento)
     return date(ano, mes, min(dia, ultimo_dia_mes))
 
 
@@ -44,12 +47,12 @@ def proximo_vencimento(matricula, a_partir_de=None):
     a_partir_de = a_partir_de or max(matricula.data_inicio, timezone.localdate())
     ano, mes = a_partir_de.year, a_partir_de.month
     tabela = TabelaMensalidade.objects.filter(academia_id=matricula.academia_id, ano__lte=ano).order_by("-ano").first()
-    dia = tabela.dia_vencimento if tabela else matricula.dia_vencimento
+    dia = matricula.academia.dia_vencimento_fixo or (tabela.dia_vencimento if tabela else matricula.dia_vencimento)
     vencimento = date(ano, mes, min(dia, monthrange(ano, mes)[1]))
     if vencimento < a_partir_de:
         ano, mes = _mes_seguinte(ano, mes)
         tabela = TabelaMensalidade.objects.filter(academia_id=matricula.academia_id, ano__lte=ano).order_by("-ano").first()
-        dia = tabela.dia_vencimento if tabela else matricula.dia_vencimento
+        dia = matricula.academia.dia_vencimento_fixo or (tabela.dia_vencimento if tabela else matricula.dia_vencimento)
         vencimento = date(ano, mes, min(dia, monthrange(ano, mes)[1]))
     return vencimento
 

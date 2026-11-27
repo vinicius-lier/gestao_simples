@@ -1,0 +1,10 @@
+{% extends 'portal/base.html' %}{% block title %}Nova cobrança{% endblock %}{% block content %}
+<a href="{% url 'portal:financeiro_cobrancas' %}" class="back-link">← Cobranças</a>
+<section class="card p-4 mt-3" style="max-width:760px">
+  <h1>Nova cobrança avulsa</h1>
+  <p>Compra avulsa, judogui ou exame de faixa. Este lançamento não se repete nos próximos meses e não altera a mensalidade.</p>
+  <form method="post">{% csrf_token %}{{ form.non_field_errors }}
+    {% for field in form %}{% if field.is_hidden %}{{ field }}{{ field.errors }}{% else %}{% include 'portal/field.html' %}{% endif %}{% endfor %}
+    <button class="btn btn-primary" type="submit">Salvar cobrança</button>
+  </form>
+</section>{% endblock %}

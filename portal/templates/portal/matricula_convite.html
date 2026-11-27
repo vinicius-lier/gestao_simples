@@ -7,7 +7,7 @@
   {% if convite.valor_efetivo %}Mensalidade de R$ {{ convite.valor_efetivo }}, vencimento dia {{ convite.vencimento_efetivo }}.{% endif %}</p>
   <p>Preencha os dados abaixo. A escola confere e confirma a matrícula em seguida.</p>
 
-  <form method="post" class="form-publica">{% csrf_token %}
+  <form method="post" enctype="multipart/form-data" class="form-publica">{% csrf_token %}
     {{ form.non_field_errors }}
 
     {% if form.termos %}
@@ -18,14 +18,18 @@
     <h3>Dados do aluno</h3>
     {% include 'portal/_campo_publico.html' with campo=form.nome %}
     {% include 'portal/_campo_publico.html' with campo=form.data_nascimento %}
+    {% include 'portal/_campo_publico.html' with campo=form.rg %}
+    {% include 'portal/_campo_publico.html' with campo=form.endereco %}
+    {% include 'portal/_campo_publico.html' with campo=form.documento_identidade %}
+    {% include 'portal/_campo_publico.html' with campo=form.foto %}
     {% include 'portal/_campo_publico.html' with campo=form.federado %}
     {% include 'portal/_campo_publico.html' with campo=form.numero_zempo %}
     {% include 'portal/_campo_publico.html' with campo=form.numero_fjerj %}
     {% include 'portal/partials/responsavel_publico.html' %}
     {% include 'portal/_campo_publico.html' with campo=form.telefone %}
     {% include 'portal/_campo_publico.html' with campo=form.email %}
-    {% include 'portal/_campo_publico.html' with campo=form.autorizados_buscar %}
-    {% include 'portal/_opcoes_publico.html' with campo=form.vencimento_preferido %}
+    <div data-autorizados-buscar>{% include 'portal/_campo_publico.html' with campo=form.autorizados_buscar %}</div>
+    {% if form.vencimento_fixo %}<p>Vencimento fixo: dia {{ form.vencimento_fixo }} de cada mês.</p>{{ form.vencimento_preferido }}{% else %}{% include 'portal/_opcoes_publico.html' with campo=form.vencimento_preferido %}{% endif %}
 
     <h3>Saúde</h3>
     {% for pergunta, detalhe in form.campos_saude %}
@@ -50,4 +54,4 @@
 {% else %}
   <h2>Link inválido</h2><p>Não encontramos este convite de matrícula. Confira o endereço com o professor.</p>
 {% endif %}
-</section><script defer src="{% static 'portal/responsavel_publico.js' %}?v=1"></script>{% endblock %}
+</section><script defer src="{% static 'portal/responsavel_publico.js' %}?v=2"></script>{% include 'portal/partials/foto_editor.html' %}{% endblock %}

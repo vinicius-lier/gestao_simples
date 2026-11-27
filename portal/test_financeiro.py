@@ -265,10 +265,9 @@ class FinanceiroPortalTests(TestCase):
         self.assertIn(f"/responsavel/mensalidade/{self.pendente.pk}/pagar/", link_enviado)
         self.assertEqual(TokenAcessoResponsavel.objects.count(), 1)
 
-    def test_enviar_cobranca_sem_whatsapp_mostra_link_manual(self):
+    def test_enviar_cobranca_sem_whatsapp_volta_sem_abrir_whatsapp(self):
         resposta = self.client.post(f"/financeiro/cobrancas/{self.pendente.pk}/enviar/")
-        self.assertEqual(resposta.status_code, 200)
-        self.assertContains(resposta, "/responsavel/entrar/")
+        self.assertRedirects(resposta, '/financeiro/cobrancas/', fetch_redirect_response=False)
 
     def test_enviar_cobranca_isola_por_academia(self):
         resposta = self.client.post(f"/financeiro/cobrancas/{self.mensalidade_b.pk}/enviar/")

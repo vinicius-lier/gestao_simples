@@ -270,6 +270,8 @@ def dados_iniciais(pedido):
     ficha = atleta.fichas_matricula.first()
     inicial = {
         'nome': atleta.nome,
+        'rg': atleta.rg,
+        'endereco': atleta.endereco,
         'proprio_responsavel': atleta.proprio_responsavel,
         'cpf': atleta.cpf if atleta.proprio_responsavel else '',
         'data_nascimento': atleta.data_nascimento,
@@ -311,7 +313,7 @@ def responder_pedido(pedido, dados, *, foto=None, documentos=()):
     atleta.nome = dados['nome']
     atleta.data_nascimento = dados.get('data_nascimento')
     campos_atleta = ['nome', 'data_nascimento']
-    for campo in ('federado', 'numero_zempo', 'numero_fjerj'):
+    for campo in ('rg', 'endereco', 'federado', 'numero_zempo', 'numero_fjerj'):
         if campo in dados:
             setattr(atleta, campo, dados[campo])
             campos_atleta.append(campo)

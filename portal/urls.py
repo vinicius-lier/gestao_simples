@@ -1,5 +1,6 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
+from . import views_cobrancas
 from . import views, views_assinatura, views_responsaveis, views_responsavel, views_whatsapp, views_experimentais, views_matricula, views_recebimento, views_recadastramento
 
 app_name = 'portal'
@@ -51,6 +52,7 @@ urlpatterns = [
     path('responsaveis/<int:pk>/acesso/', views_responsaveis.responsavel_enviar_acesso, name='responsavel_enviar_acesso'),
     path('financeiro/', views.financeiro_dashboard, name='financeiro'),
     path('financeiro/cobrancas/', views.financeiro_cobrancas, name='financeiro_cobrancas'),
+    path('financeiro/cobrancas/nova/', views_cobrancas.nova_cobranca, name='financeiro_cobranca_nova'),
     path('financeiro/cobrancas/<int:pk>/recibo/', views.financeiro_recibo, name='financeiro_recibo'),
     path('financeiro/cobrancas/<int:pk>/pagar/', views.financeiro_marcar_pago, name='financeiro_marcar_pago'),
     path('financeiro/cobrancas/<int:pk>/encerrar/', views.financeiro_encerrar_cobranca, name='financeiro_encerrar_cobranca'),

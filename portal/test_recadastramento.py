@@ -76,6 +76,7 @@ class BaseRecadastramento(TestCase):
             aceite_termos='on', aceite_declaracao='on', nome='Ana Souza Lima', data_nascimento='2016-03-02',
             responsavel_nome='Maria Souza', responsavel_cpf='529.982.247-25', telefone='(21) 98888-1111',
             email='maria@exemplo.com', autorizados_buscar='Maria e avó',
+            endereco='Rua de teste, 10, Centro, Seropédica/RJ', documento_identidade=pdf('rg.pdf'),
         )
         base.update({campo: 'nao' for campo, *_ in PERGUNTAS_SAUDE})
         base['saude_medicacao'] = 'sim'
@@ -98,7 +99,7 @@ class AberturaNoPainel(BaseRecadastramento):
             sorted(campanha.pedidos.values_list('atleta__nome', flat=True)),
             ['Ana Souza', 'Beto Souza', 'Caio Sem Fone'],
         )
-        self.assertEqual(campanha.documentos_pedidos, 'atestado,identidade')
+        self.assertEqual(campanha.documentos_pedidos, 'identidade')
         # Irmãos no mesmo WhatsApp: uma mensagem só, com os dois links.
         envio.assert_called_once()
         _academia, telefone, texto = envio.call_args.args
@@ -231,7 +232,7 @@ class RespostaDaFamilia(BaseRecadastramento):
 
     def test_resposta_atualiza_cadastro_e_guarda_foto_e_documento(self):
         resp = self.client.post(self.pedido.url(), {
-            **self.resposta(), 'foto': imagem(), 'documento_atestado': pdf(),
+            **self.resposta(), 'foto': imagem(), 'documento_identidade': pdf(),
         })
         self.assertRedirects(resp, '/recadastramento/recebido/', fetch_redirect_response=False)
         self.ana.refresh_from_db()
@@ -252,7 +253,7 @@ class RespostaDaFamilia(BaseRecadastramento):
             self.assertEqual(foto.format, 'JPEG')
             self.assertLessEqual(max(foto.size), 800)
         documento = DocumentoAtleta.objects.get(atleta=self.ana)
-        self.assertEqual((documento.tipo, documento.enviado_pela_familia), ('atestado', True))
+        self.assertEqual((documento.tipo, documento.enviado_pela_familia), ('identidade', True))
 
         self.pedido.refresh_from_db()
         self.assertEqual((self.pedido.status, self.pedido.ficha), (PedidoRecadastramento.RESPONDIDO, ficha))
@@ -266,7 +267,7 @@ class RespostaDaFamilia(BaseRecadastramento):
     def test_documento_falso_e_recusado(self):
         resp = self.client.post(self.pedido.url(), {
             **self.resposta(), 'foto': imagem(),
-            'documento_atestado': SimpleUploadedFile('atestado.pdf', b'MZ executavel'),
+            'documento_identidade': SimpleUploadedFile('atestado.pdf', b'MZ executavel'),
         })
         self.assertEqual(resp.status_code, 200)
         self.assertContains(resp, 'não parece ser do tipo')

@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from academias.models import Unidade
+from atletas.arquivos import validar_documento, preparar_foto
 from modalidades.models import Modalidade, Turma
 from .forms import _nao_negativo, cpf_valido, digits
 from .models import ConviteMatricula
@@ -53,6 +54,10 @@ class ConviteMatriculaForm(forms.ModelForm):
         self.fields['dia_vencimento'].help_text = (
             'Em branco: a família escolhe na ficha (dia 5, 10 ou 15) ou vale o vencimento da turma.'
         )
+        if academia.dia_vencimento_fixo:
+            self.initial['dia_vencimento'] = academia.dia_vencimento_fixo
+            self.fields['dia_vencimento'].disabled = True
+            self.fields['dia_vencimento'].help_text = 'Vencimento fixo da escola.'
         self.fields['convidado_whatsapp'].help_text = (
             'Com DDD. Informe para poder enviar o link direto pelo WhatsApp, sem sair do app.'
         )
@@ -166,6 +171,14 @@ class ImportacaoFichasForm(forms.Form):
         ).select_related('modalidade', 'unidade')
         self.fields['modalidade'].queryset = Modalidade.objects.filter(academia=academia, ativo=True)
         self.fields['unidade'].queryset = Unidade.objects.filter(academia=academia, ativo=True)
+        self.academia = academia
+        if academia.dia_vencimento_fixo:
+            self.initial['dia_vencimento'] = academia.dia_vencimento_fixo
+            self.fields['dia_vencimento'].disabled = True
+            self.fields['dia_vencimento'].help_text = 'Vencimento fixo da escola.'
+            self.initial['usar_dia_da_ficha'] = False
+            self.fields['usar_dia_da_ficha'].disabled = True
+            self.fields['usar_dia_da_ficha'].widget = forms.HiddenInput()
         self.fields['cobrar_a_partir_de'].initial = timezone.localdate()
         _estilo_painel(self)
 
@@ -203,7 +216,8 @@ class ImportacaoFichasForm(forms.Form):
         from .importacao_fichas import CondicoesMatricula
 
         d = self.cleaned_data
-        dia, usar_ficha = d.get('dia_vencimento'), bool(d.get('usar_dia_da_ficha'))
+        dia = self.academia.dia_vencimento_fixo or d.get('dia_vencimento')
+        usar_ficha = False if self.academia.dia_vencimento_fixo else bool(d.get('usar_dia_da_ficha'))
         if d.get('turma') is not None:
             return CondicoesMatricula.da_turma(d['turma'], dia_vencimento=dia, usar_dia_da_ficha=usar_ficha)
         return CondicoesMatricula(
@@ -232,6 +246,12 @@ class AtivacaoMatriculaForm(forms.Form):
         if escolhido is None or escolhido < timezone.localdate():
             escolhido = proximo_vencimento(matricula)
         self.fields['dia_vencimento'].initial = matricula.dia_vencimento
+        fixo = matricula.academia.dia_vencimento_fixo
+        if fixo:
+            self.fields['dia_vencimento'].initial = fixo
+            self.fields['dia_vencimento'].disabled = True
+            if escolhido.day != fixo:
+                escolhido = proximo_vencimento(matricula)
         self.fields['primeiro_vencimento'].initial = escolhido
         _estilo_painel(self)
 
@@ -239,6 +259,9 @@ class AtivacaoMatriculaForm(forms.Form):
         valor = self.cleaned_data['primeiro_vencimento']
         if valor < timezone.localdate():
             raise ValidationError('O primeiro vencimento não pode ser anterior a hoje.')
+        dia = self.fields['dia_vencimento'].initial
+        if self.fields['dia_vencimento'].disabled and valor.day != dia:
+            raise ValidationError(f'O vencimento deve ser no dia {dia}.')
         return valor
 
 
@@ -255,6 +278,15 @@ class MatriculaPublicaForm(forms.Form):
 
     aceite_termos = forms.BooleanField(label=ACEITE_TERMOS)
     nome = forms.CharField(label='Nome completo do (a) aluno (a):', max_length=150)
+    rg = forms.CharField(label='Número do RG', max_length=30, required=False)
+    endereco = forms.CharField(label='Endereço completo', required=False,
+        widget=forms.Textarea(attrs={'rows': 3}),
+        help_text='Rua, número, complemento, bairro, cidade, UF e CEP. Não é necessário enviar comprovante.')
+    documento_identidade = forms.FileField(label='Arquivo do RG do atleta', required=False,
+        validators=[validar_documento], widget=forms.ClearableFileInput(attrs={'accept':'application/pdf,image/*,.heic,.heif'}))
+    foto = forms.FileField(label='Foto do atleta', required=False,
+        widget=forms.ClearableFileInput(attrs={'accept':'image/jpeg,image/png,image/webp'}),
+        help_text='JPG, PNG ou WEBP. Você pode ajustar o enquadramento antes de enviar.')
     data_nascimento = forms.DateField(
         label='Data de nascimento do (a) aluno (a)',
         widget=forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}),
@@ -281,6 +313,7 @@ class MatriculaPublicaForm(forms.Form):
     email = forms.EmailField(label='E-mail para contato')
     autorizados_buscar = forms.CharField(
         label='Quem está autorizado (a) a buscar o (a) aluno (a)?',
+        required=False,
         widget=forms.Textarea(attrs={'rows': 2}),
     )
     vencimento_preferido = forms.TypedChoiceField(
@@ -299,6 +332,13 @@ class MatriculaPublicaForm(forms.Form):
         self.fields['cpf'].disabled = not proprio
         self.termos = (academia.termos_matricula if academia else '').strip()
         self.declaracao = (academia.declaracao_matricula if academia else '').strip()
+        if academia and academia.dia_vencimento_fixo:
+            dia = academia.dia_vencimento_fixo
+            self.fields['vencimento_preferido'].choices = [(dia, f'Dia {dia}')]
+            self.fields['vencimento_preferido'].initial = dia
+            self.fields['vencimento_preferido'].disabled = True
+            self.fields['vencimento_preferido'].widget = forms.HiddenInput()
+            self.vencimento_fixo = dia
         if not self.termos:
             del self.fields['aceite_termos']
         if not self.declaracao:
@@ -356,6 +396,14 @@ class MatriculaPublicaForm(forms.Form):
 
     def clean(self):
         data = super().clean()
+        nascimento = data.get('data_nascimento')
+        if nascimento:
+            hoje = timezone.localdate()
+            maior = hoje.year - nascimento.year - ((hoje.month, hoje.day) < (nascimento.month, nascimento.day)) >= 18
+            if maior:
+                data['autorizados_buscar'] = ''
+            elif not data.get('autorizados_buscar', '').strip():
+                self.add_error('autorizados_buscar', 'Informe quem pode buscar o atleta menor de idade.')
         if data.get('proprio_responsavel'):
             data['responsavel_nome'] = data.get('nome', '')
             data['responsavel_cpf'] = data.get('cpf', '')
@@ -363,3 +411,11 @@ class MatriculaPublicaForm(forms.Form):
             if campo in data:
                 data[campo] = data[campo] == 'sim'
         return data
+
+    def documentos(self):
+        arquivo = self.cleaned_data.get('documento_identidade')
+        return [('identidade', arquivo)] if arquivo else []
+
+    def clean_foto(self):
+        arquivo = self.cleaned_data.get('foto')
+        return preparar_foto(arquivo) if arquivo else None
