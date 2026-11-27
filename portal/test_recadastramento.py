@@ -176,6 +176,21 @@ class Envio(BaseRecadastramento):
 
 
 class RespostaDaFamilia(BaseRecadastramento):
+    def test_trocar_para_proprio_responsavel_preserva_responsavel_da_familia(self):
+        campanha = self.campanha(pedir_foto=False, documentos=[])
+        pedido = campanha.pedidos.get(atleta=self.ana)
+        dados = self.resposta(proprio_responsavel='on', cpf='11144477735')
+        dados.pop('responsavel_nome')
+        dados.pop('responsavel_cpf')
+        resp = self.client.post(pedido.url(), dados)
+        self.assertEqual(resp.status_code, 302)
+        self.ana.refresh_from_db()
+        self.mae.refresh_from_db()
+        self.assertTrue(self.ana.proprio_responsavel)
+        self.assertNotEqual(self.ana.responsavel_financeiro_id, self.mae.pk)
+        self.assertEqual(self.mae.nome, 'Maria Souza')
+        self.assertEqual(self.mae.whatsapp, '21999990000')
+
     def test_recadastramento_preenche_e_atualiza_federacao(self):
         from .services_recadastramento import dados_iniciais
         self.ana.federado = True

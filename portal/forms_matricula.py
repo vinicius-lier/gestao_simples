@@ -266,6 +266,8 @@ class MatriculaPublicaForm(forms.Form):
     )
     numero_zempo = forms.CharField(label='Número Zempo', max_length=40, required=False)
     numero_fjerj = forms.CharField(label='Número FJERJ', max_length=40, required=False)
+    proprio_responsavel = forms.BooleanField(required=False, label='O atleta é o próprio responsável financeiro')
+    cpf = forms.CharField(label='CPF do atleta', max_length=14, required=False)
     responsavel_nome = forms.CharField(label='Nome do (a) responsável', max_length=150)
     responsavel_cpf = forms.CharField(
         label='CPF do (a) responsável financeiro', max_length=14,
@@ -289,6 +291,12 @@ class MatriculaPublicaForm(forms.Form):
 
     def __init__(self, *args, academia=None, **kwargs):
         super().__init__(*args, **kwargs)
+        proprio = self.data.get('proprio_responsavel') in ('on', 'true', 'True', '1') if self.is_bound else bool(self.initial.get('proprio_responsavel'))
+        for campo in ('responsavel_nome', 'responsavel_cpf'):
+            self.fields[campo].required = not proprio
+            self.fields[campo].disabled = proprio
+        self.fields['cpf'].required = proprio
+        self.fields['cpf'].disabled = not proprio
         self.termos = (academia.termos_matricula if academia else '').strip()
         self.declaracao = (academia.declaracao_matricula if academia else '').strip()
         if not self.termos:
@@ -318,7 +326,13 @@ class MatriculaPublicaForm(forms.Form):
         return ' '.join(self.cleaned_data['nome'].split())
 
     def clean_responsavel_nome(self):
-        return ' '.join(self.cleaned_data['responsavel_nome'].split())
+        return ' '.join(self.cleaned_data.get('responsavel_nome', '').split())
+
+    def clean_cpf(self):
+        value = self.cleaned_data.get('cpf', '')
+        if self.cleaned_data.get('proprio_responsavel') and not cpf_valido(value):
+            raise ValidationError('CPF inválido. Confira os 11 números.')
+        return digits(value)
 
     def clean_data_nascimento(self):
         value = self.cleaned_data.get('data_nascimento')
@@ -327,6 +341,8 @@ class MatriculaPublicaForm(forms.Form):
         return value
 
     def clean_responsavel_cpf(self):
+        if self.cleaned_data.get('proprio_responsavel'):
+            return ''
         value = self.cleaned_data.get('responsavel_cpf', '')
         if not cpf_valido(value):
             raise ValidationError('CPF inválido. Confira os 11 números.')
@@ -340,6 +356,9 @@ class MatriculaPublicaForm(forms.Form):
 
     def clean(self):
         data = super().clean()
+        if data.get('proprio_responsavel'):
+            data['responsavel_nome'] = data.get('nome', '')
+            data['responsavel_cpf'] = data.get('cpf', '')
         for campo, *_resto in PERGUNTAS_SAUDE:
             if campo in data:
                 data[campo] = data[campo] == 'sim'

@@ -91,6 +91,9 @@ def efetivar_convite(convite, dados):
         whatsapp=dados['telefone'], email=dados.get('email', ''),
     )
 
+    if dados.get('proprio_responsavel') and responsavel.nome.strip().casefold() != dados['nome'].strip().casefold():
+        raise ValidationError('Este CPF está vinculado a outro responsável. Fale com a escola para conferir o cadastro.')
+
     atleta = Atleta.objects.create(
         academia=convite.academia,
         nome=dados['nome'],
@@ -100,6 +103,9 @@ def efetivar_convite(convite, dados):
         numero_fjerj=dados.get('numero_fjerj', ''),
         status='ativo',
         responsavel_financeiro=responsavel,
+        proprio_responsavel=bool(dados.get('proprio_responsavel')),
+        cpf=dados.get('cpf', '') if dados.get('proprio_responsavel') else '',
+        telefone=digits(dados['telefone']) if dados.get('proprio_responsavel') else '',
     )
 
     valor = convite.valor_efetivo()

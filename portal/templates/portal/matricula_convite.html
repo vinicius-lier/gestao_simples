@@ -1,4 +1,4 @@
-{% extends 'portal/publica_base.html' %}{% block title %}Matrícula{% endblock %}{% block content %}
+{% extends 'portal/publica_base.html' %}{% load static %}{% block title %}Matrícula{% endblock %}{% block content %}
 <section class="section">
 {% if estado == 'ok' %}
   <p class="eyebrow">MATRÍCULA</p>
@@ -21,8 +21,7 @@
     {% include 'portal/_campo_publico.html' with campo=form.federado %}
     {% include 'portal/_campo_publico.html' with campo=form.numero_zempo %}
     {% include 'portal/_campo_publico.html' with campo=form.numero_fjerj %}
-    {% include 'portal/_campo_publico.html' with campo=form.responsavel_nome %}
-    {% include 'portal/_campo_publico.html' with campo=form.responsavel_cpf %}
+    {% include 'portal/partials/responsavel_publico.html' %}
     {% include 'portal/_campo_publico.html' with campo=form.telefone %}
     {% include 'portal/_campo_publico.html' with campo=form.email %}
     {% include 'portal/_campo_publico.html' with campo=form.autorizados_buscar %}
@@ -51,4 +50,4 @@
 {% else %}
   <h2>Link inválido</h2><p>Não encontramos este convite de matrícula. Confira o endereço com o professor.</p>
 {% endif %}
-</section>{% endblock %}
+</section><script defer src="{% static 'portal/responsavel_publico.js' %}?v=1"></script>{% endblock %}
