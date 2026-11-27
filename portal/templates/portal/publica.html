@@ -3,7 +3,7 @@
 <title>Escola de Judô Keiko Fukuda</title><meta name="description" content="Conheça a Escola de Judô Keiko Fukuda: nossa história, equipe, turmas, horários e mensalidades. Fale com a escola ou faça sua matrícula.">
 <link rel="icon" href="{% static 'portal/institucional/logotipo-circular-escola-de-judo-keiko-fukuda.webp' %}"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'portal/institucional.css' %}?v=1"><script defer src="{% static 'portal/institucional.js' %}?v=1"></script>
+<link rel="stylesheet" href="{% static 'portal/institucional.css' %}?v=2"><script defer src="{% static 'portal/institucional.js' %}?v=1"></script>
 </head><body><a class="institucional-pular" href="#topo">Pular para conteúdo</a>
 <div style="background:#FAF9F7;color:#212124;font-family:'Source Sans 3',sans-serif;font-size:18px;line-height:1.55">
 
@@ -101,10 +101,11 @@
       <div data-carrossel-trilho style="display:flex;transition:transform .6s cubic-bezier(.2,.7,.2,1)">
         {% for p in equipe_institucional %}
           <article data-slide style="min-width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));align-items:stretch">
-            <img src="{% static p.src %}" alt="{{ p.alt }}" loading="lazy" draggable="false" style="width:100%;height:100%;min-height:360px;max-height:600px;aspect-ratio:4/5;object-fit:cover;object-position:{{ p.pos }};background:#e6e3df">
+            {% if p.src %}<img src="{% static p.src %}" alt="{{ p.alt }}" loading="lazy" draggable="false" style="width:100%;height:100%;min-height:360px;max-height:600px;aspect-ratio:4/5;object-fit:cover;object-position:{{ p.pos }};background:#e6e3df">{% else %}<div class="equipe-sem-foto"><span aria-hidden="true">{{ p.iniciais }}</span><p>Foto em breve</p></div>{% endif %}
             <div style="padding:32px;display:flex;flex-direction:column;justify-content:center;gap:12px">
               <div style="font:700 15px 'Source Sans 3',sans-serif;color:#B5242C;letter-spacing:.12em;text-transform:uppercase">{{ forloop.counter|stringformat:"02d" }} / {{ equipe_institucional|length }}</div>
               <h3 style="margin:0;font:800 clamp(40px,5vw,64px)/1 'Barlow Condensed',sans-serif;text-transform:uppercase">{{ p.name }}</h3>
+              {% if p.graduacao %}<p style="margin:0;font-weight:700;color:#B5242C">{{ p.graduacao }}</p>{% endif %}
               {% if p.story %}<p style="margin:0;max-width:32em">{{ p.story }}</p>{% endif %}
             </div>
           </article>
@@ -116,7 +117,7 @@
       <button data-carrossel-proximo aria-label="Próximo professor" style="width:48px;height:48px;border-radius:50%;border:0;background:#B5242C;color:#fff;font-size:22px;cursor:pointer">→</button>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-left:auto">
         {% for t in equipe_institucional %}
-          <button data-carrossel-ir="{{ forloop.counter0 }}" aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}" aria-label="{{ t.name }}" style="width:48px;height:48px;border-radius:50%;padding:0;overflow:hidden;cursor:pointer;background:#e6e3df;border:3px solid transparent"><img src="{% static t.src %}" alt="" style="width:100%;height:100%;object-fit:cover;object-position:{{ t.pos }}"></button>
+          <button data-carrossel-ir="{{ forloop.counter0 }}" aria-pressed="{% if forloop.first %}true{% else %}false{% endif %}" aria-label="{{ t.name }}" style="width:48px;height:48px;border-radius:50%;padding:0;overflow:hidden;cursor:pointer;background:#e6e3df;border:3px solid transparent">{% if t.src %}<img src="{% static t.src %}" alt="" style="width:100%;height:100%;object-fit:cover;object-position:{{ t.pos }}">{% else %}<span aria-hidden="true">{{ t.iniciais }}</span>{% endif %}</button>
         {% endfor %}
       </div>
     </div>
