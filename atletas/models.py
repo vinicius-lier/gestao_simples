@@ -177,6 +177,7 @@ class DocumentoAtleta(models.Model):
     IDENTIDADE = 'identidade'
     CPF = 'cpf'
     ATESTADO = 'atestado'
+    LAUDO = 'laudo'
     RESIDENCIA = 'residencia'
     IMAGEM = 'imagem'
     FEDERACAO = 'federacao'
@@ -185,6 +186,7 @@ class DocumentoAtleta(models.Model):
         (IDENTIDADE, 'Certidão de nascimento ou RG'),
         (CPF, 'CPF'),
         (ATESTADO, 'Atestado médico'),
+        (LAUDO, 'Laudo ou documento médico'),
         (RESIDENCIA, 'Comprovante de residência'),
         (IMAGEM, 'Autorização de uso de imagem'),
         (FEDERACAO, 'Carteira da federação'),

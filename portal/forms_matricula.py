@@ -278,11 +278,13 @@ class MatriculaPublicaForm(forms.Form):
 
     aceite_termos = forms.BooleanField(label=ACEITE_TERMOS)
     nome = forms.CharField(label='Nome completo do (a) aluno (a):', max_length=150)
-    rg = forms.CharField(label='Número do RG', max_length=30, required=False)
+    rg = forms.CharField(label='Número do RG', max_length=30, required=False,
+        widget=forms.TextInput(attrs={'inputmode':'numeric','autocomplete':'off'}))
     endereco = forms.CharField(label='Endereço completo', required=False,
         widget=forms.Textarea(attrs={'rows': 3}),
         help_text='Rua, número, complemento, bairro, cidade, UF e CEP. Não é necessário enviar comprovante.')
-    documento_identidade = forms.FileField(label='Arquivo do RG do atleta', required=False,
+    documento_laudo = forms.FileField(label='Laudo ou documento médico (se houver)', required=False,
+        help_text='Anexe apenas quando houver um laudo ou documento médico a informar. Não envie cópia de RG ou CPF.',
         validators=[validar_documento], widget=forms.ClearableFileInput(attrs={'accept':'application/pdf,image/*,.heic,.heif'}))
     foto = forms.FileField(label='Foto do atleta', required=False,
         widget=forms.ClearableFileInput(attrs={'accept':'image/jpeg,image/png,image/webp'}),
@@ -299,7 +301,8 @@ class MatriculaPublicaForm(forms.Form):
     numero_zempo = forms.CharField(label='Número Zempo', max_length=40, required=False)
     numero_fjerj = forms.CharField(label='Número FJERJ', max_length=40, required=False)
     proprio_responsavel = forms.BooleanField(required=False, label='O atleta é o próprio responsável financeiro')
-    cpf = forms.CharField(label='CPF do atleta', max_length=14, required=False)
+    cpf = forms.CharField(label='CPF do atleta', max_length=14, required=False,
+        widget=forms.TextInput(attrs={'inputmode':'numeric','autocomplete':'off'}))
     responsavel_nome = forms.CharField(label='Nome do (a) responsável', max_length=150)
     responsavel_cpf = forms.CharField(
         label='CPF do (a) responsável financeiro', max_length=14,
@@ -329,7 +332,7 @@ class MatriculaPublicaForm(forms.Form):
             self.fields[campo].required = not proprio
             self.fields[campo].disabled = proprio
         self.fields['cpf'].required = proprio
-        self.fields['cpf'].disabled = not proprio
+        self.fields['cpf'].disabled = False
         self.termos = (academia.termos_matricula if academia else '').strip()
         self.declaracao = (academia.declaracao_matricula if academia else '').strip()
         if academia and academia.dia_vencimento_fixo:
@@ -370,7 +373,7 @@ class MatriculaPublicaForm(forms.Form):
 
     def clean_cpf(self):
         value = self.cleaned_data.get('cpf', '')
-        if self.cleaned_data.get('proprio_responsavel') and not cpf_valido(value):
+        if value and not cpf_valido(value):
             raise ValidationError('CPF inválido. Confira os 11 números.')
         return digits(value)
 
@@ -413,8 +416,8 @@ class MatriculaPublicaForm(forms.Form):
         return data
 
     def documentos(self):
-        arquivo = self.cleaned_data.get('documento_identidade')
-        return [('identidade', arquivo)] if arquivo else []
+        arquivo = self.cleaned_data.get('documento_laudo')
+        return [('laudo', arquivo)] if arquivo else []
 
     def clean_foto(self):
         arquivo = self.cleaned_data.get('foto')

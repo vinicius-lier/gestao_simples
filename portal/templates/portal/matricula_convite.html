@@ -20,7 +20,7 @@
     {% include 'portal/_campo_publico.html' with campo=form.data_nascimento %}
     {% include 'portal/_campo_publico.html' with campo=form.rg %}
     {% include 'portal/_campo_publico.html' with campo=form.endereco %}
-    {% include 'portal/_campo_publico.html' with campo=form.documento_identidade %}
+    {% include 'portal/_campo_publico.html' with campo=form.documento_laudo %}
     {% include 'portal/_campo_publico.html' with campo=form.foto %}
     {% include 'portal/_campo_publico.html' with campo=form.federado %}
     {% include 'portal/_campo_publico.html' with campo=form.numero_zempo %}
@@ -54,4 +54,4 @@
 {% else %}
   <h2>Link inválido</h2><p>Não encontramos este convite de matrícula. Confira o endereço com o professor.</p>
 {% endif %}
-</section><script defer src="{% static 'portal/responsavel_publico.js' %}?v=2"></script>{% include 'portal/partials/foto_editor.html' %}{% endblock %}
+</section><script defer src="{% static 'portal/responsavel_publico.js' %}?v=3"></script>{% include 'portal/partials/foto_editor.html' %}{% endblock %}

@@ -18,12 +18,12 @@
   const outro = document.querySelector('[data-outro-responsavel]');
   if (!escolha || !proprio || !outro) return;
   function atualizar() {
-    proprio.hidden = !escolha.checked;
+    proprio.hidden = false;
     outro.hidden = escolha.checked;
     for (const grupo of [proprio, outro]) {
       grupo.querySelectorAll('input').forEach(campo => {
         campo.disabled = grupo.hidden;
-        campo.required = !grupo.hidden;
+        campo.required = grupo === proprio ? escolha.checked : !grupo.hidden;
       });
     }
   }

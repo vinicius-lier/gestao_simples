@@ -1,5 +1,5 @@
 {% include 'portal/_aceite_publico.html' with campo=form.proprio_responsavel %}
-<div data-cpf-atleta{% if not form.proprio_responsavel.value %} hidden{% endif %}>
+<div data-cpf-atleta>
   {% include 'portal/_campo_publico.html' with campo=form.cpf %}
 </div>
 <div data-outro-responsavel{% if form.proprio_responsavel.value %} hidden{% endif %}>

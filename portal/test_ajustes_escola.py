@@ -20,8 +20,8 @@ from .test_recadastramento import imagem
 from tests.woovi_base import CenarioWoovi, cobranca_criada
 
 
-def rg():
-    return SimpleUploadedFile('rg.pdf', b'%PDF-1.4\nidentidade', content_type='application/pdf')
+def laudo():
+    return SimpleUploadedFile('laudo.pdf', b'%PDF-1.4\nidentidade', content_type='application/pdf')
 
 
 class AjustesEscolaTests(BaseConvite):
@@ -35,15 +35,15 @@ class AjustesEscolaTests(BaseConvite):
         self.a.dia_vencimento_fixo = 15
         self.a.save()
 
-    def test_vencimento_fixo_ignora_escolha_e_anexa_rg(self):
+    def test_vencimento_fixo_ignora_escolha_e_anexa_laudo(self):
         convite = self.convite()
-        dados = self.dados_familia(vencimento_preferido='5', endereco='Rua A, 10, Centro, Seropédica/RJ', documento_identidade=rg(), foto=imagem())
+        dados = self.dados_familia(vencimento_preferido='5', endereco='Rua A, 10, Centro, Seropédica/RJ', documento_laudo=laudo(), foto=imagem())
         resposta = self.client.post(convite.url(), dados)
         self.assertEqual(resposta.status_code, 302)
         aluno = Atleta.objects.get()
         self.assertEqual(aluno.endereco, dados['endereco'])
         self.assertTrue(aluno.foto)
-        self.assertEqual(DocumentoAtleta.objects.get().tipo, 'identidade')
+        self.assertEqual(DocumentoAtleta.objects.get().tipo, 'laudo')
         matricula = Matricula.objects.get()
         self.assertEqual(matricula.dia_vencimento, 15)
         matricula.primeiro_vencimento = date(2027, 1, 20)
@@ -66,7 +66,8 @@ class AjustesEscolaTests(BaseConvite):
         pedido = PedidoRecadastramento.objects.create(academia=self.a, campanha=campanha, atleta=aluno)
         resposta = self.client.get(pedido.url())
         campos = resposta.context['form'].fields
-        self.assertIn('documento_identidade', campos)
+        self.assertIn('documento_laudo', campos)
+        self.assertNotIn('documento_identidade', campos)
         self.assertNotIn('documento_atestado', campos)
         self.assertNotIn('documento_residencia', campos)
         self.assertNotIn('documento_federacao', campos)
@@ -74,12 +75,25 @@ class AjustesEscolaTests(BaseConvite):
         dados.pop('vencimento_preferido')
         resposta = self.client.post(pedido.url(), dados)
         self.assertIn('endereco', resposta.context['form'].errors)
-        self.assertIn('documento_identidade', resposta.context['form'].errors)
-        dados.update(endereco='Rua A, 10, Seropédica/RJ', documento_identidade=rg())
+        self.assertIn('rg', resposta.context['form'].errors)
+        self.assertNotIn('documento_laudo', resposta.context['form'].errors)
+        dados.update(endereco='Rua A, 10, Seropédica/RJ', rg='00123456')
         resposta = self.client.post(pedido.url(), dados)
         self.assertEqual(resposta.status_code, 302)
         aluno.refresh_from_db()
         self.assertEqual(aluno.endereco, dados['endereco'])
+        self.assertFalse(DocumentoAtleta.objects.exists())
+
+    def test_documentos_apenas_numeros_e_cpf_do_menor_separado_do_responsavel(self):
+        convite = self.convite()
+        dados = self.dados_familia(cpf='11144477735', rg='00123456')
+        resposta = self.client.post(convite.url(), dados)
+        self.assertEqual(resposta.status_code, 302)
+        aluno = Atleta.objects.get()
+        self.assertEqual(aluno.cpf, '11144477735')
+        self.assertEqual(aluno.rg, '00123456')
+        self.assertEqual(aluno.responsavel_financeiro.cpf, '52998224725')
+        self.assertFalse(DocumentoAtleta.objects.exists())
 
     def test_unidade_filtra_grade_e_home_nao_exibe_precos(self):
         unidade = Unidade.objects.create(academia=self.a, nome='Outro polo')
