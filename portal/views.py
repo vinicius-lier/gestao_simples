@@ -297,9 +297,19 @@ def financeiro_recibo(request, pk):
 
 
 def pagina_publica(request):
+    from django.db.models import Q
+    from academias.models import Academia
+    from modalidades.models import Turma
+    from .institucional import EQUIPE
     from .models import ConviteMatricula, FotoPublica, PaginaPublica
     from .views_experimentais import contexto_publico
+    academia = Academia.objects.filter(ativo=True).order_by('pk').first()
+    turmas = Turma.objects.filter(
+        academia=academia, ativo=True, modalidade__academia=academia, modalidade__ativo=True,
+    ).filter(Q(unidade__isnull=True) | Q(unidade__academia=academia, unidade__ativo=True)).order_by('pk') if academia else []
     return render(request, 'portal/publica.html', {
+        'turmas_institucionais': turmas,
+        'equipe_institucional': EQUIPE,
         **contexto_publico(request),
         'pagina': PaginaPublica.objects.order_by('pk').first(),
         'link_matricula': ConviteMatricula.link_do_site() is not None,

@@ -187,6 +187,25 @@ class PortalTests(TestCase):
 
 
 class PaginaPublicaTests(TestCase):
+    def test_frontend_exibe_somente_turmas_publicas_da_escola(self):
+        from academias.models import Academia
+        from modalidades.models import Modalidade, Turma
+        escola = Academia.objects.create(nome='Keiko', cnpj='institucional')
+        outra = Academia.objects.create(nome='Outra', cnpj='outra-institucional')
+        modalidade = Modalidade.objects.create(academia=escola, nome='Judô')
+        modalidade_outra = Modalidade.objects.create(academia=outra, nome='Judô')
+        Turma.objects.create(academia=escola, modalidade=modalidade, nome='BABY A', dias_semana='Segundas e quartas', horario='17:15')
+        Turma.objects.create(academia=escola, modalidade=modalidade, nome='Turma inativa', ativo=False)
+        Turma.objects.create(academia=outra, modalidade=modalidade_outra, nome='Turma de outra escola')
+        resposta = self.client.get('/')
+        self.assertEqual(resposta.status_code, 200)
+        self.assertContains(resposta, 'BABY A')
+        self.assertNotContains(resposta, 'Turma inativa')
+        self.assertNotContains(resposta, 'Turma de outra escola')
+        self.assertContains(resposta, 'data-carrossel-proximo')
+        self.assertNotContains(resposta, 'support.js')
+        self.assertNotContains(resposta, '<sc-for')
+
     def test_pagina_acessivel_sem_login(self):
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
