@@ -270,6 +270,8 @@ def dados_iniciais(pedido):
     ficha = atleta.fichas_matricula.first()
     inicial = {
         'nome': atleta.nome,
+        'proprio_responsavel': atleta.proprio_responsavel,
+        'cpf': atleta.cpf if atleta.proprio_responsavel else '',
         'data_nascimento': atleta.data_nascimento,
         'federado': 'sim' if atleta.federado is True else 'nao' if atleta.federado is False else '',
         'numero_zempo': atleta.numero_zempo,
@@ -315,6 +317,14 @@ def responder_pedido(pedido, dados, *, foto=None, documentos=()):
             campos_atleta.append(campo)
 
     responsavel = atleta.responsavel_financeiro
+    proprio = bool(dados.get('proprio_responsavel', atleta.proprio_responsavel))
+    if proprio != atleta.proprio_responsavel:
+        responsavel = None
+    atleta.proprio_responsavel = proprio
+    campos_atleta.append('proprio_responsavel')
+    if proprio:
+        atleta.cpf = digits(dados.get('cpf', atleta.cpf))
+        campos_atleta.append('cpf')
     if responsavel is not None and responsavel.academia_id != academia.pk:
         responsavel = None
     if responsavel is None:
@@ -322,6 +332,8 @@ def responder_pedido(pedido, dados, *, foto=None, documentos=()):
             academia, nome=dados['responsavel_nome'], cpf=dados.get('responsavel_cpf', ''),
             whatsapp=dados['telefone'], email=dados.get('email', ''),
         )
+        if proprio and responsavel.nome.strip().casefold() != dados['nome'].strip().casefold():
+            raise ValidationError('Este CPF está vinculado a outro responsável. Fale com a escola para conferir o cadastro.')
         atleta.responsavel_financeiro = responsavel
         campos_atleta.append('responsavel_financeiro')
     responsavel.nome = dados['responsavel_nome']

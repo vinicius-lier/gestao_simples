@@ -96,6 +96,28 @@ class GeracaoNoPainel(BaseConvite):
 
 
 class FormularioPublico(BaseConvite):
+    def test_atleta_proprio_responsavel_dispensa_dados_de_terceiro(self):
+        convite = self.convite()
+        dados = self.dados_familia(proprio_responsavel='on', cpf='52998224725')
+        dados.pop('responsavel_nome')
+        dados.pop('responsavel_cpf')
+        resp = self.client.post(convite.url(), dados)
+        self.assertEqual(resp.status_code, 302)
+        aluno = Atleta.objects.get()
+        self.assertTrue(aluno.proprio_responsavel)
+        self.assertEqual(aluno.cpf, '52998224725')
+        self.assertEqual(aluno.responsavel_financeiro.nome, aluno.nome)
+        self.assertEqual(aluno.telefone, '21999998888')
+
+    def test_responsavel_externo_continua_obrigatorio(self):
+        convite = self.convite()
+        dados = self.dados_familia()
+        dados.pop('responsavel_nome')
+        resp = self.client.post(convite.url(), dados)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('responsavel_nome', resp.context['form'].errors)
+        self.assertFalse(Atleta.objects.exists())
+
     def test_federacao_e_registros_preservam_zeros(self):
         convite = self.convite()
         pagina = self.client.get(convite.url())
