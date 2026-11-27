@@ -273,7 +273,7 @@ def dados_iniciais(pedido):
         'rg': atleta.rg,
         'endereco': atleta.endereco,
         'proprio_responsavel': atleta.proprio_responsavel,
-        'cpf': atleta.cpf if atleta.proprio_responsavel else '',
+        'cpf': atleta.cpf,
         'data_nascimento': atleta.data_nascimento,
         'federado': 'sim' if atleta.federado is True else 'nao' if atleta.federado is False else '',
         'numero_zempo': atleta.numero_zempo,
@@ -324,7 +324,7 @@ def responder_pedido(pedido, dados, *, foto=None, documentos=()):
         responsavel = None
     atleta.proprio_responsavel = proprio
     campos_atleta.append('proprio_responsavel')
-    if proprio:
+    if 'cpf' in dados:
         atleta.cpf = digits(dados.get('cpf', atleta.cpf))
         campos_atleta.append('cpf')
     if responsavel is not None and responsavel.academia_id != academia.pk:

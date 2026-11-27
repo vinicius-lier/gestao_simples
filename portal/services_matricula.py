@@ -106,7 +106,7 @@ def efetivar_convite(convite, dados):
         status='ativo',
         responsavel_financeiro=responsavel,
         proprio_responsavel=bool(dados.get('proprio_responsavel')),
-        cpf=dados.get('cpf', '') if dados.get('proprio_responsavel') else '',
+        cpf=dados.get('cpf', ''),
         telefone=digits(dados['telefone']) if dados.get('proprio_responsavel') else '',
     )
 

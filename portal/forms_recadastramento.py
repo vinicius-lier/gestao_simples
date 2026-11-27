@@ -26,8 +26,8 @@ class CampanhaForm(forms.Form):
     pedir_foto = forms.BooleanField(label='Pedir uma foto do aluno', required=False, initial=True)
     documentos = forms.MultipleChoiceField(
         label='Documentos pedidos', required=False, widget=forms.CheckboxSelectMultiple,
-        choices=[(DocumentoAtleta.IDENTIDADE, 'RG do atleta')],
-        initial=[DocumentoAtleta.IDENTIDADE], disabled=True,
+        choices=[(DocumentoAtleta.LAUDO, 'Laudo ou documento médico (opcional)')],
+        initial=[DocumentoAtleta.LAUDO], disabled=True,
     )
     mensagem = forms.CharField(
         label='Recado para as famílias (opcional)', required=False,
@@ -70,7 +70,7 @@ class RecadastramentoAnualForm(forms.ModelForm):
         ]
         self.fields['recadastramento_mes'].help_text = (
             'No dia 1º do mês, o recadastramento do ano é aberto para todos os alunos ativos e o link vai '
-            'pelo WhatsApp. A família informa endereço e saúde e anexa o RG; a foto segue a configuração da escola. '
+            'pelo WhatsApp. A família informa os números de RG e CPF, endereço e saúde. Laudos médicos são opcionais; a foto segue a configuração da escola. '
             'Não abre se já houver um nos últimos 90 dias.'
         )
         _estilo_painel(self)
@@ -86,14 +86,9 @@ class RecadastramentoPublicoForm(MatriculaPublicaForm):
         campanha = pedido.campanha
         del self.fields['vencimento_preferido']
         self.tem_foto = bool(pedido.atleta.foto)
-        self.campos_documento = ['documento_identidade']
+        self.campos_documento = ['documento_laudo']
         self.fields['endereco'].required = True
-        tem_rg = pedido.atleta.documentos.filter(academia=pedido.academia, tipo=DocumentoAtleta.IDENTIDADE).exists()
-        self.fields['documento_identidade'].required = not tem_rg
-        self.fields['documento_identidade'].help_text = (
-            'Já temos um documento de identidade. Envie outro se precisar atualizar.' if tem_rg
-            else 'Envie o RG do atleta em PDF ou foto (até 10 MB).'
-        )
+        self.fields['rg'].required = True
         if campanha.pedir_foto:
             self.fields['foto'] = forms.FileField(
                 label='Foto do aluno', required=not self.tem_foto,
