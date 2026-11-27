@@ -1,7 +1,9 @@
 """Equipe da escola; ordem, graduações e atuações informadas pela direção."""
 
 EQUIPE = [{'name': 'Sensei Anne Campos',
-  'src': '',
+  'src': 'portal/institucional/anne-campos.webp',
+  'alt': 'Retrato da Sensei Anne Campos',
+  'pos': '60% 25%',
   'iniciais': 'AC',
   'graduacao': '4º dan',
   'story': 'Presidente da escola e juíza continental de kata'},

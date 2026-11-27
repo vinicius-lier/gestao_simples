@@ -55,6 +55,8 @@
       <dl class="perfil-dados">
         <dt>Nascimento</dt><dd>{{ aluno.data_nascimento|date:'d/m/Y'|default:'—' }}</dd>
         <dt>CPF</dt><dd>{{ aluno.cpf|default:'—' }}</dd>
+        <dt>RG</dt><dd>{{ aluno.rg|default:'—' }}</dd>
+        <dt>Endereço</dt><dd>{{ aluno.endereco|linebreaksbr|default:'—' }}</dd>
         <dt>Telefone / WhatsApp</dt><dd>{{ aluno.telefone|default:'—' }}</dd>
         <dt>Faixa</dt><dd>{{ aluno.faixa|default:'—' }}</dd>
         <dt>Federado?</dt><dd>{{ aluno.federado|yesno:'Sim,Não,Não informado' }}</dd>
@@ -131,7 +133,7 @@
             <label class="form-label small mb-1" for="foto-aluno">{% if aluno.foto %}Trocar a foto{% else %}Foto do aluno{% endif %}</label>
             <div class="d-flex gap-2 flex-wrap">
               <input id="foto-aluno" class="form-control form-control-sm" type="file" name="foto" accept="{{ aceita_foto }}" required>
-              <button class="btn btn-primary btn-sm" type="submit">Salvar foto</button>
+              {% if aluno.foto %}<button class="btn btn-outline-primary btn-sm" type="button" data-ajustar-foto-atual="{% url 'portal:aluno_foto' aluno.pk %}?v={{ aluno.foto_atualizada_em|date:'U' }}">Ajustar foto atual</button>{% endif %}<button class="btn btn-primary btn-sm" type="submit">Salvar foto</button>
             </div>
             <span class="form-text">JPG, PNG ou WEBP. A foto é reduzida e os dados de localização do celular são apagados.</span>
           </form>
@@ -180,4 +182,4 @@
   </div>
 </div>
 {% endif %}
-{% endblock %}
+{% include 'portal/partials/foto_editor.html' %}{% endblock %}

@@ -167,7 +167,7 @@ def _ficha_publica(request, convite, no_site=False):
         return render(request, 'portal/matricula_convite.html',
                       {'estado': 'expirado' if expirado else 'usado', 'convite': convite})
 
-    form = MatriculaPublicaForm(request.POST or None, academia=convite.academia)
+    form = MatriculaPublicaForm(request.POST or None, request.FILES or None, academia=convite.academia)
     if request.method == 'POST' and form.is_valid():
         try:
             with transaction.atomic():
@@ -175,6 +175,15 @@ def _ficha_publica(request, convite, no_site=False):
                 # um convite só dela, com as mesmas condições.
                 preenchido = convite.nova_resposta() if convite.permanente else convite
                 efetivar_convite(preenchido, form.cleaned_data)
+                if form.cleaned_data.get('foto'):
+                    preenchido.atleta.trocar_foto(form.cleaned_data['foto'])
+                from atletas.models import DocumentoAtleta
+                for tipo, arquivo in form.documentos():
+                    DocumentoAtleta.objects.create(
+                        academia=preenchido.academia, atleta=preenchido.atleta, tipo=tipo,
+                        arquivo=arquivo, nome_original=arquivo.name, tamanho=arquivo.size,
+                        enviado_pela_familia=True,
+                    )
         except ValidationError as error:
             form.add_error(None, error)
         else:

@@ -49,7 +49,9 @@ def contexto_cobranca(mensalidade, estagio=None):
     """Frase da cobrança para a mensagem do responsável, com o valor devido
     hoje e, enquanto em dia, o aviso de que ele muda após o vencimento."""
     aluno = mensalidade.matricula.atleta.nome
-    if mensalidade.eh_taxa_matricula:
+    if mensalidade.tipo in mensalidade.TIPOS_AVULSOS:
+        cobranca = f'{mensalidade.descricao.lower()} de {aluno}'
+    elif mensalidade.eh_taxa_matricula:
         cobranca = f"taxa de matrícula de {aluno}"
     else:
         cobranca = f"mensalidade de {aluno} ({mensalidade.competencia:%m/%Y})"
@@ -140,7 +142,7 @@ class EvolutionWhatsAppProvider(WhatsAppProvider):
     def enviar_cobranca(self, responsavel, mensalidade, link, estagio=None):
         aluno = mensalidade.matricula.atleta.nome
         contexto = contexto_cobranca(mensalidade, estagio)
-        item = "taxa de matrícula" if mensalidade.eh_taxa_matricula else "mensalidade"
+        item = mensalidade.get_tipo_display().lower()
         return self._enviar_com_botao(
             responsavel.whatsapp,
             titulo=f"{item.capitalize()} de {aluno}",

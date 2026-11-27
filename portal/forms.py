@@ -100,9 +100,10 @@ class AlunoForm(forms.ModelForm):
 
     class Meta:
         model = Atleta
-        fields = ('nome', 'data_nascimento', 'cpf', 'telefone', 'faixa', 'federado', 'numero_zempo', 'numero_fjerj', 'status', 'observacoes', 'bolsa_percentual', 'desconto_irmaos', 'beneficio_inicio', 'beneficio_fim', 'proprio_responsavel')
+        fields = ('nome', 'data_nascimento', 'cpf', 'rg', 'endereco', 'telefone', 'faixa', 'federado', 'numero_zempo', 'numero_fjerj', 'status', 'observacoes', 'bolsa_percentual', 'desconto_irmaos', 'beneficio_inicio', 'beneficio_fim', 'proprio_responsavel')
         help_texts = {'telefone': 'Com DDD. Se o aluno for o próprio responsável financeiro, as cobranças vão para este WhatsApp.'}
         widgets = {campo: forms.DateInput(format='%Y-%m-%d', attrs={'type': 'date'}) for campo in ('data_nascimento', 'beneficio_inicio', 'beneficio_fim')}
+        widgets['endereco'] = forms.Textarea(attrs={'rows': 3})
 
     def __init__(self, *args, academia, **kwargs):
         super().__init__(*args, **kwargs)
@@ -299,6 +300,10 @@ class MatriculaForm(forms.ModelForm):
         self.fields['dia_vencimento'].required = False
         self.fields['valor_mensalidade'].help_text = 'Em branco: usa o valor da turma.'
         self.fields['dia_vencimento'].help_text = 'Em branco: usa o vencimento da turma.'
+        if academia.dia_vencimento_fixo:
+            self.initial['dia_vencimento'] = academia.dia_vencimento_fixo
+            self.fields['dia_vencimento'].disabled = True
+            self.fields['dia_vencimento'].help_text = 'Vencimento fixo da escola.'
         self.fields['valor_apos_vencimento'].help_text = (
             'Cobrado a partir do dia seguinte ao vencimento. Em branco: usa o da turma. '
             'Vale para as mensalidades criadas daqui em diante.'
@@ -335,6 +340,10 @@ class MatriculaForm(forms.ModelForm):
         if not data.get('dia_vencimento'):
             data['dia_vencimento'] = turma.dia_vencimento if turma else 10
         primeiro = data.get('primeiro_vencimento')
+        if primeiro and self.instance.academia.dia_vencimento_fixo and (
+            not self.ativa_antes or 'primeiro_vencimento' in self.changed_data
+        ) and primeiro.day != self.instance.academia.dia_vencimento_fixo:
+            self.add_error('primeiro_vencimento', f'O vencimento deve ser no dia {self.instance.academia.dia_vencimento_fixo}.')
         ativando = data.get('ativo') and not self.ativa_antes
         if primeiro and primeiro < timezone.localdate() and (ativando or 'primeiro_vencimento' in self.changed_data):
             self.add_error(
@@ -398,6 +407,9 @@ class TurmaForm(CadastroAcademiaForm):
         super().__init__(*args, academia=academia, **kwargs)
         self.fields['valor_mensalidade'].required = False
         self.fields['dia_vencimento'].required = False
+        if academia.dia_vencimento_fixo:
+            self.initial['dia_vencimento'] = academia.dia_vencimento_fixo
+            self.fields['dia_vencimento'].disabled = True
 
     def clean_valor_mensalidade(self):
         valor = self.cleaned_data.get('valor_mensalidade')

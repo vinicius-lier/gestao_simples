@@ -26,8 +26,8 @@ class CampanhaForm(forms.Form):
     pedir_foto = forms.BooleanField(label='Pedir uma foto do aluno', required=False, initial=True)
     documentos = forms.MultipleChoiceField(
         label='Documentos pedidos', required=False, widget=forms.CheckboxSelectMultiple,
-        choices=[t for t in DocumentoAtleta.TIPOS if t[0] != DocumentoAtleta.OUTRO],
-        initial=[DocumentoAtleta.ATESTADO],
+        choices=[(DocumentoAtleta.IDENTIDADE, 'RG do atleta')],
+        initial=[DocumentoAtleta.IDENTIDADE], disabled=True,
     )
     mensagem = forms.CharField(
         label='Recado para as famílias (opcional)', required=False,
@@ -70,7 +70,8 @@ class RecadastramentoAnualForm(forms.ModelForm):
         ]
         self.fields['recadastramento_mes'].help_text = (
             'No dia 1º do mês, o recadastramento do ano é aberto para todos os alunos ativos e o link vai '
-            'pelo WhatsApp, com a mesma foto e documentos do último. Não abre se já houver um nos últimos 90 dias.'
+            'pelo WhatsApp. A família informa endereço e saúde e anexa o RG; a foto segue a configuração da escola. '
+            'Não abre se já houver um nos últimos 90 dias.'
         )
         _estilo_painel(self)
 
@@ -85,7 +86,14 @@ class RecadastramentoPublicoForm(MatriculaPublicaForm):
         campanha = pedido.campanha
         del self.fields['vencimento_preferido']
         self.tem_foto = bool(pedido.atleta.foto)
-        self.campos_documento = []
+        self.campos_documento = ['documento_identidade']
+        self.fields['endereco'].required = True
+        tem_rg = pedido.atleta.documentos.filter(academia=pedido.academia, tipo=DocumentoAtleta.IDENTIDADE).exists()
+        self.fields['documento_identidade'].required = not tem_rg
+        self.fields['documento_identidade'].help_text = (
+            'Já temos um documento de identidade. Envie outro se precisar atualizar.' if tem_rg
+            else 'Envie o RG do atleta em PDF ou foto (até 10 MB).'
+        )
         if campanha.pedir_foto:
             self.fields['foto'] = forms.FileField(
                 label='Foto do aluno', required=not self.tem_foto,
@@ -95,14 +103,6 @@ class RecadastramentoPublicoForm(MatriculaPublicaForm):
                     else 'Foto de rosto, de frente e com boa luz (JPG ou PNG).'
                 ),
             )
-        for tipo, rotulo in campanha.tipos_documentos():
-            nome = f'documento_{tipo}'
-            self.fields[nome] = forms.FileField(
-                label=rotulo, required=False, validators=[validar_documento],
-                widget=forms.ClearableFileInput(attrs={'accept': ACEITA_DOCUMENTO}),
-                help_text='PDF ou foto do documento, até 10 MB. Se não tiver agora, pode entregar na escola.',
-            )
-            self.campos_documento.append(nome)
         if 'aceite_declaracao' in self.fields:
             self.fields['aceite_declaracao'] = self.fields.pop('aceite_declaracao')
 

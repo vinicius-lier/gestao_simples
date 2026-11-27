@@ -98,6 +98,8 @@ def efetivar_convite(convite, dados):
         academia=convite.academia,
         nome=dados['nome'],
         data_nascimento=dados.get('data_nascimento'),
+        rg=dados.get('rg', ''),
+        endereco=dados.get('endereco', ''),
         federado=dados.get('federado'),
         numero_zempo=dados.get('numero_zempo', ''),
         numero_fjerj=dados.get('numero_fjerj', ''),
@@ -123,7 +125,7 @@ def efetivar_convite(convite, dados):
         taxa_matricula=convite.taxa_matricula_efetiva(),
         # O dia fixado pela escola no convite vale; senão, o que a família
         # escolheu na ficha. Quem ativa confere e pode mudar.
-        dia_vencimento=convite.dia_vencimento or dados.get('vencimento_preferido') or convite.vencimento_efetivo(),
+        dia_vencimento=convite.academia.dia_vencimento_fixo or convite.dia_vencimento or dados.get('vencimento_preferido') or convite.vencimento_efetivo(),
         data_inicio=timezone.localdate(),
         ativo=False,
     )
@@ -172,7 +174,9 @@ def ativar_matricula(matricula, *, dia_vencimento=None, primeiro_vencimento=None
     from financeiro.services import iniciar_cobranca, primeira_ativacao
 
     primeira = primeira_ativacao(matricula)
-    if dia_vencimento:
+    if matricula.academia.dia_vencimento_fixo:
+        matricula.dia_vencimento = matricula.academia.dia_vencimento_fixo
+    elif dia_vencimento:
         matricula.dia_vencimento = dia_vencimento
     matricula.ativo = True
     matricula.save()

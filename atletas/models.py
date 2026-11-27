@@ -114,6 +114,8 @@ class Atleta(models.Model):
     )
 
     observacoes = models.TextField(blank=True)
+    rg = models.CharField('Número do RG', max_length=30, blank=True)
+    endereco = models.TextField('Endereço completo', blank=True)
     federado = models.BooleanField('Federado?', null=True, blank=True, default=None)
     numero_zempo = models.CharField('Número Zempo', max_length=40, blank=True)
     numero_fjerj = models.CharField('Número FJERJ', max_length=40, blank=True)

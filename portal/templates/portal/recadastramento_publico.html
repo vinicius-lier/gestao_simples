@@ -17,13 +17,15 @@
     <h3>Dados do aluno</h3>
     {% include 'portal/_campo_publico.html' with campo=form.nome %}
     {% include 'portal/_campo_publico.html' with campo=form.data_nascimento %}
+    {% include 'portal/_campo_publico.html' with campo=form.rg %}
+    {% include 'portal/_campo_publico.html' with campo=form.endereco %}
     {% include 'portal/_campo_publico.html' with campo=form.federado %}
     {% include 'portal/_campo_publico.html' with campo=form.numero_zempo %}
     {% include 'portal/_campo_publico.html' with campo=form.numero_fjerj %}
     {% include 'portal/partials/responsavel_publico.html' %}
     {% include 'portal/_campo_publico.html' with campo=form.telefone %}
     {% include 'portal/_campo_publico.html' with campo=form.email %}
-    {% include 'portal/_campo_publico.html' with campo=form.autorizados_buscar %}
+    <div data-autorizados-buscar>{% include 'portal/_campo_publico.html' with campo=form.autorizados_buscar %}</div>
 
     {% if form.foto or form.campos_documento %}
     <h3>Foto e documentos</h3>
@@ -55,4 +57,4 @@
 {% else %}
   <h2>Link inválido</h2><p>Não encontramos este recadastramento. Confira o endereço com a escola.</p>
 {% endif %}
-</section><script defer src="{% static 'portal/responsavel_publico.js' %}?v=1"></script>{% endblock %}
+</section><script defer src="{% static 'portal/responsavel_publico.js' %}?v=2"></script>{% include 'portal/partials/foto_editor.html' %}{% endblock %}

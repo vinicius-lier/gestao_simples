@@ -20,6 +20,10 @@ section[id]{scroll-margin-top:120px}
 .equipe-sem-foto>span{font:700 80px/1 'Barlow Condensed',sans-serif;color:#B5242C}
 .equipe-sem-foto>p{margin:0;font-size:18px}
 button{touch-action:manipulation}
+.filtro-unidades{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+.filtro-unidades select,.filtro-unidades button{min-height:44px;padding:8px 14px;border:1px solid #e6e3df;border-radius:6px;font:inherit;background:#fff;color:#212124;max-width:100%}
+.troca-unidade{display:grid;place-items:center;min-width:44px;min-height:44px;border:1px solid #fff;border-radius:50%;color:#fff;text-decoration:none;font-size:24px}
+.troca-unidade:hover{background:#fff;color:#212124}
 button:hover{filter:brightness(.92)}
 a[style*="background:#B5242C"]:hover{background:#8f1b22!important}
 footer a{color:#fff}

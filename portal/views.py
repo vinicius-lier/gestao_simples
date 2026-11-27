@@ -128,7 +128,7 @@ def detalhe(request, pk):
     for matricula in matriculas:
         matricula.valor_atual, matricula.valor_atual_apos_vencimento = valores_da_competencia(
             matricula, competencia_atual.year, competencia_atual.month)
-        matricula.dia_atual = tabela_atual.dia_vencimento if tabela_atual else matricula.dia_vencimento
+        matricula.dia_atual = request.academia.dia_vencimento_fixo or (tabela_atual.dia_vencimento if tabela_atual else matricula.dia_vencimento)
         if not matricula.ativo and request.administrador_academia:
             matricula.ativacao_form = AtivacaoMatriculaForm(matricula=matricula, prefix=f'ativar-{matricula.pk}')
 
@@ -298,7 +298,7 @@ def financeiro_recibo(request, pk):
 
 def pagina_publica(request):
     from django.db.models import Q
-    from academias.models import Academia
+    from academias.models import Academia, Unidade
     from modalidades.models import Turma
     from .institucional import EQUIPE
     from .models import ConviteMatricula, FotoPublica, PaginaPublica
@@ -307,7 +307,21 @@ def pagina_publica(request):
     turmas = Turma.objects.filter(
         academia=academia, ativo=True, modalidade__academia=academia, modalidade__ativo=True,
     ).filter(Q(unidade__isnull=True) | Q(unidade__academia=academia, unidade__ativo=True)).order_by('pk') if academia else []
+    unidades = Unidade.objects.filter(academia=academia, ativo=True) if academia else Unidade.objects.none()
+    unidade_selecionada = request.GET.get('unidade_turmas')
+    ids_unidades = list(unidades.values_list('pk', flat=True))
+    if unidade_selecionada is None:
+        unidade_selecionada = str(ids_unidades[0]) if ids_unidades else ''
+    if unidade_selecionada:
+        if not unidade_selecionada.isdigit() or not unidades.filter(pk=int(unidade_selecionada)).exists():
+            from django.http import Http404
+            raise Http404('Unidade não encontrada.')
+        turmas = turmas.filter(unidade_id=int(unidade_selecionada))
     return render(request, 'portal/publica.html', {
+        'unidade_anterior': ids_unidades[(ids_unidades.index(int(unidade_selecionada)) - 1) % len(ids_unidades)] if unidade_selecionada and len(ids_unidades) > 1 else None,
+        'unidade_proxima': ids_unidades[(ids_unidades.index(int(unidade_selecionada)) + 1) % len(ids_unidades)] if unidade_selecionada and len(ids_unidades) > 1 else None,
+        'unidades_turmas': unidades,
+        'unidade_selecionada': unidade_selecionada,
         'turmas_institucionais': turmas,
         'equipe_institucional': EQUIPE,
         **contexto_publico(request),
@@ -410,6 +424,9 @@ def financeiro_cobrancas(request):
     Mensalidade.objects.filter(academia=request.academia).marcar_vencidas()
     query = request.GET.get('q', '').strip()
     status = request.GET.get('status', '')
+    tipo = request.GET.get('tipo', '')
+    if tipo not in dict(Mensalidade.TIPOS):
+        tipo = ''
     if status not in dict(Mensalidade.STATUS):
         status = ''
     mes = request.GET.get('mes', '')
@@ -424,6 +441,8 @@ def financeiro_cobrancas(request):
         cobrancas = cobrancas.filter(matricula__atleta__nome__icontains=query)
     if status:
         cobrancas = cobrancas.filter(status=status)
+    if tipo:
+        cobrancas = cobrancas.filter(tipo=tipo)
     if mes:
         try:
             ano_filtro, mes_filtro = (int(parte) for parte in mes.split('-', 1))
@@ -433,6 +452,7 @@ def financeiro_cobrancas(request):
     return render(request, 'portal/financeiro_cobrancas.html', {
         'page_obj': Paginator(cobrancas, 25).get_page(request.GET.get('page')),
         'q': query, 'status': status, 'mes': mes, 'status_choices': Mensalidade.STATUS,
+        'tipo': tipo, 'tipo_choices': Mensalidade.TIPOS,
     })
 
 
@@ -489,7 +509,7 @@ def financeiro_marcar_pago(request, pk):
     except ValueError as error:
         messages.error(request, str(error))
         return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
-    messages.success(request, f'Mensalidade de {mensalidade.matricula.atleta.nome} marcada como paga.')
+    messages.success(request, f'{mensalidade.descricao} de {mensalidade.matricula.atleta.nome}: pagamento registrado.')
 
     # Pago por fora (dinheiro, transferência...): tira o Pix do ar para a
     # família não pagar de novo pelo código que recebeu no lembrete.
@@ -637,15 +657,11 @@ def financeiro_enviar_cobranca(request, pk):
             estagio=calcular_estagio(mensalidade),
         )
     except ValueError:
-        pass  # API do WhatsApp não configurada: operador envia manualmente abaixo
+        messages.error(request, 'Não foi possível enviar. Configure a integração de WhatsApp da escola e tente novamente.')
+        return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
     except WhatsAppProviderError as error:
         messages.warning(request, f'Não deu para enviar automaticamente pelo WhatsApp: {error}')
+        return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
     else:
         messages.success(request, f'Cobrança enviada automaticamente para {responsavel.nome} pelo WhatsApp.')
         return redirecionamento_seguro(request, 'portal:financeiro_cobrancas')
-
-    from integracoes.whatsapp.evolution import contexto_cobranca
-    mensagem = f'Olá, {responsavel.nome}! {contexto_cobranca(mensalidade)} Pague por aqui: {link}'
-    return render(request, 'portal/acesso_responsavel_gerado.html', {
-        'aluno': aluno, 'responsavel': responsavel, 'link': link, 'mensagem': mensagem,
-    })

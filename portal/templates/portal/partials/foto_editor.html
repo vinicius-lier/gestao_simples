@@ -1,0 +1,17 @@
+{% load static %}
+<link rel="stylesheet" href="{% static 'portal/foto_editor.css' %}?v=1">
+<dialog class="foto-editor" data-foto-editor aria-labelledby="foto-editor-titulo">
+  <div class="foto-editor-cabeca"><h2 id="foto-editor-titulo">Ajustar foto do atleta</h2><button type="button" data-foto-fechar aria-label="Fechar editor">×</button></div>
+  <p>Arraste a imagem para enquadrar o rosto. Use o zoom e a rotação se precisar.</p>
+  <canvas width="400" height="400" data-foto-canvas tabindex="0" aria-label="Prévia da foto. Arraste ou use as setas do teclado para ajustar."></canvas>
+  <label for="foto-editor-zoom">Zoom</label>
+  <input id="foto-editor-zoom" type="range" min="1" max="4" step="0.01" value="1" data-foto-zoom>
+  <div class="foto-editor-acoes">
+    <button type="button" data-foto-girar="-90">Girar à esquerda</button>
+    <button type="button" data-foto-girar="90">Girar à direita</button>
+    <button type="button" data-foto-reset>Recomeçar</button>
+  </div>
+  <p data-foto-erro role="alert" hidden></p>
+  <div class="foto-editor-acoes"><button type="button" data-foto-fechar>Cancelar ajuste</button><button type="button" data-foto-aplicar>Usar este enquadramento</button></div>
+</dialog>
+<script defer src="{% static 'portal/foto_editor.js' %}?v=1"></script>

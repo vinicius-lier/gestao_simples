@@ -145,6 +145,8 @@ class ConviteMatricula(models.Model):
         return self._da_turma('taxa_matricula')
 
     def vencimento_efetivo(self):
+        if self.academia.dia_vencimento_fixo:
+            return self.academia.dia_vencimento_fixo
         if self.dia_vencimento:
             return self.dia_vencimento
         return self.turma.dia_vencimento if self.turma_id else 10

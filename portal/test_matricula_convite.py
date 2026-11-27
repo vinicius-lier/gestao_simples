@@ -329,7 +329,7 @@ class LinkPermanenteDoSite(BaseConvite):
     def test_varias_familias_pelo_mesmo_link(self):
         link = self.criar_link()
         self.assertIsNone(link.turma)
-        self.assertContains(self.client.get('/'), 'Fazer a matrícula')
+        self.assertContains(self.client.get('/'), 'href="https://judokeikofukuda.com.br/matricula/"')
         self.assertContains(self.client.get('/matricula/'), 'Ficha de matrícula')
 
         for nome, telefone, cpf in (('Ana Lima', '21911112222', '11144477735'), ('Beto Souza', '21933334444', '22255588846')):

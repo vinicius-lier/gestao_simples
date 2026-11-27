@@ -1,9 +1,9 @@
 {% load static %}<!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Escola de Judô Keiko Fukuda</title><meta name="description" content="Conheça a Escola de Judô Keiko Fukuda: nossa história, equipe, turmas, horários e mensalidades. Fale com a escola ou faça sua matrícula.">
+<title>Escola de Judô Keiko Fukuda</title><meta name="description" content="Conheça a Escola de Judô Keiko Fukuda: nossa história, equipe, turmas e horários por unidade. Fale com a escola ou faça sua matrícula.">
 <link rel="icon" href="{% static 'portal/institucional/logotipo-circular-escola-de-judo-keiko-fukuda.webp' %}"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'portal/institucional.css' %}?v=2"><script defer src="{% static 'portal/institucional.js' %}?v=1"></script>
+<link rel="stylesheet" href="{% static 'portal/institucional.css' %}?v=3"><script defer src="{% static 'portal/institucional.js' %}?v=1"></script>
 </head><body><a class="institucional-pular" href="#topo">Pular para conteúdo</a>
 <div style="background:#FAF9F7;color:#212124;font-family:'Source Sans 3',sans-serif;font-size:18px;line-height:1.55">
 
@@ -27,7 +27,6 @@
 
       <a href="#turmas" data-menu-link style="display:block;padding:14px 20px;font:700 24px 'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.03em;color:#212124;text-decoration:none;border-top:1px solid #e6e3df">Turmas e horários</a>
 
-      <a href="#mensalidades" data-menu-link style="display:block;padding:14px 20px;font:700 24px 'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.03em;color:#212124;text-decoration:none;border-top:1px solid #e6e3df">Mensalidades</a>
 
       <a href="#momentos" data-menu-link style="display:block;padding:14px 20px;font:700 24px 'Barlow Condensed',sans-serif;text-transform:uppercase;letter-spacing:.03em;color:#212124;text-decoration:none;border-top:1px solid #e6e3df">Momentos</a>
 
@@ -130,33 +129,34 @@
   <div style="max-width:1200px;margin:0 auto;padding:72px 20px">
     <h2 data-reveal="1" style="margin:0 0 12px;font:800 clamp(38px,5vw,60px)/1 'Barlow Condensed',sans-serif;text-transform:uppercase">Encontre seu horário no tatame.</h2>
     <p style="margin:0 0 28px;max-width:40em;color:#e6e3df">Não sabe qual turma escolher? Fale com a escola para receber orientação sobre o horário mais adequado.</p>
+    <form method="get" action="#turmas" class="filtro-unidades">
+      {% if unidade_anterior %}<a href="?unidade_turmas={{ unidade_anterior }}#turmas" aria-label="Unidade anterior" class="troca-unidade">←</a>{% endif %}
+      <label for="filtro-unidade">Unidade</label>
+      <select id="filtro-unidade" name="unidade_turmas" onchange="this.form.requestSubmit()">
+        <option value="">Todas as unidades</option>
+        {% for unidade in unidades_turmas %}<option value="{{ unidade.pk }}"{% if unidade_selecionada == unidade.pk|stringformat:'s' %} selected{% endif %}>{{ unidade.nome }}</option>{% endfor %}
+      </select>
+      <button type="submit">Ver horários</button>
+      {% if unidade_proxima %}<a href="?unidade_turmas={{ unidade_proxima }}#turmas" aria-label="Próxima unidade" class="troca-unidade">→</a>{% endif %}
+    </form>
     <div data-stagger="1" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr));gap:14px">
       {% for c in turmas_institucionais %}
         <div style="background:#2d2d31;border-radius:8px;padding:18px 20px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;justify-content:space-between">
           <div>
             <div style="font:800 28px/1 'Barlow Condensed',sans-serif;text-transform:uppercase">{{ c.nome }}</div>
-            <div style="color:#d6d3d0;font-size:16px;margin-top:4px">{{ c.dias_semana }}</div>
+            <div style="color:#d6d3d0;font-size:16px;margin-top:4px">{{ c.dias_semana }}{% if c.unidade %} · {{ c.unidade.nome }}{% endif %}</div>
           </div>
           <div style="font:800 34px/1 'Barlow Condensed',sans-serif;color:#fff;background:#B5242C;padding:8px 14px;border-radius:6px">{{ c.horario|time:'H\hi' }}</div>
           <a href="https://wa.me/5521997616485?text=Ol%C3%A1%21%20Gostaria%20de%20saber%20sobre%20a%20turma%20{{ c.nome|urlencode }}%20da%20Escola%20de%20Jud%C3%B4%20Keiko%20Fukuda." style="flex-basis:100%;color:#fff;font-weight:700;font-size:16px">Quero saber sobre esta turma →</a>
         </div>
+      {% empty %}
+        <p>Nenhum horário cadastrado nesta unidade. Fale com a escola para saber mais.</p>
       {% endfor %}
     </div>
   </div>
 </section>
 
-<section id="mensalidades" style="max-width:1200px;margin:0 auto;padding:72px 20px">
-  <h2 data-reveal="1" style="margin:0 0 8px;font:800 clamp(38px,5vw,60px)/1 'Barlow Condensed',sans-serif;text-transform:uppercase">Mensalidades 2027.</h2>
-  <p style="margin:0 0 28px;color:#727277">Condições válidas a partir de janeiro de 2027. Mesma mensalidade para todas as turmas.</p>
-  <div data-stagger="1" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px">
-    <div style="background:#fff;border:1px solid #e6e3df;border-radius:8px;padding:28px">
-      <div style="color:#727277;font-weight:700">Pagamento até o dia 15</div>
-      <div style="font:800 64px/1 'Barlow Condensed',sans-serif;color:#B5242C;margin:6px 0">R$130<span style="font-size:24px;color:#727277"> /mês</span></div>
-      <div>R$150 após o vencimento.</div>
-    </div>
-  </div>
-  <p style="margin:20px 0 0;color:#727277">Descontos e condições específicas, incluindo bolsas, são negociados diretamente com a escola. Converse com a gente.</p>
-</section>
+
 
 <section id="momentos" style="background:#fff;border-top:1px solid #e6e3df">
   <div style="max-width:1200px;margin:0 auto;padding:72px 20px">
